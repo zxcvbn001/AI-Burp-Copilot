@@ -87,6 +87,31 @@ public final class HttpUtil {
         }
     }
 
+    public static List<ParameterContext> parseMultipartBodyParams(String body) {
+        if (body == null || body.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ParameterContext> params = new ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?i)Content-Disposition:\\s*form-data\\s*;([^\\r\\n]+)")
+                .matcher(body);
+        while (matcher.find()) {
+            String disposition = matcher.group(1);
+            String name = extractDispositionValue(disposition, "name");
+            if (name == null || name.isBlank()) {
+                continue;
+            }
+            String filename = extractDispositionValue(disposition, "filename");
+            params.add(new ParameterContext(name, truncateValue(filename != null ? filename : ""), ParameterType.BODY));
+        }
+        return params;
+    }
+
+    public static boolean isMultipartContent(String contentType) {
+        String mime = extractMimeType(contentType);
+        return mime.contains("multipart/form-data");
+    }
+
     @SuppressWarnings("unchecked")
     private static void flattenJsonParams(String prefix, Map<String, Object> map, List<ParameterContext> params) {
         for (Map.Entry<String, Object> entry : map.entrySet()) {
@@ -176,6 +201,19 @@ public final class HttpUtil {
         if (extension == null) return "";
         String normalized = extension.trim().toLowerCase(Locale.ROOT);
         return normalized.startsWith(".") ? normalized.substring(1) : normalized;
+    }
+
+    private static String extractDispositionValue(String disposition, String key) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?i)(?:^|;)\\s*" + java.util.regex.Pattern.quote(key) + "\\s*=\\s*\"([^\"]*)\"")
+                .matcher(disposition);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        matcher = java.util.regex.Pattern
+                .compile("(?i)(?:^|;)\\s*" + java.util.regex.Pattern.quote(key) + "\\s*=\\s*([^;\\s]+)")
+                .matcher(disposition);
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     /**

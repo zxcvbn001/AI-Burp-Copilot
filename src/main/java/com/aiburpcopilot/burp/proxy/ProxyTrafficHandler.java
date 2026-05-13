@@ -160,6 +160,9 @@ public class ProxyTrafficHandler implements HttpHandler {
             } else if (HttpUtil.isJsonContent(contentType)) {
                 List<ParameterContext> jsonParams = HttpUtil.parseJsonBodyParams(body);
                 jsonParams.forEach(context::addParameter);
+            } else if (HttpUtil.isMultipartContent(contentType)) {
+                List<ParameterContext> multipartParams = HttpUtil.parseMultipartBodyParams(body);
+                multipartParams.forEach(context::addParameter);
             }
         }
 

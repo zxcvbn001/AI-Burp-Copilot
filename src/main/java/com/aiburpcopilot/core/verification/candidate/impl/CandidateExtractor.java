@@ -61,7 +61,7 @@ public class CandidateExtractor implements ICandidateExtractor {
                 .map(c -> c.getParameterName() + "|" + c.getAttackTypeName())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        List<VulnerabilityHint> hints = parseVulnerabilityHints(result.getPossibleVulnerabilities());
+        List<VulnerabilityHint> hints = collectHints(result);
         if (result.getHighValueParams() != null && !hints.isEmpty()) {
             for (AnalysisResult.HighValueParam param : result.getHighValueParams()) {
                 String resolved = findMatchingParamName(context, param.getParamName());
@@ -85,6 +85,9 @@ public class CandidateExtractor implements ICandidateExtractor {
 
         for (VulnerabilityHint hint : hints) {
             String resolved = findMatchingParamName(context, hint.parameterName());
+            if (resolved == null) {
+                resolved = selectFallbackParamName(context, hint.attackTypeName());
+            }
             if (resolved == null) {
                 continue;
             }
@@ -146,6 +149,20 @@ public class CandidateExtractor implements ICandidateExtractor {
         return hints;
     }
 
+    private List<VulnerabilityHint> collectHints(AnalysisResult result) {
+        if (result == null) {
+            return List.of();
+        }
+        List<VulnerabilityHint> hints = new ArrayList<>();
+        hints.addAll(parseVulnerabilityHints(result.getPossibleVulnerabilities()));
+        hints.addAll(parseVulnerabilityHints(result.getAttackSurface()));
+        Set<String> seen = new LinkedHashSet<>();
+        return hints.stream()
+                .filter(hint -> seen.add(hint.attackTypeName()
+                        + "|" + (hint.parameterName() != null ? hint.parameterName() : "")))
+                .toList();
+    }
+
     private String resolveAttackTypeName(String text) {
         if (capabilityCatalog == null) {
             return text;
@@ -178,6 +195,23 @@ public class CandidateExtractor implements ICandidateExtractor {
         for (ParameterContext p : context.getParameters()) {
             if (p.getName() != null && p.getName().equalsIgnoreCase(cleaned)) {
                 return p.getName();
+            }
+        }
+        return null;
+    }
+
+    private String selectFallbackParamName(HTTPContext context, String attackTypeName) {
+        if (context == null || context.getParameters() == null || context.getParameters().isEmpty()) {
+            return null;
+        }
+        String normalizedAttackType = resolveAttackTypeName(attackTypeName);
+        if ("FILE_UPLOAD".equalsIgnoreCase(normalizedAttackType)) {
+            for (ParameterContext parameter : context.getParameters()) {
+                if (parameter.getType() == com.aiburpcopilot.core.context.ParameterType.BODY
+                        && parameter.getName() != null
+                        && !parameter.getName().isBlank()) {
+                    return parameter.getName();
+                }
             }
         }
         return null;

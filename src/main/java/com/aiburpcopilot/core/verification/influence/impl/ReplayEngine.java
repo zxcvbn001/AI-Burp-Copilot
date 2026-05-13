@@ -400,6 +400,10 @@ public class ReplayEngine implements IReplayEngine {
                     if (parsed.body != null) {
                         parsed.body = replaceJsonBodyParam(parsed.body, paramName, newValue);
                     }
+                } else if (ct != null && ct.toLowerCase().contains("multipart/form-data")) {
+                    if (parsed.body != null) {
+                        parsed.body = replaceMultipartFormDataParam(parsed.body, paramName, newValue);
+                    }
                 } else {
                     if (parsed.body != null) {
                         parsed.body = replaceFormBodyParam(parsed.body, paramName, newValue);
@@ -458,6 +462,32 @@ public class ReplayEngine implements IReplayEngine {
                 return newBody.getBytes(StandardCharsets.UTF_8);
             }
         } catch (Exception ignored) {}
+        return body;
+    }
+
+    private byte[] replaceMultipartFormDataParam(byte[] body, String paramName, String newValue) {
+        if (paramName == null || paramName.isBlank()) {
+            return body;
+        }
+        String bodyStr = new String(body, StandardCharsets.UTF_8);
+        String quotedName = java.util.regex.Pattern.quote(paramName);
+        java.util.regex.Pattern filenamePattern = java.util.regex.Pattern.compile(
+                "(?i)(Content-Disposition:\\s*form-data\\s*;[^\\r\\n]*name\\s*=\\s*\"" + quotedName
+                        + "\"[^\\r\\n]*filename\\s*=\\s*\")([^\"]*)(\")");
+        java.util.regex.Matcher filenameMatcher = filenamePattern.matcher(bodyStr);
+        if (filenameMatcher.find()) {
+            return filenameMatcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(
+                    filenameMatcher.group(1) + newValue + filenameMatcher.group(3))).getBytes(StandardCharsets.UTF_8);
+        }
+
+        java.util.regex.Pattern valuePattern = java.util.regex.Pattern.compile(
+                "(?is)(Content-Disposition:\\s*form-data\\s*;[^\\r\\n]*name\\s*=\\s*\"" + quotedName
+                        + "\"[^\\r\\n]*(?:\\r?\\n[^\\r\\n]*)*?\\r?\\n\\r?\\n)(.*?)(\\r?\\n--)");
+        java.util.regex.Matcher valueMatcher = valuePattern.matcher(bodyStr);
+        if (valueMatcher.find()) {
+            return valueMatcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(
+                    valueMatcher.group(1) + newValue + valueMatcher.group(3))).getBytes(StandardCharsets.UTF_8);
+        }
         return body;
     }
 

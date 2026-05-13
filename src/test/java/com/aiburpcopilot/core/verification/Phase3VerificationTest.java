@@ -22,6 +22,7 @@ import com.aiburpcopilot.core.verification.workflow.WorkflowContext;
 import com.aiburpcopilot.core.verification.workflow.impl.InfluenceValidationStep;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowRegistry;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowStepFactory;
+import com.aiburpcopilot.core.verification.candidate.impl.CandidateExtractor;
 import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.utils.HttpUtil;
 import org.junit.jupiter.api.*;
@@ -907,6 +908,30 @@ public class Phase3VerificationTest {
                 null, new YamlPayloadRuleEngine());
 
         assertTrue(catalog.supportsAttackType(AttackType.AUTH));
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("File upload candidate falls back to multipart body field when AI omits parameter name")
+    void testFileUploadCandidateFallsBackToMultipartBodyField() {
+        HTTPContext context = new HTTPContext();
+        context.setMethod("POST");
+        context.setUrl("http://example.test/upload");
+        context.setPath("/upload");
+        context.addParameter(new ParameterContext("uploaded", "demo.txt", ParameterType.BODY));
+
+        AnalysisResult result = new AnalysisResult();
+        result.setPossibleVulnerabilities(List.of("文件上传"));
+        context.setAnalysisResult(result);
+
+        CandidateExtractor extractor = new CandidateExtractor(
+                new RuleCapabilityCatalog(null, new YamlPayloadRuleEngine()));
+        List<CandidateParameter> candidates = extractor.extract(context);
+
+        assertTrue(candidates.stream().anyMatch(candidate ->
+                        "FILE_UPLOAD".equals(candidate.getAttackTypeName())
+                                && "uploaded".equals(candidate.getParameterName())),
+                "FILE_UPLOAD should fall back to multipart body parameter when AI provides endpoint-level hint");
     }
 
     @Test

@@ -21,6 +21,7 @@ import com.aiburpcopilot.core.verification.policy.IPolicyEngine;
 import com.aiburpcopilot.core.verification.safety.VerificationGuard;
 import com.aiburpcopilot.core.verification.workflow.IWorkflowEngine;
 import com.aiburpcopilot.core.verification.workflow.WorkflowContext;
+import com.aiburpcopilot.core.verification.workflow.impl.WorkflowEngine;
 import com.aiburpcopilot.utils.PluginLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,11 +91,6 @@ public class WorkflowVerificationStage implements IPipelineStage {
             pluginLog.warn("WorkflowVerification", "Skip host not allowed: " + context.getUrl());
             return false;
         }
-        if (!guard.isInfluenceActionAllowed(context) && !guard.isVerificationActionAllowed(context)) {
-            pluginLog.warn("WorkflowVerification",
-                    "Skip unsafe endpoint action: " + guard.describeActionPolicy(context, true));
-            return false;
-        }
         if (context.getAnalysisResult() == null || !context.getAnalysisResult().isSuccess()) {
             return false;
         }
@@ -125,6 +121,13 @@ public class WorkflowVerificationStage implements IPipelineStage {
             return;
         }
 
+        if (!guard.isInfluenceActionAllowed(context) && !guard.isVerificationActionAllowed(context)) {
+            pluginLog.warn("WorkflowVerification",
+                    "Skip unsafe endpoint action after candidate extraction: "
+                            + guard.describeActionPolicy(context, false));
+            return;
+        }
+
         int maxParameters = policyEngine != null
                 ? policyEngine.getMaxParameterTests()
                 : guard.getMaxRequestsPerEndpoint();
@@ -149,7 +152,8 @@ public class WorkflowVerificationStage implements IPipelineStage {
                 workflowContext.setPolicyEngine(policyEngine);
                 workflowContext.setReplayEngine(replayEngine);
                 workflowContext.setPayloadVerificationAllowed(guard.isVerificationActionAllowed(context));
-                if (!guard.isInfluenceActionAllowed(context)) {
+                boolean requiresInfluenceReplay = requiresInfluenceReplay(candidate);
+                if (requiresInfluenceReplay && !guard.isInfluenceActionAllowed(context)) {
                     pluginLog.warn("WorkflowVerification",
                             "Skip influence replay by action policy: "
                                     + guard.describeActionPolicy(context, true));
@@ -191,6 +195,17 @@ public class WorkflowVerificationStage implements IPipelineStage {
     private String influenceCacheKey(CandidateParameter candidate) {
         return (candidate.getParameterType() != null ? candidate.getParameterType() : "UNKNOWN")
                 + "|" + (candidate.getParameterName() != null ? candidate.getParameterName() : "");
+    }
+
+    private boolean requiresInfluenceReplay(CandidateParameter candidate) {
+        if (workflowEngine instanceof WorkflowEngine engine
+                && candidate != null
+                && candidate.getAttackTypeName() != null) {
+            return engine.findWorkflow(candidate.getAttackTypeName())
+                    .map(def -> def.isIncludeInfluenceStep() || def.isRequiresInfluenceApproval())
+                    .orElse(true);
+        }
+        return true;
     }
 
     private ParameterProfile profileCandidate(HTTPContext context, CandidateParameter candidate) {

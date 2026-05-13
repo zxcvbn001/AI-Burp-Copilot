@@ -53,6 +53,12 @@ public class WorkflowEngine implements IWorkflowEngine {
         this(null);
     }
 
+    public Optional<WorkflowDefinition> findWorkflow(String attackTypeName) {
+        return workflowRegistry != null
+                ? workflowRegistry.findWorkflow(attackTypeName)
+                : Optional.empty();
+    }
+
     @Override
     public WorkflowResult execute(WorkflowContext context) {
         long workflowStart = System.currentTimeMillis();
