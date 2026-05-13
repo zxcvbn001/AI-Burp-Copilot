@@ -4,7 +4,7 @@
 
 ## 1. 规则系统定位
 
-AI Burp Copilot 的验证规则不是“攻击脚本”，而是“最小化证据探针”。
+AI Burp Copilot 的验证规则不是“攻击脚本”，而是“最小化证据探针”。本项目和规则仅用于授权范围内的内部安全测试、安全研究和验证引擎评估；不得用于未授权攻击、破坏或绕过真实系统防护。本文档只说明规则引擎配置、验证边界和证据工作流，不提供针对第三方目标的攻击操作指南。
 
 核心边界：
 
@@ -18,10 +18,10 @@ AI Burp Copilot 的验证规则不是“攻击脚本”，而是“最小化证�
 新增漏洞时，优先新增：
 
 1. `rules/payloads/<name>.yaml`
-2. 插件注册或 Workflow Step
-3. 必要时新增通用 Oracle 或通用 Step
+2. 必要时新增通用 Oracle、通用 mutation 或通用 Step
+3. 只有当规则需要新的 HTTP 行为时，才扩展 Execution/Replay 这类通用能力
 
-不要为了某个漏洞去修改 Replay、Diff、Execution Engine 这类 HTTP 核心能力。
+不要为了某个漏洞去修改 Replay、Diff、Execution Engine 这类 HTTP 核心能力，也不要再为每个漏洞类型编写固定 Java 插件。
 
 ## 2. 文件位置与加载优先级
 
@@ -56,14 +56,15 @@ AI Endpoint 分析不会再使用写死的漏洞类型列表。启动或重新�
 - AI 只能从能力边界中选择 attackType 和 technique。
 - Workflow 和 GenericProbeStep 会基于已加载规则自动注册，不需要每个漏洞类型都写一个独立 Java Step。
 
-当前仍保留一个兼容限制：`attackType`、`strategy`、`technique` 需要能映射到 Java 中已有枚举。也就是说，新增同类 HTTP 验证规则通常只改 YAML；但新增完全新的漏洞大类或全新的执行策略，仍需要补充一次枚举或通用 oracle。
+`attackType`、`technique`、`strategy` 都是规则中的动态字符串键，不再要求映射到 Java 枚举。规则文件是能力事实源：AI prompt、能力过滤、Workflow 注册、验证过程 UI 都应从已加载规则推导。
 
 推荐扩展路径：
 
-1. 优先复用已有 `attackType`、`strategy`、`oracle` 写新 probe。
-2. 如果只是新增 payload、优先级、适用参数类型，不改 Java。
+1. 新增漏洞大类时，优先新增一个 YAML 文件，并声明 `attackType`、`aliases`、`workflow` 和 `probes`。
+2. 如果只是新增 payload、优先级、适用参数类型、证据权重或是否需要 LLM 复核，不改 Java。
 3. 如果需要新判断方式，优先新增通用 oracle，例如 `REDIRECT_LOCATION`，不要写 `XxxDiff`。
-4. 只有当需要新的 HTTP 行为时，才新增 Java 执行能力。
+4. 如果需要新变异方式，优先新增通用 mutation，例如 `APPEND`、`REPLACE`、`ADD`、`REMOVE_HEADER` 这类可复用动作。
+5. 只有当需要新的 HTTP 行为或新的通用证据算法时，才新增 Java 执行能力。
 
 ## 2.2 规则驱动 Workflow
 
@@ -116,7 +117,7 @@ probes:
 
 最终聚合的漏洞大类。
 
-当前常用值：
+默认内置规则键：
 
 - `SQLI`
 - `XSS`
@@ -126,8 +127,26 @@ probes:
 - `PATH_TRAVERSAL`
 - `OPEN_REDIRECT`
 - `SSTI`
+- `XXE`
+- `JWT`
+- `GRAPHQL`
+- `CORS`
+- `FILE_UPLOAD`
+- `COMMAND_INJECTION`
+- `LDAP_INJECTION`
 
-注意：这里写大类，不写“布尔盲注”“反射型 XSS”这类子类型。
+注意：这里写漏洞大类能力键，不写“布尔盲注”“反射型 XSS”这类子类型。你可以新增任意字符串键；只要 YAML 加载成功，它就会进入规则能力目录。
+
+### `aliases`
+
+别名用于把 AI 输出、中文描述、历史名称或同义词归一到当前 `attackType`。例如：
+
+```yaml
+attackType: AUTH
+aliases: [AUTH_BYPASS, AUTHORIZATION, ACCESS_CONTROL]
+```
+
+建议别名只写类型同义词，不写 payload、利用步骤或具体攻击技巧。
 
 ### `goal`
 
@@ -179,9 +198,9 @@ technique: NUMERIC_INCREMENT
 
 ### `strategy`
 
-执行策略，必须能映射到 `StrategyType`。
+执行策略标签，是规则中的动态字符串键，用于表达 probe 的执行意图、策略过滤和 UI 展示。
 
-当前常用值：
+常见内置策略键：
 
 - `BOOLEAN_BASED_MINIMAL`
 - `ERROR_BASED`
@@ -195,8 +214,12 @@ technique: NUMERIC_INCREMENT
 - `PATH_TRAVERSAL_PROBE`
 - `OPEN_REDIRECT_PROBE`
 - `TEMPLATE_EXPRESSION`
+- `HEADER_TOGGLE`
+- `TOKEN_TAMPER`
+- `SCHEMA_PROBE`
+- `UPLOAD_METADATA_PROBE`
 
-策略会受到验证策略控制。例如 `TIME_BASED`、`UNION_BASED`、`ERROR_BASED` 可以被 policy 禁用。
+策略会受到验证策略控制。例如 `TIME_BASED`、`UNION_BASED`、`ERROR_BASED` 可以被 policy 禁用。新增策略键不要求改 Java；只有当该策略需要新的通用变异或证据算法时才需要扩展代码。
 
 ### `enabledByDefault`
 

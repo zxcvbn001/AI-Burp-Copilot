@@ -8,7 +8,9 @@ AI Burp Copilot v2 是一个基于 Burp Suite Montoya API 的 AI 辅助渗透测
 - 基于规则和最小化 PoC 对参数进行影响性判断与漏洞验证。
 - 使用 LLM 作为建议层和二次研判层，辅助解释差异、降低误报，而不是直接控制发包或判定漏洞。
 
-> 当前版本仍处于快速演进阶段，验证效果依赖规则质量、目标站点行为、LLM 配置以及人工确认。默认不会自动开启漏洞验证发包。
+> 当前版本仍处于快速演进阶段，验证效果依赖规则质量、目标站点行为、LLM 配置以及人工确认。自动验证是否发包由 `verification.enabled` 和策略配置控制。
+>
+> 本项目仅用于授权范围内的内部安全测试、安全研究和验证引擎评估；不得用于未授权攻击、破坏或绕过真实系统防护。
 
 ## 设计定位
 
@@ -18,7 +20,7 @@ AI Burp Copilot v2 的核心设计原则是：验证能力围绕 HTTP，而不�
 - Diff 是通用响应差异能力，不写 `SqliDiff`、`XssDiff` 这类强绑定实现。
 - AI 只做候选建议、差异解释、二次研判，不直接发包、不直接控制 Workflow。
 - Verification Engine 脱离 AI 仍可运行；AI 不可用时仍能基于规则执行最小化验证。
-- 新增漏洞类型优先新增插件、规则、Workflow Step 或 Payload Rule，避免修改核心引擎。
+- 新增漏洞类型优先新增 YAML 规则；`attackType`、`technique`、`strategy` 已经是动态字符串能力键，通常不需要修改 Java 枚举。
 - 所有主动请求统一走 Execution Engine，禁止各模块自行发包。
 
 ## 当前能力
@@ -51,7 +53,7 @@ AI Burp Copilot v2 的核心设计原则是：验证能力围绕 HTTP，而不�
 ### 漏洞验证
 
 - 支持基于规则的最小化 PoC 验证。
-- 支持 SQLI、XSS、IDOR、SSRF、Path Traversal、Auth、Open Redirect、SSTI 等规则文件。
+- 支持 SQLI、XSS、IDOR、SSRF、Path Traversal、Auth、Open Redirect、SSTI、XXE、JWT、GraphQL、CORS、File Upload、Command Injection、LDAP Injection 等规则文件。
 - 支持 PoC 优先级、命中即停、请求数上限、证据权重。
 - 支持请求/响应证据合并展示，例如 `Request 1`、`Response 1`。
 - 支持有效漏洞聚合记录，并自动进入漏洞级 LLM/本地二次研判队列。
@@ -95,7 +97,7 @@ Burp Proxy HTTP 流量
 候选参数
   -> 参数画像 / 参数类型识别
   -> Influence Gate
-  -> AttackType / Plugin 匹配
+  -> Rule Capability 匹配
   -> Payload Rule 加载
   -> WorkflowStep 执行
   -> Parameter Mutation
@@ -146,12 +148,19 @@ ai-burp-copilot
    ├─ static-resource-rules.yaml
    └─ payloads
       ├─ auth.yaml
+      ├─ command_injection.yaml
+      ├─ cors.yaml
+      ├─ file_upload.yaml
+      ├─ graphql.yaml
       ├─ idor.yaml
+      ├─ jwt.yaml
+      ├─ ldap_injection.yaml
       ├─ open_redirect.yaml
       ├─ path_traversal.yaml
       ├─ sqli.yaml
       ├─ ssrf.yaml
       ├─ ssti.yaml
+      ├─ xxe.yaml
       └─ xss.yaml
 ```
 
@@ -192,8 +201,8 @@ ai-burp-copilot
 - `execution`：统一请求执行入口。
 - `diff`：响应差异计算和摘要。
 - `probe`：规则化 PoC、Oracle、证据判断。
-- `workflow`：按 Step 执行验证流程。
-- `plugins`：漏洞类型插件注册，例如 SQLI、XSS、IDOR。
+- `workflow`：按 Step 执行验证流程，Workflow 由 YAML 规则自动生成。
+- `capability`：把已加载规则转成 AI 能力边界，过滤模型越界输出。
 - `finding`：漏洞结论聚合。
 - `policy`、`safety`、`rate_limit`：请求限流、安全策略和防失控保护。
 
@@ -365,7 +374,7 @@ verification:
 - **最小化**：优先使用低风险、短 payload、少请求数的 PoC。
 - **强约束**：通过 `applicableParamTypes` 和 `valueTypes` 限制探针适用范围，避免数字字段跑字符串 PoC、URL 字段跑无关探针。
 - **可复核**：对 IDOR、SSRF、SQLI 布尔差异等容易误报的场景使用 `requiresLlmReview: true`，让 LLM 基于请求/响应差异和规则证据二次研判。
-- **动态能力**：prompt、workflow 和 probe step 会基于当前已加载规则生成；新增同类 probe 通常只需要改 YAML。
+- **动态能力**：prompt、workflow 和 probe step 会基于当前已加载规则生成；新增漏洞大类通常只需要新增 YAML。
 
 规则文件位置：
 
@@ -524,13 +533,11 @@ verification:
 
 推荐扩展顺序：
 
-1. 在 `AttackType` 或注册表中增加泛化攻击类型。
-2. 新增或注册 `IPlugin` 实现，声明能力和 Workflow。
-3. 在 `rules/payloads/` 新增 YAML 规则。
-4. 如已有 `GenericProbeStep` 能满足需求，优先复用。
-5. 如确实需要新行为，再新增 `VerificationStep`。
-6. 更新 Prompt，让 AI 只推荐已有规则支持的攻击类型。
-7. 在参数分析页手动标记目标参数，或在受控环境中开启自动验证来验证规则效果。
+1. 在 `rules/payloads/` 新增 YAML 规则，填写 `attackType`、`aliases`、`workflow`、`probes`。
+2. 优先复用现有 mutation 与 oracle：`KEYWORD`、`PAIR_DIFF`、`BASELINE_DIFF`、`BASELINE_SIMILAR`、`HTML_REFLECTION`、`REDIRECT_LOCATION`、`EXPRESSION_EVALUATION`、`TIME_DELAY`。
+3. 如现有 oracle 不够，再新增通用 oracle；不要新增 `SqliDiff`、`XssDiff` 这类漏洞绑定实现。
+4. 如确实需要新的 HTTP 行为，再新增通用 `VerificationStep` 或 mutation 能力。
+5. 在参数分析页手动标记目标参数，或在受控环境中开启自动验证来验证规则效果。
 
 原则：新增漏洞不应修改 Replay、Diff、Execution Engine 等核心 HTTP 能力。
 

@@ -1,12 +1,12 @@
-# SQL 注入最小化验证规则。
-# 规则目标只确认“SQLI 大类是否成立”，不区分报错、布尔、延时等子类型。
+# SQL 娉ㄥ叆鏈€灏忓寲楠岃瘉瑙勫垯銆?
+# 瑙勫垯鐩爣鍙‘璁も€淪QLI 澶х被鏄惁鎴愮珛鈥濓紝涓嶅尯鍒嗘姤閿欍€佸竷灏斻€佸欢鏃剁瓑瀛愮被鍨嬨€?
 attackType: SQLI
 aliases: [SQL, SQL_INJECTION, SQL注入, 注入]
 goal: CONFIRM_ATTACK_TYPE
 
 probes:
-  # 字符串参数：单引号触发、双单引号恢复。
-  # 适合 name/search/q 等文本参数；不适合数字 JSON 字段，避免破坏类型后误判为注入。
+  # 瀛楃涓插弬鏁帮細鍗曞紩鍙疯Е鍙戙€佸弻鍗曞紩鍙锋仮澶嶃€?
+  # 閫傚悎 name/search/q 绛夋枃鏈弬鏁帮紱涓嶉€傚悎鏁板瓧 JSON 瀛楁锛岄伩鍏嶇牬鍧忕被鍨嬪悗璇垽涓烘敞鍏ャ€?
   - id: generic_quote_error_recovery
     technique: ERROR_BASED
     strategy: ERROR_BASED
@@ -41,9 +41,9 @@ probes:
         - "quoted string not properly terminated"
       minConfidence: 0.78
 
-  # 字符串参数：布尔真/假条件对比。
-  # 使用 APPEND 保留原参数值，例如 name=abc -> name=abc' AND 1=1--。
-  # 需要 LLM 二次研判，避免把普通输入校验错误当成布尔盲注。
+  # 瀛楃涓插弬鏁帮細甯冨皵鐪?鍋囨潯浠跺姣斻€?
+  # 浣跨敤 APPEND 淇濈暀鍘熷弬鏁板€硷紝渚嬪 name=abc -> name=abc' AND 1=1--銆?
+  # 闇€瑕?LLM 浜屾鐮斿垽锛岄伩鍏嶆妸鏅€氳緭鍏ユ牎楠岄敊璇綋鎴愬竷灏旂洸娉ㄣ€?
   - id: generic_boolean_pair_string
     technique: BOOLEAN_BASED
     strategy: BOOLEAN_BASED_MINIMAL
@@ -66,9 +66,9 @@ probes:
       maxSimilarityTrueFalse: 0.80
       minConfidence: 0.78
 
-  # 数字参数：布尔真/假条件对比。
-  # 只允许 NUMERIC 值类型执行。非数字字段不要跑这个 probe。
-  # 注意：JSON 数字字段遇到 "1 AND 1=1" 会被转为字符串，因此必须依赖 LLM 复核。
+  # 鏁板瓧鍙傛暟锛氬竷灏旂湡/鍋囨潯浠跺姣斻€?
+  # 鍙厑璁?NUMERIC 鍊肩被鍨嬫墽琛屻€傞潪鏁板瓧瀛楁涓嶈璺戣繖涓?probe銆?
+  # 娉ㄦ剰锛欽SON 鏁板瓧瀛楁閬囧埌 "1 AND 1=1" 浼氳杞负瀛楃涓诧紝鍥犳蹇呴』渚濊禆 LLM 澶嶆牳銆?
   - id: generic_boolean_pair_integer
     technique: BOOLEAN_BASED
     strategy: BOOLEAN_BASED_MINIMAL
@@ -91,12 +91,12 @@ probes:
       maxSimilarityTrueFalse: 0.80
       minConfidence: 0.78
 
-  # DBMS 专用探针默认关闭。
-  # 需要确认目标数据库或手动验证时再在外置规则中启用。
+  # DBMS 涓撶敤鎺㈤拡榛樿鍏抽棴銆?
+  # 闇€瑕佺‘璁ょ洰鏍囨暟鎹簱鎴栨墜鍔ㄩ獙璇佹椂鍐嶅湪澶栫疆瑙勫垯涓惎鐢ㄣ€?
   - id: mysql_time_delay
     technique: TIME_BASED
     strategy: TIME_BASED
-    enabledByDefault: false
+    enabledByDefault: true
     priority: 90
     stopOnMatch: true
     maxRequests: 1

@@ -1,8 +1,8 @@
-# 认证/授权绕过候选验证规则。
-# 当前通用变异器对 Header/Cookie 的上下文能力有限，默认关闭高误报探针。
-# 如果你有明确的低权限 token 或测试账号上下文，建议在外置规则中启用并改成真实安全样本。
+# 璁よ瘉/鎺堟潈缁曡繃鍊欓€夐獙璇佽鍒欍€?
+# 褰撳墠閫氱敤鍙樺紓鍣ㄥ Header/Cookie 鐨勪笂涓嬫枃鑳藉姏鏈夐檺锛岄粯璁ゅ叧闂珮璇姤鎺㈤拡銆?
+# 濡傛灉浣犳湁鏄庣‘鐨勪綆鏉冮檺 token 鎴栨祴璇曡处鍙蜂笂涓嬫枃锛屽缓璁湪澶栫疆瑙勫垯涓惎鐢ㄥ苟鏀规垚鐪熷疄瀹夊叏鏍锋湰銆?
 attackType: AUTH
-aliases: [AUTH_BYPASS, AUTHORIZATION, AUTHENTICATION, ACCESS_CONTROL, 认证绕过, 鉴权绕过, 授权绕过, 访问控制]
+aliases: [AUTH_BYPASS, AUTHORIZATION, AUTHENTICATION, ACCESS_CONTROL, UNAUTHORIZED_ACCESS, 认证绕过, 鉴权绕过, 授权绕过, 访问控制]
 goal: CONFIRM_ATTACK_TYPE
 workflow:
   name: AUTH Verification
@@ -14,7 +14,7 @@ probes:
   - id: auth_remove_token
     technique: REMOVE_TOKEN
     strategy: REMOVE_TOKEN
-    enabledByDefault: false
+    enabledByDefault: true
     priority: 10
     stopOnMatch: true
     maxRequests: 1
@@ -35,7 +35,7 @@ probes:
   - id: auth_invalid_role_token
     technique: ROLE_SWITCH
     strategy: ROLE_SWITCH
-    enabledByDefault: false
+    enabledByDefault: true
     priority: 20
     stopOnMatch: true
     maxRequests: 1

@@ -1,0 +1,34 @@
+attackType: CORS
+aliases: [CORS_MISCONFIGURATION, ORIGIN_TRUST, 跨域配置错误, CORS错误配置]
+goal: CONFIRM_ATTACK_TYPE
+workflow:
+  name: CORS Verification
+  description: Origin header trust checks can run without parameter influence gate.
+  includeInfluenceStep: false
+  requiresInfluenceApproval: false
+
+probes:
+  - id: cors_origin_reflection
+    technique: ORIGIN_REFLECTION
+    strategy: ORIGIN_REFLECTION
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.82
+    applicableParamTypes: [HEADER]
+    valueTypes: [URL, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "https://evil.example"
+        role: TRIGGER
+        mutation: REPLACE
+        markers:
+          - "evil.example"
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "access-control-allow-origin: https://evil.example"
+        - "access-control-allow-credentials: true"
+      minConfidence: 0.66
+

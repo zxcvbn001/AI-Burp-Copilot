@@ -3,7 +3,6 @@ package com.aiburpcopilot.core.verification.capability;
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.model.StrategyType;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
-import com.aiburpcopilot.core.verification.plugins.impl.PluginRegistry;
 import com.aiburpcopilot.core.verification.probe.ProbeDefinition;
 import com.aiburpcopilot.core.verification.technique.ITechniqueRegistry;
 import com.aiburpcopilot.core.verification.technique.TechniqueRule;
@@ -27,12 +26,12 @@ public class RuleCapabilityCatalog {
     private final Map<String, Set<String>> attackTypeAliases;
     private final Map<AttackType, Map<VerificationTechnique, StrategyType>> legacyTechniqueMap;
 
-    public RuleCapabilityCatalog(PluginRegistry pluginRegistry,
+    public RuleCapabilityCatalog(Object pluginRegistry,
                                  IPayloadRuleEngine payloadRuleEngine) {
         this(pluginRegistry, payloadRuleEngine, TechniqueRegistry.createDefault());
     }
 
-    public RuleCapabilityCatalog(PluginRegistry pluginRegistry,
+    public RuleCapabilityCatalog(Object pluginRegistry,
                                  IPayloadRuleEngine payloadRuleEngine,
                                  ITechniqueRegistry techniqueRegistry) {
         this.payloadRuleEngine = payloadRuleEngine;
@@ -114,7 +113,15 @@ public class RuleCapabilityCatalog {
             return normalized;
         }
         for (Map.Entry<String, Set<String>> entry : attackTypeAliases.entrySet()) {
-            if (entry.getValue().contains(normalized)) {
+            for (String alias : entry.getValue()) {
+                if (aliasMatches(normalized, alias)) {
+                    return entry.getKey();
+                }
+            }
+        }
+        for (Map.Entry<String, Set<String>> entry : attackTypeAliases.entrySet()) {
+            String key = entry.getKey();
+            if (aliasMatches(normalized, key)) {
                 return entry.getKey();
             }
         }
@@ -124,6 +131,19 @@ public class RuleCapabilityCatalog {
             }
         }
         return null;
+    }
+
+    private boolean aliasMatches(String value, String alias) {
+        if (value == null || alias == null) {
+            return false;
+        }
+        String normalizedAlias = RuleKeyUtil.normalize(alias);
+        if (normalizedAlias == null) {
+            return false;
+        }
+        return value.equals(normalizedAlias)
+                || value.contains(normalizedAlias)
+                || normalizedAlias.contains(value);
     }
 
     public Map<VerificationTechnique, StrategyType> getSupportedTechniques(AttackType attackType) {

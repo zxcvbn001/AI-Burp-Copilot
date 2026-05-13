@@ -14,6 +14,7 @@ import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.history.impl.InMemoryHistoryService;
 import com.aiburpcopilot.core.pipeline.AIAnalysisStage;
 import com.aiburpcopilot.core.pipeline.AnalysisPipeline;
+import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.core.pipeline.EndpointClassificationStage;
 import com.aiburpcopilot.core.pipeline.HistoryStage;
 import com.aiburpcopilot.core.pipeline.IPipeline;
@@ -43,7 +44,6 @@ import com.aiburpcopilot.core.verification.influence.impl.StrategyApprovalEngine
 import com.aiburpcopilot.core.verification.mutation.impl.ParameterMutatorRegistry;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
 import com.aiburpcopilot.core.verification.payload.impl.YamlPayloadRuleEngine;
-import com.aiburpcopilot.core.verification.plugins.impl.PluginRegistry;
 import com.aiburpcopilot.core.verification.policy.IPolicyEngine;
 import com.aiburpcopilot.core.verification.policy.impl.PolicyEngine;
 import com.aiburpcopilot.core.verification.rate_limit.HostRateLimiter;
@@ -136,16 +136,14 @@ public class AIBurpCopilotExtension implements BurpExtension {
             IStrategyApprovalEngine strategyApprovalEngine = new StrategyApprovalEngine();
             IPolicyEngine policyEngine = new PolicyEngine();
 
-            PluginRegistry pluginRegistry = PluginRegistry.createDefault();
             RuleCapabilityCatalog capabilityCatalog = new RuleCapabilityCatalog(
-                    pluginRegistry, payloadEngine);
+                    null, payloadEngine);
             ICandidateExtractor candidateExtractor = new CandidateExtractor(capabilityCatalog);
 
             WorkflowStepFactory workflowStepFactory = new WorkflowStepFactory(
                     replayEngine, minimalMutationEngine, influenceDiffEngine,
                     influenceScorer, strategyApprovalEngine);
             workflowStepFactory.setPayloadRuleEngine(payloadEngine);
-            workflowStepFactory.setPluginRegistry(pluginRegistry);
             workflowStepFactory.setAiProvider(aiProvider);
             workflowStepFactory.setPolicyEngine(policyEngine);
             workflowStepFactory.setMaxPayloadLength(verificationGuard.getMaxPayloadLength());
@@ -162,6 +160,7 @@ public class AIBurpCopilotExtension implements BurpExtension {
 
             pipeline = new AnalysisPipeline();
             pipeline.registerStage(new HistoryStage(historyService));
+            pipeline.registerStage(new EndpointDedupStage());
             pipeline.registerStage(new StatusCodeFilterStage(configService));
             pipeline.registerStage(new EndpointClassificationStage(endpointClassifier));
             pipeline.registerStage(new StaticScanStage(staticScanner));

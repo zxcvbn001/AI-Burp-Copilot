@@ -16,13 +16,13 @@ import com.aiburpcopilot.core.verification.influence.impl.StrategyApprovalEngine
 import com.aiburpcopilot.core.verification.influence.impl.ReplayEngine;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.payload.impl.YamlPayloadRuleEngine;
-import com.aiburpcopilot.core.verification.plugins.impl.PluginRegistry;
 import com.aiburpcopilot.core.verification.technique.TechniqueRecommendation;
 import com.aiburpcopilot.core.verification.technique.VerificationTechnique;
 import com.aiburpcopilot.core.verification.workflow.WorkflowContext;
 import com.aiburpcopilot.core.verification.workflow.impl.InfluenceValidationStep;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowRegistry;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowStepFactory;
+import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.utils.HttpUtil;
 import org.junit.jupiter.api.*;
 
@@ -578,7 +578,7 @@ public class Phase3VerificationTest {
         ).getBytes();
 
         DiffResult result = engine.analyze(original, mutated, 100, 110);
-        // Content-Type changed (json鈫抙tml), body structure changed 鈫?should be detected
+        // Content-Type changed (json閳姍tml), body structure changed 閳?should be detected
         assertTrue(result.isSignificant() || result.isStructureChanged() || result.isKeywordChanged(),
                 "Header and body structure changes should be detected");
     }
@@ -674,7 +674,7 @@ public class Phase3VerificationTest {
     @Order(31)
     @DisplayName("XSS workflow is registered when payload rules exist")
     void testXssWorkflowRegistered() {
-        WorkflowRegistry registry = WorkflowRegistry.fromPlugins(PluginRegistry.createDefault());
+        WorkflowRegistry registry = WorkflowRegistry.fromRules(new YamlPayloadRuleEngine());
         assertTrue(registry.findWorkflow(AttackType.XSS).isPresent(),
                 "XSS payload rules must have a matching workflow");
     }
@@ -695,7 +695,7 @@ public class Phase3VerificationTest {
     @DisplayName("Rule capability catalog exposes only locally backed capabilities")
     void testRuleCapabilityCatalog() {
         RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(
-                PluginRegistry.createDefault(), new YamlPayloadRuleEngine());
+                null, new YamlPayloadRuleEngine());
 
         assertTrue(catalog.supportsTechnique(AttackType.XSS, VerificationTechnique.REFLECTION));
         assertTrue(catalog.supportsTechnique(
@@ -708,9 +708,9 @@ public class Phase3VerificationTest {
     @DisplayName("AI capability filter drops unsupported recommendations")
     void testAnalysisCapabilityFilter() {
         RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(
-                PluginRegistry.createDefault(), new YamlPayloadRuleEngine());
+                null, new YamlPayloadRuleEngine());
         AnalysisResult result = new AnalysisResult();
-        result.setPossibleVulnerabilities(List.of("XSS -> q", "XXE -> xml"));
+        result.setPossibleVulnerabilities(List.of("XSS -> q", "UNSUPPORTED_CUSTOM -> xml"));
         result.setRecommendedTechniques(List.of(
                 new TechniqueRecommendation("q", AttackType.XSS,
                         VerificationTechnique.REFLECTION, 0.8, "supported"),
@@ -731,7 +731,7 @@ public class Phase3VerificationTest {
     @DisplayName("AI capability filter corrects parameter value mistaken as name")
     void testAnalysisCapabilityFilterCorrectsValueAsParameterName() {
         RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(
-                PluginRegistry.createDefault(), new YamlPayloadRuleEngine());
+                null, new YamlPayloadRuleEngine());
         HTTPContext context = new HTTPContext();
         context.addParameter(new ParameterContext("name", "asd", ParameterType.QUERY));
 
@@ -754,6 +754,52 @@ public class Phase3VerificationTest {
 
     @Test
     @Order(36)
+    @DisplayName("AI capability filter resolves combined Chinese aliases")
+    void testAnalysisCapabilityFilterChineseAliasContains() {
+        RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(
+                null, new YamlPayloadRuleEngine());
+        HTTPContext context = new HTTPContext();
+        context.addParameter(new ParameterContext("id", "1", ParameterType.QUERY));
+
+        AnalysisResult result = new AnalysisResult();
+        result.setPossibleVulnerabilities(List.of(
+                "SQL注入 -> id",
+                "IDOR越权 -> id",
+                "认证绕过 -> id（结合会话权限）"
+        ));
+
+        new AnalysisResultCapabilityFilter(catalog).filter(result, context);
+
+        assertEquals(List.of("SQLI -> id", "IDOR -> id", "AUTH -> id"),
+                result.getPossibleVulnerabilities());
+    }
+
+    @Test
+    @Order(36)
+    @DisplayName("Endpoint dedup uses method origin path and parameter schema")
+    void testEndpointDedupFingerprint() {
+        HTTPContext first = new HTTPContext();
+        first.setMethod("GET");
+        first.setUrl("http://example.com/app?id=1");
+        first.setPath("/app");
+        first.addParameter(new ParameterContext("id", "1", ParameterType.QUERY));
+
+        HTTPContext second = new HTTPContext();
+        second.setMethod("GET");
+        second.setUrl("http://example.com/app?id=2");
+        second.setPath("/app");
+        second.addParameter(new ParameterContext("id", "2", ParameterType.QUERY));
+
+        EndpointDedupStage stage = new EndpointDedupStage();
+        stage.process(first);
+        stage.process(second);
+
+        assertNotEquals(com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED, first.getAnalysisStatus());
+        assertEquals(com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED, second.getAnalysisStatus());
+    }
+
+    @Test
+    @Order(37)
     @DisplayName("Form body params are typed as BODY")
     void testFormBodyParamsAreBodyType() {
         List<ParameterContext> params = HttpUtil.parseFormBodyParams("name=asd&id=1");
@@ -787,7 +833,7 @@ public class Phase3VerificationTest {
     @Order(38)
     @DisplayName("Path traversal workflow and step are available")
     void testPathTraversalWorkflowAndStep() {
-        WorkflowRegistry registry = WorkflowRegistry.fromPlugins(PluginRegistry.createDefault());
+        WorkflowRegistry registry = WorkflowRegistry.fromRules(new YamlPayloadRuleEngine());
         assertTrue(registry.findWorkflow(AttackType.PATH_TRAVERSAL).isPresent());
 
         WorkflowStepFactory factory = new WorkflowStepFactory(new ReplayEngine());
@@ -801,10 +847,9 @@ public class Phase3VerificationTest {
     void testSqliWorkflowStepsRegistered() {
         WorkflowStepFactory factory = new WorkflowStepFactory(new ReplayEngine());
         factory.setPayloadRuleEngine(new YamlPayloadRuleEngine());
-        factory.setPluginRegistry(PluginRegistry.createDefault());
 
         var engine = factory.createEngine();
-        var registry = WorkflowRegistry.fromPlugins(PluginRegistry.createDefault());
+        var registry = WorkflowRegistry.fromRules(new YamlPayloadRuleEngine());
         var workflow = registry.findWorkflow(AttackType.SQLI).orElseThrow();
 
         assertTrue(workflow.getStepNames().contains("SQLIProbes"));
@@ -856,20 +901,19 @@ public class Phase3VerificationTest {
 
     @Test
     @Order(42)
-    @DisplayName("High-risk auth probes are not enabled by default")
-    void testAuthProbesDisabledByDefault() {
+    @DisplayName("Auth probes are rule-backed and enabled by default")
+    void testAuthProbesEnabledByDefault() {
         RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(
-                PluginRegistry.createDefault(), new YamlPayloadRuleEngine());
+                null, new YamlPayloadRuleEngine());
 
-        assertFalse(catalog.supportsAttackType(AttackType.AUTH),
-                "Auth probes need explicit external rule opt-in because they require auth context");
+        assertTrue(catalog.supportsAttackType(AttackType.AUTH));
     }
 
     @Test
     @Order(43)
     @DisplayName("Influence gate keeps high-value ID parameters as uncertain when response is unchanged")
     void testInfluenceGateUncertainForSemanticIdWithoutDiff() {
-        byte[] response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n用户存在".getBytes();
+        byte[] response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n鐢ㄦ埛瀛樺湪".getBytes();
         IReplayEngine replay = new FixedReplayEngine(response);
         InfluenceValidationStep step = new InfluenceValidationStep(
                 replay,
@@ -908,7 +952,7 @@ public class Phase3VerificationTest {
     @Order(44)
     @DisplayName("Influence gate rejects low-semantic parameters with no response change")
     void testInfluenceGateRejectsLowSemanticNoDiff() {
-        byte[] response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n用户存在".getBytes();
+        byte[] response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n鐢ㄦ埛瀛樺湪".getBytes();
         IReplayEngine replay = new FixedReplayEngine(response);
         InfluenceValidationStep step = new InfluenceValidationStep(
                 replay,

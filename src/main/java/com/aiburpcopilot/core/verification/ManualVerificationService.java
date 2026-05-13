@@ -199,6 +199,7 @@ public class ManualVerificationService {
         if (stepResult != null) {
             result.setPhase(stepResult.getPhase());
             result.setStrategyType(stepResult.getStrategyType());
+            result.setStrategyName(stepResult.getStrategyName());
             result.setPayload(stepResult.getPayload());
             result.setDiffResult(stepResult.getDiffResult());
             result.setResponseLength(stepResult.getResponseLength());

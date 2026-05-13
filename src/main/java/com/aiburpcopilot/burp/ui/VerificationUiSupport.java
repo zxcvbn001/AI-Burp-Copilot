@@ -37,9 +37,9 @@ final class VerificationUiSupport {
     static String rowKey(HistoryEntry entry, VerificationResult result) {
         return nullToDash(entry.getRequestId())
                 + "|" + nullToDash(result.getPhase())
-                + "|" + nullToDash(result.getAttackType() != null ? result.getAttackType().name() : null)
+                + "|" + nullToDash(result.getAttackTypeName())
                 + "|" + nullToDash(result.getParameter())
-                + "|" + nullToDash(result.getStrategyType() != null ? result.getStrategyType().name() : null)
+                + "|" + nullToDash(result.getStrategyName())
                 + "|" + nullToDash(result.getPayload());
     }
 

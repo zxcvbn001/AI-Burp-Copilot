@@ -7,7 +7,6 @@ import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.model.CandidateParameter;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
 import com.aiburpcopilot.core.verification.model.StepResult;
-import com.aiburpcopilot.core.verification.model.StrategyType;
 import com.aiburpcopilot.core.verification.policy.IPolicyEngine;
 import com.aiburpcopilot.core.verification.probe.IProbeRuleEngine;
 import com.aiburpcopilot.core.verification.probe.OracleResult;
@@ -169,6 +168,7 @@ public class GenericProbeStep implements VerificationStep {
             result.setResponseBytes(last.getResponseBytes());
             result.setPayload(last.getValue());
             result.setResponseLength(last.getResponseBytes() != null ? last.getResponseBytes().length : 0);
+            result.setStrategyName(probe.getStrategyName());
             if (probe.getStrategy() != null) {
                 result.setStrategyType(probe.getStrategy());
             }
@@ -280,17 +280,17 @@ public class GenericProbeStep implements VerificationStep {
     }
 
     private boolean isAllowedByPolicy(ProbeDefinition probe, IPolicyEngine policy) {
-        if (probe == null || policy == null || probe.getStrategy() == null) {
+        if (probe == null || policy == null || probe.getStrategyName() == null) {
             return true;
         }
-        StrategyType strategy = probe.getStrategy();
-        if (strategy == StrategyType.TIME_BASED && !policy.isTimeBasedAllowed()) {
+        String strategy = RuleKeyUtil.normalize(probe.getStrategyName());
+        if ("TIME_BASED".equals(strategy) && !policy.isTimeBasedAllowed()) {
             return false;
         }
-        if (strategy == StrategyType.UNION_BASED && !policy.isUnionBasedAllowed()) {
+        if ("UNION_BASED".equals(strategy) && !policy.isUnionBasedAllowed()) {
             return false;
         }
-        return strategy != StrategyType.ERROR_BASED || policy.isErrorBasedAllowed();
+        return !"ERROR_BASED".equals(strategy) || policy.isErrorBasedAllowed();
     }
 
     private boolean isApplicableToParameter(ProbeDefinition probe,

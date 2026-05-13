@@ -38,6 +38,7 @@ public class StepResult {
     private String phase;
     private String payload;
     private StrategyType strategyType;
+    private String strategyName;
     private DiffResult diffResult;
     private int responseLength;
     private byte[] requestBytes;
@@ -124,7 +125,17 @@ public class StepResult {
     public void setPayload(String payload) { this.payload = payload; }
 
     public StrategyType getStrategyType() { return strategyType; }
-    public void setStrategyType(StrategyType strategyType) { this.strategyType = strategyType; }
+    public void setStrategyType(StrategyType strategyType) {
+        this.strategyType = strategyType;
+        if (strategyType != null) {
+            this.strategyName = strategyType.name();
+        }
+    }
+
+    public String getStrategyName() {
+        return strategyName != null ? strategyName : (strategyType != null ? strategyType.name() : null);
+    }
+    public void setStrategyName(String strategyName) { this.strategyName = strategyName; }
 
     public DiffResult getDiffResult() { return diffResult; }
     public void setDiffResult(DiffResult diffResult) { this.diffResult = diffResult; }

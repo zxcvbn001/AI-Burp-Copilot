@@ -4,7 +4,6 @@ import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.model.WorkflowDefinition;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
 import com.aiburpcopilot.core.verification.payload.RuleWorkflowConfig;
-import com.aiburpcopilot.core.verification.plugins.impl.PluginRegistry;
 import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 import com.aiburpcopilot.core.verification.workflow.IWorkflowRegistry;
 import com.aiburpcopilot.utils.PluginLogger;
@@ -17,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Thread-safe workflow registry. It only stores workflow definitions; built-in
- * workflows are provided by PluginRegistry, not hard-coded in the engine.
+ * workflows are generated from YAML rules, not hard-coded in the engine.
  */
 public class WorkflowRegistry implements IWorkflowRegistry {
 
@@ -54,26 +53,11 @@ public class WorkflowRegistry implements IWorkflowRegistry {
         return registry.size();
     }
 
-    public static WorkflowRegistry fromPlugins(PluginRegistry pluginRegistry) {
-        return fromPluginsAndRules(pluginRegistry, null);
-    }
-
-    public static WorkflowRegistry fromPluginsAndRules(PluginRegistry pluginRegistry,
-                                                       IPayloadRuleEngine payloadRuleEngine) {
+    public static WorkflowRegistry fromRules(IPayloadRuleEngine payloadRuleEngine) {
         WorkflowRegistry registry = new WorkflowRegistry();
         if (payloadRuleEngine != null) {
             for (String attackTypeName : payloadRuleEngine.getRuleCapabilityNames().keySet()) {
                 registry.register(createRuleWorkflow(payloadRuleEngine, attackTypeName));
-            }
-        }
-        if (pluginRegistry != null) {
-            for (WorkflowDefinition workflow : pluginRegistry.getAllWorkflows()) {
-                if (workflow != null
-                        && workflow.getAttackTypeName() != null
-                        && registry.findWorkflow(workflow.getAttackTypeName()).isPresent()) {
-                    continue;
-                }
-                registry.register(workflow);
             }
         }
         return registry;

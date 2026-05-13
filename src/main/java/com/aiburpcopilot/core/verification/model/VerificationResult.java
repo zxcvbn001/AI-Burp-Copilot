@@ -40,6 +40,7 @@ public class VerificationResult {
 
     /** 使用的策略类型 */
     private StrategyType strategyType;
+    private String strategyName;
 
     /** 关联的原始请求 ID */
     private String requestId;
@@ -137,7 +138,17 @@ public class VerificationResult {
     public void setPayload(String payload) { this.payload = payload; }
 
     public StrategyType getStrategyType() { return strategyType; }
-    public void setStrategyType(StrategyType strategyType) { this.strategyType = strategyType; }
+    public void setStrategyType(StrategyType strategyType) {
+        this.strategyType = strategyType;
+        if (strategyType != null) {
+            this.strategyName = strategyType.name();
+        }
+    }
+
+    public String getStrategyName() {
+        return strategyName != null ? strategyName : (strategyType != null ? strategyType.name() : null);
+    }
+    public void setStrategyName(String strategyName) { this.strategyName = strategyName; }
 
     public String getRequestId() { return requestId; }
     public void setRequestId(String requestId) { this.requestId = requestId; }

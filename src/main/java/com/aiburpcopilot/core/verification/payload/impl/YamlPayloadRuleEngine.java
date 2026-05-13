@@ -53,7 +53,9 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
     private static final String PAYLOADS_DIR = "rules/payloads/";
     private static final String[] PAYLOAD_FILES = {
             "sqli.yaml", "idor.yaml", "ssrf.yaml", "auth.yaml",
-            "xss.yaml", "path_traversal.yaml", "open_redirect.yaml", "ssti.yaml"
+            "xss.yaml", "path_traversal.yaml", "open_redirect.yaml", "ssti.yaml",
+            "xxe.yaml", "jwt.yaml", "graphql.yaml", "cors.yaml",
+            "file_upload.yaml", "command_injection.yaml", "ldap_injection.yaml"
     };
     private final Map<String, List<ProbeDefinition>> probeMap = new LinkedHashMap<>();
     private final Map<String, RuleWorkflowConfig> workflowConfigMap = new LinkedHashMap<>();
@@ -331,11 +333,27 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
             return normalized;
         }
         for (Map.Entry<String, Set<String>> entry : aliasMap.entrySet()) {
-            if (entry.getValue().contains(normalized)) {
-                return entry.getKey();
+            for (String alias : entry.getValue()) {
+                if (aliasMatches(normalized, alias)) {
+                    return entry.getKey();
+                }
+            }
+        }
+        for (String attackTypeName : probeMap.keySet()) {
+            if (aliasMatches(normalized, attackTypeName)) {
+                return attackTypeName;
             }
         }
         return normalized;
+    }
+
+    private boolean aliasMatches(String value, String alias) {
+        String normalizedAlias = RuleKeyUtil.normalize(alias);
+        return value != null
+                && normalizedAlias != null
+                && (value.equals(normalizedAlias)
+                || value.contains(normalizedAlias)
+                || normalizedAlias.contains(value));
     }
 
     @SuppressWarnings("unchecked")

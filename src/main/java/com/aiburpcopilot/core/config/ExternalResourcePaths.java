@@ -32,9 +32,18 @@ public final class ExternalResourcePaths {
             new ResourceCopy("rules/static-resource-rules.yaml", "rules/static-resource-rules.yaml"),
             new ResourceCopy("rules/payloads/auth.yaml", "rules/payloads/auth.yaml"),
             new ResourceCopy("rules/payloads/idor.yaml", "rules/payloads/idor.yaml"),
+            new ResourceCopy("rules/payloads/jwt.yaml", "rules/payloads/jwt.yaml"),
+            new ResourceCopy("rules/payloads/graphql.yaml", "rules/payloads/graphql.yaml"),
+            new ResourceCopy("rules/payloads/cors.yaml", "rules/payloads/cors.yaml"),
+            new ResourceCopy("rules/payloads/file_upload.yaml", "rules/payloads/file_upload.yaml"),
+            new ResourceCopy("rules/payloads/command_injection.yaml", "rules/payloads/command_injection.yaml"),
+            new ResourceCopy("rules/payloads/ldap_injection.yaml", "rules/payloads/ldap_injection.yaml"),
             new ResourceCopy("rules/payloads/path_traversal.yaml", "rules/payloads/path_traversal.yaml"),
             new ResourceCopy("rules/payloads/sqli.yaml", "rules/payloads/sqli.yaml"),
             new ResourceCopy("rules/payloads/ssrf.yaml", "rules/payloads/ssrf.yaml"),
+            new ResourceCopy("rules/payloads/ssti.yaml", "rules/payloads/ssti.yaml"),
+            new ResourceCopy("rules/payloads/open_redirect.yaml", "rules/payloads/open_redirect.yaml"),
+            new ResourceCopy("rules/payloads/xxe.yaml", "rules/payloads/xxe.yaml"),
             new ResourceCopy("rules/payloads/xss.yaml", "rules/payloads/xss.yaml")
     );
     private static volatile Path manualHomeDir;
@@ -129,6 +138,7 @@ public final class ExternalResourcePaths {
             for (ResourceCopy resource : DEFAULT_RESOURCES) {
                 Path target = home.resolve(resource.externalPath());
                 if (Files.exists(target)) {
+                    migrateLegacyPayloadRule(resource, target);
                     continue;
                 }
                 Path legacyFile = legacy.resolve(resource.externalPath());
@@ -157,6 +167,30 @@ public final class ExternalResourcePaths {
             Files.createDirectories(target.getParent());
             Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
             log.info("Copied default resource: {} -> {}", classpathPath, target);
+        }
+    }
+
+    private static void migrateLegacyPayloadRule(ResourceCopy resource, Path target) {
+        if (!resource.externalPath().startsWith("rules/payloads/")
+                || !resource.externalPath().endsWith(".yaml")) {
+            return;
+        }
+        try {
+            String content = Files.readString(target);
+            if (content.contains("\nprobes:") || content.contains("\r\nprobes:")) {
+                return;
+            }
+            if (!content.contains("\nrules:") && !content.contains("\r\nrules:")) {
+                return;
+            }
+            Path backup = target.resolveSibling(target.getFileName() + ".legacy.bak");
+            if (!Files.exists(backup)) {
+                Files.copy(target, backup, StandardCopyOption.COPY_ATTRIBUTES);
+            }
+            copyClasspathResource(resource.classpathPath(), target);
+            log.warn("Migrated legacy payload rule to probe format: {} (backup: {})", target, backup);
+        } catch (Exception e) {
+            log.warn("Unable to migrate legacy payload rule: {}", target, e);
         }
     }
 

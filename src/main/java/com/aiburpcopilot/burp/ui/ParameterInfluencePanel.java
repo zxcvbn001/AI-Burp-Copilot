@@ -127,8 +127,9 @@ public class ParameterInfluencePanel extends JPanel {
         String currentKey = influenceGroupKey(row);
         boolean sameRow = currentKey.equals(displayedKey);
         int[] positions = sameRow ? captureCaretPositions() : null;
+        List<VerificationUiSupport.ResultRow> groupRows = groupRows(row);
         summaryArea.setText("\u53c2\u6570: " + nullToDash(result.getParameter())
-                + "\n\u653b\u51fb\u7c7b\u578b: " + nullToDash(result.getAttackType())
+                + "\n\u653b\u51fb\u7c7b\u578b: " + attackTypesForGroup(groupRows)
                 + "\n\u5f53\u524d\u7ed3\u8bba: " + influenceConclusion(result)
                 + "\n\u662f\u5426\u624b\u52a8\u4fee\u6539: " + (result.isManualInfluenceOverride() ? "\u662f" : "\u5426")
                 + "\n\u7f6e\u4fe1\u5ea6: " + String.format("%.2f", result.getConfidence())
@@ -153,13 +154,17 @@ public class ParameterInfluencePanel extends JPanel {
         }
         String selectedKey = influenceGroupKey(row);
         VerificationResult result = row.result();
-        result.setManualInfluenceOverride(true);
-        result.setConfidence(influential ? 1.0 : 0.0);
-        result.setInfluenceStatus(influential
-                ? InfluenceStatus.INFLUENTIAL
-                : InfluenceStatus.NOT_INFLUENTIAL);
-        result.setReasoning((influential ? "Manual override: influential" : "Manual override: no influence")
-                + "\n" + (result.getReasoning() != null ? result.getReasoning() : ""));
+        List<VerificationUiSupport.ResultRow> groupRows = groupRows(row);
+        for (VerificationUiSupport.ResultRow groupRow : groupRows) {
+            VerificationResult groupResult = groupRow.result();
+            groupResult.setManualInfluenceOverride(true);
+            groupResult.setConfidence(influential ? 1.0 : 0.0);
+            groupResult.setInfluenceStatus(influential
+                    ? InfluenceStatus.INFLUENTIAL
+                    : InfluenceStatus.NOT_INFLUENTIAL);
+            groupResult.setReasoning((influential ? "Manual override: influential" : "Manual override: no influence")
+                    + "\n" + (groupResult.getReasoning() != null ? groupResult.getReasoning() : ""));
+        }
 
         if (!influential || manualVerificationService == null) {
             historyService.update(row.entry());
@@ -174,7 +179,11 @@ public class ParameterInfluencePanel extends JPanel {
         SwingWorker<List<VerificationResult>, Void> worker = new SwingWorker<>() {
             @Override
             protected List<VerificationResult> doInBackground() {
-                return manualVerificationService.runAfterManualInfluence(row.entry(), result);
+                List<VerificationResult> merged = new ArrayList<>();
+                for (VerificationUiSupport.ResultRow groupRow : groupRows) {
+                    merged.addAll(manualVerificationService.runAfterManualInfluence(groupRow.entry(), groupRow.result()));
+                }
+                return merged;
             }
 
             @Override
@@ -319,8 +328,42 @@ public class ParameterInfluencePanel extends JPanel {
         String url = result.getUrl() != null ? result.getUrl() : row.entry().getUrl();
         return nullToDash(row.entry().getMethod())
                 + "|" + nullToDash(url)
-                + "|" + nullToDash(result.getAttackType())
                 + "|" + nullToDash(result.getParameter());
+    }
+
+    private List<VerificationUiSupport.ResultRow> groupRows(VerificationUiSupport.ResultRow selected) {
+        if (selected == null) {
+            return List.of();
+        }
+        String key = influenceGroupKey(selected);
+        List<VerificationUiSupport.ResultRow> rows = new ArrayList<>();
+        for (VerificationUiSupport.ResultRow row : VerificationUiSupport.collectRows(historyService)) {
+            if (VerificationUiSupport.isInfluence(row.result()) && key.equals(influenceGroupKey(row))) {
+                rows.add(row);
+            }
+        }
+        return rows.isEmpty() ? List.of(selected) : rows;
+    }
+
+    private String attackTypesForGroup(List<VerificationUiSupport.ResultRow> rows) {
+        List<String> types = new ArrayList<>();
+        for (VerificationUiSupport.ResultRow row : rows) {
+            String type = attackTypeLabel(row.result());
+            if (!types.contains(type)) {
+                types.add(type);
+            }
+        }
+        return types.isEmpty() ? "-" : String.join(", ", types);
+    }
+
+    private static String attackTypeLabel(VerificationResult result) {
+        if (result == null) {
+            return "-";
+        }
+        if (result.getAttackTypeName() != null) {
+            return result.getAttackTypeName();
+        }
+        return result.getAttackType() != null ? String.valueOf(result.getAttackType()) : "-";
     }
 
     private boolean betterInfluence(VerificationResult candidate, VerificationResult previous) {
@@ -333,7 +376,7 @@ public class ParameterInfluencePanel extends JPanel {
         return candidate.getTimestamp() > previous.getTimestamp();
     }
 
-    private static class InfluenceTableModel extends AbstractTableModel {
+    private class InfluenceTableModel extends AbstractTableModel {
         private final String[] columns = {"\u65f6\u95f4", "URL", "\u53c2\u6570", "\u7c7b\u578b", "\u4e1a\u52a1\u53c2\u4e0e\u5224\u65ad", "\u7f6e\u4fe1\u5ea6", "\u624b\u52a8"};
         private List<VerificationUiSupport.ResultRow> rows = List.of();
 
@@ -357,7 +400,7 @@ public class ParameterInfluencePanel extends JPanel {
                 case 0 -> TIME_FORMAT.format(new Date(result.getTimestamp()));
                 case 1 -> result.getUrl() != null ? truncate(result.getUrl(), 90) : "-";
                 case 2 -> result.getParameter();
-                case 3 -> result.getAttackType();
+                case 3 -> attackTypesForGroup(groupRows(rows.get(row)));
                 case 4 -> influenceConclusion(result);
                 case 5 -> String.format("%.2f", result.getConfidence());
                 case 6 -> result.isManualInfluenceOverride() ? "\u662f" : "\u5426";

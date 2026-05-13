@@ -1,11 +1,11 @@
-# IDOR / 水平越权最小化验证规则。
-# IDOR 不能只看响应相似度，建议默认要求 LLM 结合差异字段和业务语义二次研判。
+# IDOR / 姘村钩瓒婃潈鏈€灏忓寲楠岃瘉瑙勫垯銆?
+# IDOR 涓嶈兘鍙湅鍝嶅簲鐩镐技搴︼紝寤鸿榛樿瑕佹眰 LLM 缁撳悎宸紓瀛楁鍜屼笟鍔¤涔変簩娆＄爺鍒ゃ€?
 attackType: IDOR
-aliases: [HORIZONTAL_AUTHORIZATION, HORIZONTAL_PRIVILEGE_ESCALATION, 越权, 水平越权, 未授权访问]
+aliases: [HORIZONTAL_AUTHORIZATION, HORIZONTAL_PRIVILEGE_ESCALATION, IDOR, UNAUTHORIZED_ACCESS, 越权, 水平越权]
 goal: CONFIRM_ATTACK_TYPE
 
 probes:
-  # 数字 ID +1。value 是增量，不是替换后的最终值。
+  # 鏁板瓧 ID +1銆倂alue 鏄閲忥紝涓嶆槸鏇挎崲鍚庣殑鏈€缁堝€笺€?
   - id: idor_numeric_neighbor_plus
     technique: NUMERIC_INCREMENT
     strategy: NUMERIC_INCREMENT
@@ -26,7 +26,7 @@ probes:
       maxSimilarityTrueFalse: 0.96
       minConfidence: 0.55
 
-  # 数字 ID -1。与 +1 分开写，方便通过 priority 控制顺序和命中即停。
+  # 鏁板瓧 ID -1銆備笌 +1 鍒嗗紑鍐欙紝鏂逛究閫氳繃 priority 鎺у埗椤哄簭鍜屽懡涓嵆鍋溿€?
   - id: idor_numeric_neighbor_minus
     technique: NUMERIC_INCREMENT
     strategy: NUMERIC_INCREMENT
@@ -47,12 +47,12 @@ probes:
       maxSimilarityTrueFalse: 0.96
       minConfidence: 0.55
 
-  # UUID 固定值替换默认关闭。
-  # 没有“另一个真实对象 ID”上下文时，这类探针通常只会产生 404 或校验错误。
+  # UUID 鍥哄畾鍊兼浛鎹㈤粯璁ゅ叧闂€?
+  # 娌℃湁鈥滃彟涓€涓湡瀹炲璞?ID鈥濅笂涓嬫枃鏃讹紝杩欑被鎺㈤拡閫氬父鍙細浜х敓 404 鎴栨牎楠岄敊璇€?
   - id: idor_uuid_known_value
     technique: UUID_SWAP
     strategy: UUID_SWAP
-    enabledByDefault: false
+    enabledByDefault: true
     priority: 50
     stopOnMatch: true
     maxRequests: 1

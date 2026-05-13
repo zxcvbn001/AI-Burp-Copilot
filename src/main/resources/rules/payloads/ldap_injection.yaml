@@ -1,0 +1,26 @@
+attackType: LDAP_INJECTION
+aliases: [LDAP, LDAP注入]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: ldap_wildcard_pair
+    technique: WILDCARD_PAIR
+    strategy: WILDCARD_PAIR
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 32
+    evidenceWeight: 0.72
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: "*"
+        falseValue: ")(invalid="
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.80
+      maxSimilarityTrueFalse: 0.85
+      minConfidence: 0.62

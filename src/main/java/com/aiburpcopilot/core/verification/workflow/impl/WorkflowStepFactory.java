@@ -13,7 +13,6 @@ import com.aiburpcopilot.core.verification.influence.impl.InfluenceLlmAnalyzer;
 import com.aiburpcopilot.core.verification.influence.impl.ParameterRoleLlmAnalyzer;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
 import com.aiburpcopilot.core.verification.policy.IPolicyEngine;
-import com.aiburpcopilot.core.verification.plugins.impl.PluginRegistry;
 import com.aiburpcopilot.core.verification.probe.IProbeRuleEngine;
 import com.aiburpcopilot.core.verification.probe.ProbeOracleEngine;
 import com.aiburpcopilot.core.verification.workflow.IWorkflowRegistry;
@@ -46,7 +45,6 @@ public class WorkflowStepFactory {
     private IStrategyApprovalEngine approvalEngine;
     private IPayloadRuleEngine payloadRuleEngine;
     private IProbeRuleEngine probeRuleEngine;
-    private PluginRegistry pluginRegistry;
     private IAIProvider aiProvider;
     private IPolicyEngine policyEngine;
     private double minInfluenceScore;
@@ -78,10 +76,6 @@ public class WorkflowStepFactory {
 
     public void setProbeRuleEngine(IProbeRuleEngine probeRuleEngine) {
         this.probeRuleEngine = probeRuleEngine;
-    }
-
-    public void setPluginRegistry(PluginRegistry pluginRegistry) {
-        this.pluginRegistry = pluginRegistry;
     }
 
     public void setAiProvider(IAIProvider aiProvider) {
@@ -234,10 +228,6 @@ public class WorkflowStepFactory {
     }
 
     public IWorkflowRegistry createRegistry() {
-        if (pluginRegistry == null) {
-            log.warn("No PluginRegistry configured; creating empty WorkflowRegistry");
-            return new WorkflowRegistry();
-        }
-        return WorkflowRegistry.fromPluginsAndRules(pluginRegistry, payloadRuleEngine);
+        return WorkflowRegistry.fromRules(payloadRuleEngine);
     }
 }

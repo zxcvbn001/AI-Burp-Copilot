@@ -1,0 +1,28 @@
+attackType: FILE_UPLOAD
+aliases: [UNRESTRICTED_FILE_UPLOAD, UPLOAD, 任意文件上传, 文件上传]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: upload_extension_marker_probe
+    technique: EXTENSION_PROBE
+    strategy: EXTENSION_PROBE
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.70
+    applicableParamTypes: [BODY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "ai-burp-copilot-upload-test.x1x2x3"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "x1x2x3"
+        - "upload"
+        - "success"
+      minConfidence: 0.58
+

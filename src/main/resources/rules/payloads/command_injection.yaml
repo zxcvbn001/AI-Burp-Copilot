@@ -1,0 +1,26 @@
+attackType: COMMAND_INJECTION
+aliases: [OS_COMMAND_INJECTION, RCE, 命令注入, 命令执行]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: command_injection_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.82
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: ";echo AI_BURP_COPILOT_CMD;"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.74
+

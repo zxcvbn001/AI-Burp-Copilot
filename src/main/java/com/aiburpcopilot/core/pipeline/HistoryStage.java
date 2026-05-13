@@ -36,7 +36,8 @@ public class HistoryStage implements IPipelineStage {
     @Override
     public void process(HTTPContext context) {
         try {
-            if (markCompleted) {
+            if (markCompleted
+                    && context.getAnalysisStatus() != com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED) {
                 context.setAnalysisStatus(com.aiburpcopilot.core.context.AnalysisStatus.COMPLETED);
             }
             boolean isNew = historyService.getById(context.getRequestId()) == null;

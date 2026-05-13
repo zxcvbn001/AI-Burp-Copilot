@@ -241,10 +241,12 @@ public class VerificationPanel extends JPanel {
             return switch (col) {
                 case 0 -> TIME_FORMAT.format(new Date(result.getTimestamp()));
                 case 1 -> result.getUrl() != null ? truncate(result.getUrl(), 80) : "-";
-                case 2 -> result.getAttackType() != null ? result.getAttackType().getDisplayName() : "N/A";
+                case 2 -> result.getAttackTypeName() != null
+                        ? result.getAttackTypeName()
+                        : (result.getAttackType() != null ? result.getAttackType().getDisplayName() : "N/A");
                 case 3 -> result.getParameter() != null ? result.getParameter() : "-";
                 case 4 -> result.getPhase() != null ? result.getPhase()
-                        : (result.getStrategyType() != null ? result.getStrategyType().getDisplayName() : "N/A");
+                        : (result.getStrategyName() != null ? result.getStrategyName() : "N/A");
                 case 5 -> result.getPayload() != null ? truncate(result.getPayload(), 30) : "-";
                 case 6 -> result.getResponseLength() > 0 ? String.valueOf(result.getResponseLength()) : "-";
                 case 7 -> result.getResponseTimeMs() > 0 ? String.valueOf(result.getResponseTimeMs()) : "-";

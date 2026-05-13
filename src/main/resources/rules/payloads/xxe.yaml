@@ -1,0 +1,26 @@
+attackType: XXE
+aliases: [XML_EXTERNAL_ENTITY, XML_ENTITY_INJECTION, XML外部实体, 外部实体注入]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: xxe_entity_keyword_probe
+    technique: ENTITY_EXPANSION
+    strategy: ENTITY_EXPANSION
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 256
+    evidenceWeight: 0.82
+    applicableParamTypes: [BODY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY abc \"AI_BURP_COPILOT_XXE\">]><x>&abc;</x>"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_XXE"
+      minConfidence: 0.72
+
