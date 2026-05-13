@@ -6,9 +6,11 @@ import com.aiburpcopilot.core.verification.influence.IInfluenceDiffEngine;
 import com.aiburpcopilot.core.verification.influence.IInfluenceLlmAnalyzer;
 import com.aiburpcopilot.core.verification.influence.IMinimalMutationEngine;
 import com.aiburpcopilot.core.verification.influence.IInfluenceScorer;
+import com.aiburpcopilot.core.verification.influence.IParameterRoleAnalyzer;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.influence.IStrategyApprovalEngine;
 import com.aiburpcopilot.core.verification.influence.impl.InfluenceLlmAnalyzer;
+import com.aiburpcopilot.core.verification.influence.impl.ParameterRoleLlmAnalyzer;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
 import com.aiburpcopilot.core.verification.policy.IPolicyEngine;
 import com.aiburpcopilot.core.verification.plugins.impl.PluginRegistry;
@@ -38,6 +40,7 @@ public class WorkflowStepFactory {
     private IInfluenceDiffEngine diffEngine;
     private IInfluenceScorer scorer;
     private IInfluenceLlmAnalyzer influenceLlmAnalyzer;
+    private IParameterRoleAnalyzer parameterRoleAnalyzer;
     private IStrategyApprovalEngine approvalEngine;
     private IPayloadRuleEngine payloadRuleEngine;
     private IProbeRuleEngine probeRuleEngine;
@@ -82,6 +85,7 @@ public class WorkflowStepFactory {
     public void setAiProvider(IAIProvider aiProvider) {
         this.aiProvider = aiProvider;
         this.influenceLlmAnalyzer = new InfluenceLlmAnalyzer(aiProvider);
+        this.parameterRoleAnalyzer = new ParameterRoleLlmAnalyzer(aiProvider);
     }
 
     public void setPolicyEngine(IPolicyEngine policyEngine) {
@@ -142,7 +146,7 @@ public class WorkflowStepFactory {
         }
         return new InfluenceValidationStep(
                 replayEngine, mutationEngine, diffEngine, scorer,
-                influenceLlmAnalyzer, approvalEngine, minInfluenceScore);
+                influenceLlmAnalyzer, parameterRoleAnalyzer, approvalEngine, minInfluenceScore);
     }
 
     public VerificationStep createSqliProbeStep() {

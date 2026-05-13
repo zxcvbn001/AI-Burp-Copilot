@@ -5,9 +5,11 @@ import com.aiburpcopilot.core.verification.influence.IInfluenceDiffEngine;
 import com.aiburpcopilot.core.verification.influence.IInfluenceLlmAnalyzer;
 import com.aiburpcopilot.core.verification.influence.IInfluenceScorer;
 import com.aiburpcopilot.core.verification.influence.IMinimalMutationEngine;
+import com.aiburpcopilot.core.verification.influence.IParameterRoleAnalyzer;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.influence.IStrategyApprovalEngine;
 import com.aiburpcopilot.core.verification.influence.InfluenceLlmDecision;
+import com.aiburpcopilot.core.verification.influence.ParameterRole;
 import com.aiburpcopilot.core.verification.model.CandidateParameter;
 import com.aiburpcopilot.core.verification.model.DiffResult;
 import com.aiburpcopilot.core.verification.model.Evidence;
@@ -30,6 +32,7 @@ public class InfluenceValidationStep implements VerificationStep {
 
     public static final String STEP_NAME = "InfluenceValidation";
     private static final int DEFAULT_MAX_INFLUENCE_MUTATIONS = 1;
+    private static final int AI_ROLE_MAX_INFLUENCE_MUTATIONS = 2;
     private static final double SEMANTIC_PRIOR_APPROVE_THRESHOLD = 0.60;
     private static final double SEMANTIC_PRIOR_UNCERTAIN_THRESHOLD = 0.45;
 
@@ -38,6 +41,7 @@ public class InfluenceValidationStep implements VerificationStep {
     private final IInfluenceDiffEngine diffEngine;
     private final IInfluenceScorer scorer;
     private final IInfluenceLlmAnalyzer llmAnalyzer;
+    private final IParameterRoleAnalyzer roleAnalyzer;
     private final IStrategyApprovalEngine approvalEngine;
     private final double minInfluenceScore;
 
@@ -46,6 +50,7 @@ public class InfluenceValidationStep implements VerificationStep {
                                    IInfluenceDiffEngine diffEngine,
                                    IInfluenceScorer scorer,
                                    IInfluenceLlmAnalyzer llmAnalyzer,
+                                   IParameterRoleAnalyzer roleAnalyzer,
                                    IStrategyApprovalEngine approvalEngine,
                                    double minInfluenceScore) {
         this.replayEngine = replayEngine;
@@ -53,6 +58,7 @@ public class InfluenceValidationStep implements VerificationStep {
         this.diffEngine = diffEngine;
         this.scorer = scorer;
         this.llmAnalyzer = llmAnalyzer;
+        this.roleAnalyzer = roleAnalyzer;
         this.approvalEngine = approvalEngine;
         this.minInfluenceScore = minInfluenceScore;
     }
@@ -64,7 +70,7 @@ public class InfluenceValidationStep implements VerificationStep {
                                    IStrategyApprovalEngine approvalEngine,
                                    double minInfluenceScore) {
         this(replayEngine, mutationEngine, diffEngine, scorer,
-                null, approvalEngine, minInfluenceScore);
+                null, null, approvalEngine, minInfluenceScore);
     }
 
     public InfluenceValidationStep(IReplayEngine replayEngine,
@@ -73,7 +79,7 @@ public class InfluenceValidationStep implements VerificationStep {
                                    IInfluenceScorer scorer,
                                    IStrategyApprovalEngine approvalEngine) {
         this(replayEngine, mutationEngine, diffEngine, scorer,
-                null, approvalEngine, 0.1);
+                null, null, approvalEngine, 0.1);
     }
 
     @Override
@@ -133,11 +139,19 @@ public class InfluenceValidationStep implements VerificationStep {
                 return stepResult;
             }
 
+            ParameterRole parameterRole = roleAnalyzer != null
+                    ? roleAnalyzer.analyze(httpContext, candidate, profile)
+                    : ParameterRole.unavailable();
+
             List<String> mutations = mutationEngine != null
                     ? mutationEngine.generateMutations(profile)
                     : List.of();
-            if (mutations != null && mutations.size() > DEFAULT_MAX_INFLUENCE_MUTATIONS) {
-                mutations = mutations.subList(0, DEFAULT_MAX_INFLUENCE_MUTATIONS);
+            mutations = prioritizeByRole(mutations, parameterRole, profile);
+            int maxMutations = parameterRole.available()
+                    ? AI_ROLE_MAX_INFLUENCE_MUTATIONS
+                    : DEFAULT_MAX_INFLUENCE_MUTATIONS;
+            if (mutations != null && mutations.size() > maxMutations) {
+                mutations = mutations.subList(0, maxMutations);
             }
             if (mutations == null) {
                 mutations = List.of();
@@ -208,7 +222,7 @@ public class InfluenceValidationStep implements VerificationStep {
 
             double avgScore = mutationCount > 0 ? totalScore / mutationCount : 0.0;
             double effectiveMinScore = getEffectiveMinScore(context);
-            double semanticPrior = semanticBusinessPrior(httpContext, candidate, profile);
+            double semanticPrior = semanticBusinessPrior(httpContext, candidate, profile, parameterRole);
 
             InfluenceResult influenceResult = new InfluenceResult();
             influenceResult.setParameterName(paramName);
@@ -220,6 +234,19 @@ public class InfluenceValidationStep implements VerificationStep {
             influenceResult.getDetails().add("Tested " + mutationCount + " mutations");
             influenceResult.getDetails().add("Average influence score: " + String.format("%.3f", avgScore));
             influenceResult.getDetails().add("Business semantic prior: " + String.format("%.3f", semanticPrior));
+            if (parameterRole.available()) {
+                influenceResult.getDetails().add("Parameter role: " + parameterRole.role()
+                        + " | businessRelevant=" + parameterRole.likelyBusinessRelevant()
+                        + " | confidence=" + String.format("%.2f", parameterRole.confidence())
+                        + " | reason=" + parameterRole.reasoning());
+                stepResult.addEvidence(Evidence.general(
+                        "AI 参数作用分析：" + parameterRole.role()
+                                + " | businessRelevant=" + parameterRole.likelyBusinessRelevant()
+                                + " | confidence=" + String.format("%.2f", parameterRole.confidence())
+                                + " | reason=" + parameterRole.reasoning(),
+                        "PARAMETER_ROLE",
+                        parameterRole.confidence()));
+            }
             if (bestLlmDecision.available()) {
                 influenceResult.getDetails().add("LLM influence: " + bestLlmDecision.influential()
                         + " | confidence=" + String.format("%.2f", bestLlmDecision.confidence())
@@ -235,7 +262,7 @@ public class InfluenceValidationStep implements VerificationStep {
                         ? "Score " + String.format("%.3f", avgScore) + " >= threshold " + effectiveMinScore
                         : "Score " + String.format("%.3f", avgScore) + " < threshold " + effectiveMinScore);
             }
-            applySemanticApproval(influenceResult, semanticPrior, avgScore, mutationCount);
+            applySemanticApproval(influenceResult, semanticPrior, avgScore, mutationCount, parameterRole);
             applyLlmApproval(influenceResult, bestLlmDecision, avgScore, effectiveMinScore);
             assignInfluenceStatus(influenceResult, avgScore, semanticPrior, effectiveMinScore);
 
@@ -316,10 +343,69 @@ public class InfluenceValidationStep implements VerificationStep {
         return Math.min(deterministicScore, Math.max(0.0, 1.0 - decision.confidence()) * 0.2);
     }
 
+    private List<String> prioritizeByRole(List<String> mutations,
+                                          ParameterRole role,
+                                          ParameterProfile profile) {
+        if (mutations == null || mutations.isEmpty() || role == null || !role.available()) {
+            return mutations != null ? mutations : List.of();
+        }
+        List<String> unique = new ArrayList<>();
+        for (String mutation : mutations) {
+            if (!unique.contains(mutation)) {
+                unique.add(mutation);
+            }
+        }
+        List<String> prioritized = new ArrayList<>();
+        for (String action : role.recommendedMutations()) {
+            addMutationForAction(prioritized, unique, action, profile);
+        }
+        for (String mutation : unique) {
+            if (!prioritized.contains(mutation)) {
+                prioritized.add(mutation);
+            }
+        }
+        return prioritized;
+    }
+
+    private void addMutationForAction(List<String> target,
+                                      List<String> available,
+                                      String action,
+                                      ParameterProfile profile) {
+        if (action == null) {
+            return;
+        }
+        String normalized = action.trim().toUpperCase();
+        switch (normalized) {
+            case "EMPTY" -> addIfAvailable(target, available, "");
+            case "NULL_LITERAL" -> addIfAvailable(target, available, "null");
+            case "INCREMENT", "DECREMENT", "FLIP_BOOLEAN", "APPEND_MARKER", "CHANGE_TEXT" ->
+                    addFirstNonOriginal(target, available,
+                            profile != null ? profile.getOriginalValue() : null);
+            default -> {
+            }
+        }
+    }
+
+    private void addIfAvailable(List<String> target, List<String> available, String value) {
+        if (available.contains(value) && !target.contains(value)) {
+            target.add(value);
+        }
+    }
+
+    private void addFirstNonOriginal(List<String> target, List<String> available, String originalValue) {
+        for (String value : available) {
+            if ((originalValue == null || !originalValue.equals(value)) && !target.contains(value)) {
+                target.add(value);
+                return;
+            }
+        }
+    }
+
     private void applySemanticApproval(InfluenceResult influenceResult,
                                        double semanticPrior,
                                        double avgScore,
-                                       int mutationCount) {
+                                       int mutationCount,
+                                       ParameterRole parameterRole) {
         if (influenceResult == null || influenceResult.isApproved()) {
             return;
         }
@@ -335,7 +421,10 @@ public class InfluenceValidationStep implements VerificationStep {
             influenceResult.setApprovalReason("参数具备强业务语义先验，diff 不明显时不提前剪枝："
                     + "semanticPrior=" + String.format("%.2f", semanticPrior)
                     + ", score=" + String.format("%.3f", avgScore)
-                    + ", mutations=" + mutationCount);
+                    + ", mutations=" + mutationCount
+                    + (parameterRole != null && parameterRole.available()
+                    ? ", role=" + parameterRole.role() + ", reason=" + parameterRole.reasoning()
+                    : ""));
         }
     }
 
@@ -396,8 +485,12 @@ public class InfluenceValidationStep implements VerificationStep {
 
     private double semanticBusinessPrior(HTTPContext httpContext,
                                          CandidateParameter candidate,
-                                         ParameterProfile profile) {
+                                         ParameterProfile profile,
+                                         ParameterRole parameterRole) {
         double score = 0.0;
+        if (parameterRole != null && parameterRole.strongBusinessSignal()) {
+            score = Math.max(score, Math.min(0.85, 0.45 + parameterRole.confidence() * 0.35));
+        }
         String name = candidate != null && candidate.getParameterName() != null
                 ? candidate.getParameterName().toLowerCase()
                 : "";
@@ -481,4 +574,5 @@ public class InfluenceValidationStep implements VerificationStep {
                 || path.contains("job")
                 || path.contains("file");
     }
+
 }

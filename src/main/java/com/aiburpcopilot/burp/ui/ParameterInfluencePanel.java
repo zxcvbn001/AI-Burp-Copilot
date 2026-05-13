@@ -270,16 +270,33 @@ public class ParameterInfluencePanel extends JPanel {
         if (result == null) {
             return "-";
         }
-        if (result.getInfluenceStatus() == InfluenceStatus.INFLUENTIAL) {
-            return "\u6709\u5f71\u54cd";
+        InfluenceStatus inferredStatus = result.getInfluenceStatus() != null
+                ? result.getInfluenceStatus()
+                : inferInfluenceStatus(result.getReasoning());
+        if (inferredStatus == InfluenceStatus.INFLUENTIAL) {
+            return "\u786e\u8ba4\u53c2\u4e0e\u4e1a\u52a1";
         }
-        if (result.getInfluenceStatus() == InfluenceStatus.UNCERTAIN) {
-            return "\u4e0d\u786e\u5b9a\uff08\u5df2\u7ee7\u7eed\u9a8c\u8bc1\uff09";
+        if (inferredStatus == InfluenceStatus.UNCERTAIN) {
+            return "\u4e0d\u786e\u5b9a\uff08\u4e0d\u526a\u679d\uff0c\u7ee7\u7eed\u9a8c\u8bc1\uff09";
         }
-        if (result.getInfluenceStatus() == InfluenceStatus.NOT_INFLUENTIAL) {
-            return "\u65e0\u5f71\u54cd";
+        if (inferredStatus == InfluenceStatus.NOT_INFLUENTIAL) {
+            return "\u672a\u89c2\u5bdf\u5230\u4e1a\u52a1\u5f71\u54cd";
         }
-        return result.getConfidence() >= 0.1 ? "\u6709\u5f71\u54cd" : "\u65e0\u5f71\u54cd";
+        return result.getConfidence() >= 0.1
+                ? "\u786e\u8ba4\u53c2\u4e0e\u4e1a\u52a1"
+                : "\u672a\u89c2\u5bdf\u5230\u4e1a\u52a1\u5f71\u54cd";
+    }
+
+    private static InfluenceStatus inferInfluenceStatus(String reasoning) {
+        if (reasoning == null || reasoning.isBlank()) {
+            return null;
+        }
+        for (InfluenceStatus status : InfluenceStatus.values()) {
+            if (reasoning.contains("Influence status=" + status.name())) {
+                return status;
+            }
+        }
+        return null;
     }
 
     private List<VerificationUiSupport.ResultRow> collectInfluenceRows() {
@@ -317,7 +334,7 @@ public class ParameterInfluencePanel extends JPanel {
     }
 
     private static class InfluenceTableModel extends AbstractTableModel {
-        private final String[] columns = {"\u65f6\u95f4", "URL", "\u53c2\u6570", "\u7c7b\u578b", "\u7ed3\u8bba", "\u7f6e\u4fe1\u5ea6", "\u624b\u52a8"};
+        private final String[] columns = {"\u65f6\u95f4", "URL", "\u53c2\u6570", "\u7c7b\u578b", "\u4e1a\u52a1\u53c2\u4e0e\u5224\u65ad", "\u7f6e\u4fe1\u5ea6", "\u624b\u52a8"};
         private List<VerificationUiSupport.ResultRow> rows = List.of();
 
         void setRows(List<VerificationUiSupport.ResultRow> rows) {
