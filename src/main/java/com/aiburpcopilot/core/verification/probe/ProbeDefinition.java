@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.verification.probe;
 
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.model.StrategyType;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,9 +10,11 @@ import java.util.List;
 public class ProbeDefinition {
 
     private AttackType attackType;
+    private String attackTypeName;
     private String id;
     private String technique;
     private StrategyType strategy;
+    private String strategyName;
     private boolean enabledByDefault = true;
     private int priority = 100;
     private boolean stopOnMatch = true;
@@ -31,6 +34,18 @@ public class ProbeDefinition {
 
     public void setAttackType(AttackType attackType) {
         this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
     }
 
     public String getId() {
@@ -55,6 +70,18 @@ public class ProbeDefinition {
 
     public void setStrategy(StrategyType strategy) {
         this.strategy = strategy;
+        if (strategy != null) {
+            this.strategyName = strategy.name();
+        }
+    }
+
+    public String getStrategyName() {
+        return strategyName != null ? strategyName : (strategy != null ? strategy.name() : null);
+    }
+
+    public void setStrategyName(String strategyName) {
+        this.strategyName = RuleKeyUtil.normalize(strategyName);
+        this.strategy = StrategyType.fromString(this.strategyName);
     }
 
     public boolean isEnabledByDefault() {

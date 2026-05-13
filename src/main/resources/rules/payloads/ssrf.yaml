@@ -1,6 +1,7 @@
 # SSRF 最小化验证规则。
 # 默认只使用 loopback URL 做低风险候选验证；强烈建议后续接入带外回连证据。
 attackType: SSRF
+aliases: [SERVER_SIDE_REQUEST_FORGERY, 服务端请求伪造]
 goal: CONFIRM_ATTACK_TYPE
 
 probes:

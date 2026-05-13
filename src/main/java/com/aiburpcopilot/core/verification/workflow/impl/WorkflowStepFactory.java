@@ -23,7 +23,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Assembles deterministic workflow steps.
@@ -124,12 +126,12 @@ public class WorkflowStepFactory {
             steps.add(influenceStep);
         }
 
-        addProbeStep(steps, GenericProbeStep.SQLI_STEP, AttackType.SQLI);
-        addProbeStep(steps, GenericProbeStep.XSS_STEP, AttackType.XSS);
-        addProbeStep(steps, GenericProbeStep.IDOR_STEP, AttackType.IDOR);
-        addProbeStep(steps, GenericProbeStep.AUTH_STEP, AttackType.AUTH);
-        addProbeStep(steps, GenericProbeStep.SSRF_STEP, AttackType.SSRF);
-        addProbeStep(steps, GenericProbeStep.PATH_TRAVERSAL_STEP, AttackType.PATH_TRAVERSAL);
+        Set<String> addedSteps = new HashSet<>();
+        if (probeRuleEngine != null) {
+            for (String attackTypeName : probeRuleEngine.getAttackTypeNames()) {
+                addProbeStep(steps, addedSteps, probeStepName(attackTypeName), attackTypeName);
+            }
+        }
 
         PluginLogger.getInstance().info("WorkflowStepFactory",
                 "Created " + steps.size() + " VerificationStep instances");
@@ -162,13 +164,60 @@ public class WorkflowStepFactory {
     }
 
     private void addProbeStep(List<VerificationStep> steps, String stepName, AttackType attackType) {
-        VerificationStep step = createProbeStep(stepName, attackType);
+        addProbeStep(steps, new HashSet<>(), stepName, attackType != null ? attackType.name() : null);
+    }
+
+    private void addProbeStep(List<VerificationStep> steps,
+                              Set<String> addedSteps,
+                              String stepName,
+                              String attackTypeName) {
+        if (stepName == null || !addedSteps.add(stepName)) {
+            return;
+        }
+        VerificationStep step = createProbeStep(stepName, attackTypeName);
         if (step != null) {
             steps.add(step);
         }
     }
 
+    public static String probeStepName(AttackType attackType) {
+        if (attackType == null) {
+            return null;
+        }
+        return switch (attackType) {
+            case SQLI -> GenericProbeStep.SQLI_STEP;
+            case XSS -> GenericProbeStep.XSS_STEP;
+            case IDOR -> GenericProbeStep.IDOR_STEP;
+            case AUTH -> GenericProbeStep.AUTH_STEP;
+            case SSRF -> GenericProbeStep.SSRF_STEP;
+            case PATH_TRAVERSAL -> GenericProbeStep.PATH_TRAVERSAL_STEP;
+            case OPEN_REDIRECT -> GenericProbeStep.OPEN_REDIRECT_STEP;
+            case SSTI -> GenericProbeStep.SSTI_STEP;
+        };
+    }
+
+    public static String probeStepName(String attackTypeName) {
+        if (attackTypeName == null || attackTypeName.isBlank()) {
+            return null;
+        }
+        return switch (attackTypeName.trim().toUpperCase()) {
+            case "SQLI" -> GenericProbeStep.SQLI_STEP;
+            case "XSS" -> GenericProbeStep.XSS_STEP;
+            case "IDOR" -> GenericProbeStep.IDOR_STEP;
+            case "AUTH" -> GenericProbeStep.AUTH_STEP;
+            case "SSRF" -> GenericProbeStep.SSRF_STEP;
+            case "PATH_TRAVERSAL" -> GenericProbeStep.PATH_TRAVERSAL_STEP;
+            case "OPEN_REDIRECT" -> GenericProbeStep.OPEN_REDIRECT_STEP;
+            case "SSTI" -> GenericProbeStep.SSTI_STEP;
+            default -> attackTypeName.trim().toUpperCase().replaceAll("[^A-Z0-9_]", "_") + "Probes";
+        };
+    }
+
     private VerificationStep createProbeStep(String stepName, AttackType attackType) {
+        return createProbeStep(stepName, attackType != null ? attackType.name() : null);
+    }
+
+    private VerificationStep createProbeStep(String stepName, String attackTypeName) {
         if (replayEngine == null || probeRuleEngine == null) {
             log.warn("Skipping {} - replay={}, probe={}", stepName,
                     replayEngine != null, probeRuleEngine != null);
@@ -176,7 +225,7 @@ public class WorkflowStepFactory {
         }
         return new GenericProbeStep(
                 stepName,
-                attackType,
+                attackTypeName,
                 replayEngine,
                 probeRuleEngine,
                 new ProbeOracleEngine(diffEngine, aiProvider),
@@ -189,6 +238,6 @@ public class WorkflowStepFactory {
             log.warn("No PluginRegistry configured; creating empty WorkflowRegistry");
             return new WorkflowRegistry();
         }
-        return WorkflowRegistry.fromPlugins(pluginRegistry);
+        return WorkflowRegistry.fromPluginsAndRules(pluginRegistry, payloadRuleEngine);
     }
 }

@@ -64,6 +64,7 @@ public class ManualVerificationService {
         CandidateParameter candidate = new CandidateParameter();
         candidate.setParameterName(influenceResult.getParameter());
         candidate.setAttackType(influenceResult.getAttackType());
+        candidate.setAttackTypeName(influenceResult.getAttackTypeName());
         candidate.setConfidence(Math.max(0.7, influenceResult.getConfidence()));
         candidate.setSource("MANUAL_INFLUENCE_OVERRIDE");
 
@@ -162,6 +163,7 @@ public class ManualVerificationService {
     private VerificationResult toFindingResult(VulnerabilityFinding finding) {
         VerificationResult result = new VerificationResult();
         result.setAttackType(finding.getAttackType());
+        result.setAttackTypeName(finding.getAttackTypeName());
         result.setParameter(finding.getParameter());
         result.setRequestId(finding.getRequestId());
         result.setUrl(finding.getUrl());
@@ -186,6 +188,7 @@ public class ManualVerificationService {
                                                     StepResult stepResult) {
         VerificationResult result = new VerificationResult();
         result.setAttackType(workflowResult.getAttackType());
+        result.setAttackTypeName(workflowResult.getAttackTypeName());
         result.setParameter(workflowResult.getParameterName());
         result.setRequestId(context.getRequestId());
         result.setUrl(context.getUrl());

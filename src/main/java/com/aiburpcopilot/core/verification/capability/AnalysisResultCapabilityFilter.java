@@ -1,10 +1,10 @@
 package com.aiburpcopilot.core.verification.capability;
 
 import com.aiburpcopilot.core.context.AnalysisResult;
-import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterContext;
 import com.aiburpcopilot.core.verification.technique.TechniqueRecommendation;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 import com.aiburpcopilot.utils.PluginLogger;
 
 import java.util.ArrayList;
@@ -12,9 +12,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Deterministically removes AI output outside locally registered rules.
- */
 public class AnalysisResultCapabilityFilter {
 
     private final RuleCapabilityCatalog catalog;
@@ -46,13 +43,13 @@ public class AnalysisResultCapabilityFilter {
         List<AnalysisResult.HighValueParam> filtered = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (AnalysisResult.HighValueParam highValueParam : highValueParams) {
-            if (highValueParam == null) {
-                continue;
-            }
-            String resolved = resolveParamName(context, highValueParam.getParamName());
+            String resolved = highValueParam != null
+                    ? resolveParamName(context, highValueParam.getParamName())
+                    : null;
             if (resolved == null) {
                 PluginLogger.getInstance().warn("AI",
-                        "Dropped high value param not present in request: " + highValueParam.getParamName());
+                        "Dropped high value param not present in request: "
+                                + (highValueParam != null ? highValueParam.getParamName() : null));
                 continue;
             }
             if (seen.add(resolved)) {
@@ -69,8 +66,8 @@ public class AnalysisResultCapabilityFilter {
         }
         Set<String> filtered = new LinkedHashSet<>();
         for (String vulnerability : vulnerabilities) {
-            AttackType attackType = parseAttackType(vulnerability);
-            if (attackType == null || !catalog.supportsAttackType(attackType)) {
+            String attackTypeName = parseAttackTypeName(vulnerability);
+            if (attackTypeName == null || !catalog.supportsAttackType(attackTypeName)) {
                 PluginLogger.getInstance().warn("AI",
                         "Dropped unsupported vulnerability from AI output: " + vulnerability);
                 continue;
@@ -82,7 +79,7 @@ public class AnalysisResultCapabilityFilter {
                         "Dropped vulnerability with non-request parameter: " + vulnerability);
                 continue;
             }
-            filtered.add(toBroadVulnerability(attackType, resolved));
+            filtered.add(resolved == null ? attackTypeName : attackTypeName + " -> " + resolved);
         }
         return new ArrayList<>(filtered);
     }
@@ -98,11 +95,16 @@ public class AnalysisResultCapabilityFilter {
             String resolved = recommendation != null
                     ? resolveParamName(context, recommendation.getParameterName())
                     : null;
+            String attackTypeName = recommendation != null
+                    ? catalog.resolveAttackTypeName(recommendation.getAttackTypeName())
+                    : null;
+            String techniqueName = recommendation != null ? recommendation.getTechniqueName() : null;
             if (recommendation != null
                     && resolved != null
-                    && catalog.supportsTechnique(
-                    recommendation.getAttackType(), recommendation.getTechnique())) {
+                    && attackTypeName != null
+                    && catalog.supportsTechnique(attackTypeName, techniqueName)) {
                 recommendation.setParameterName(resolved);
+                recommendation.setAttackTypeName(attackTypeName);
                 filtered.add(recommendation);
             } else {
                 PluginLogger.getInstance().warn("AI",
@@ -112,30 +114,24 @@ public class AnalysisResultCapabilityFilter {
         return filtered;
     }
 
-    private AttackType parseAttackType(String text) {
+    public String parseAttackTypeName(String text) {
         if (text == null || text.isBlank()) {
             return null;
         }
-        String upper = text.toUpperCase().replace("-", "_").replace(" ", "_");
-        for (AttackType attackType : AttackType.values()) {
-            if (upper.contains(attackType.name())) {
-                return attackType;
+        String direct = catalog.resolveAttackTypeName(text);
+        if (direct != null) {
+            return direct;
+        }
+        String normalized = RuleKeyUtil.normalize(text);
+        if (normalized == null) {
+            return null;
+        }
+        for (String attackTypeName : catalog.getSupportedAttackTypeNames()) {
+            if (normalized.contains(attackTypeName)) {
+                return attackTypeName;
             }
         }
-        if (upper.contains("SQL")) return AttackType.SQLI;
-        if (upper.contains("注入")) return AttackType.SQLI;
-        if (upper.contains("IDOR")) return AttackType.IDOR;
-        if (upper.contains("SSRF")) return AttackType.SSRF;
-        if (upper.contains("AUTH") || upper.contains("认证") || upper.contains("鉴权") || upper.contains("授权")) return AttackType.AUTH;
-        if (upper.contains("XSS") || upper.contains("跨站")) return AttackType.XSS;
-        if (upper.contains("TRAVERSAL") || upper.contains("PATH") || upper.contains("路径遍历")) return AttackType.PATH_TRAVERSAL;
         return null;
-    }
-
-    private String toBroadVulnerability(AttackType attackType, String parameter) {
-        return parameter == null || parameter.isBlank()
-                ? attackType.name()
-                : attackType.name() + " -> " + parameter;
     }
 
     private String resolveParamName(HTTPContext context, String aiName) {
@@ -196,7 +192,7 @@ public class AnalysisResultCapabilityFilter {
         if (value == null) {
             return null;
         }
-        String cleaned = value.replaceAll("[`'\"，。；;：:()（）\\[\\]{}]", " ").trim();
+        String cleaned = value.replaceAll("[`'\"，。；;:()（）\\[\\]{}]", " ").trim();
         if (cleaned.isBlank()) {
             return null;
         }

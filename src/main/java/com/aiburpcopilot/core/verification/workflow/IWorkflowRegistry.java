@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.verification.workflow;
 
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.model.WorkflowDefinition;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.Optional;
 
@@ -20,7 +21,11 @@ public interface IWorkflowRegistry {
     /**
      * 根据攻击类型查找对应的 Workflow。
      */
-    Optional<WorkflowDefinition> findWorkflow(AttackType attackType);
+    default Optional<WorkflowDefinition> findWorkflow(AttackType attackType) {
+        return findWorkflow(RuleKeyUtil.attackTypeName(attackType));
+    }
+
+    Optional<WorkflowDefinition> findWorkflow(String attackTypeName);
 
     /**
      * 获取已注册的 Workflow 数量。

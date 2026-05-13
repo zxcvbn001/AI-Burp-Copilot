@@ -45,6 +45,50 @@ ai-burp-copilot/rules/payloads/*.yaml
 
 ## 3. 顶层结构
 
+## 2.1 动态能力加载
+
+AI Endpoint 分析不会再使用写死的漏洞类型列表。启动或重新加载规则后，系统会读取当前已启用的 YAML probe，并生成“本地规则能力边界”追加到 prompt 中。
+
+这意味着：
+
+- `enabledByDefault: true` 且成功加载的 probe 会进入能力边界。
+- 如果某个漏洞类型的所有 probe 都关闭，它不会出现在 prompt 能力列表中。
+- AI 只能从能力边界中选择 attackType 和 technique。
+- Workflow 和 GenericProbeStep 会基于已加载规则自动注册，不需要每个漏洞类型都写一个独立 Java Step。
+
+当前仍保留一个兼容限制：`attackType`、`strategy`、`technique` 需要能映射到 Java 中已有枚举。也就是说，新增同类 HTTP 验证规则通常只改 YAML；但新增完全新的漏洞大类或全新的执行策略，仍需要补充一次枚举或通用 oracle。
+
+推荐扩展路径：
+
+1. 优先复用已有 `attackType`、`strategy`、`oracle` 写新 probe。
+2. 如果只是新增 payload、优先级、适用参数类型，不改 Java。
+3. 如果需要新判断方式，优先新增通用 oracle，例如 `REDIRECT_LOCATION`，不要写 `XxxDiff`。
+4. 只有当需要新的 HTTP 行为时，才新增 Java 执行能力。
+
+## 2.2 规则驱动 Workflow
+
+规则文件不仅描述 payload，也可以描述该漏洞类型如何进入验证流程。
+
+```yaml
+workflow:
+  name: AUTH Verification
+  description: Header/Cookie authorization checks can run without parameter influence gate.
+  includeInfluenceStep: false
+  requiresInfluenceApproval: false
+```
+
+字段含义：
+
+- `includeInfluenceStep`：是否执行参数影响性分析步骤。参数型漏洞通常为 `true`；Header、Cookie、端点级规则可设为 `false`。
+- `requiresInfluenceApproval`：是否要求影响性结论通过后才继续验证。跳过 Influence Step 的规则通常也设为 `false`。
+- `name` / `description`：进入 workflow、日志和 AI 能力边界的说明。
+
+推荐原则：
+
+- 参数型规则：默认走 `InfluenceValidation -> GenericProbeStep`。
+- 非参数型规则：由规则显式跳过 Influence Gate。
+- 是否跳过 Gate 应该由规则声明，不应在 Java 中针对某个漏洞硬编码。
+
 最小规则文件：
 
 ```yaml
@@ -80,6 +124,8 @@ probes:
 - `SSRF`
 - `AUTH`
 - `PATH_TRAVERSAL`
+- `OPEN_REDIRECT`
+- `SSTI`
 
 注意：这里写大类，不写“布尔盲注”“反射型 XSS”这类子类型。
 
@@ -147,6 +193,8 @@ technique: NUMERIC_INCREMENT
 - `ROLE_SWITCH`
 - `LOCALHOST_PROBE`
 - `PATH_TRAVERSAL_PROBE`
+- `OPEN_REDIRECT_PROBE`
+- `TEMPLATE_EXPRESSION`
 
 策略会受到验证策略控制。例如 `TIME_BASED`、`UNION_BASED`、`ERROR_BASED` 可以被 policy 禁用。
 
@@ -495,6 +543,40 @@ oracle:
 
 适合路径遍历、文件读取这类明确标记。
 
+### `REDIRECT_LOCATION`
+
+只根据 HTTP 状态码和 `Location` 响应头判断可控跳转，不依赖响应正文相似度。
+
+```yaml
+oracle:
+  type: REDIRECT_LOCATION
+  requireMarkers:
+    - "example.com"
+    - "ai-burp-copilot-open-redirect"
+  minConfidence: 0.82
+```
+
+适合 Open Redirect。要求响应状态码为 `3xx`，且 `Location` 中包含规则指定的 marker。
+
+### `EXPRESSION_EVALUATION`
+
+判断模板表达式是否被服务端求值。它要求结果 marker 出现在响应中，同时原始表达式不能只是被原样反射。
+
+```yaml
+payloads:
+  - value: "{{7*7}}"
+    role: TRIGGER
+    mutation: APPEND
+    markers:
+      - "49"
+oracle:
+  type: EXPRESSION_EVALUATION
+  requireMarkers:
+    - "49"
+  minConfidence: 0.78
+```
+
+适合 SSTI 的低风险算术表达式验证。不要默认使用文件读取、命令执行或高副作用表达式。
 ### `BASELINE_DIFF`
 
 判断变异响应与 baseline 是否存在显著差异。

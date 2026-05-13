@@ -5,12 +5,14 @@ import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.verification.model.StrategyType;
 import com.aiburpcopilot.core.verification.model.TestStrategy;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
+import com.aiburpcopilot.core.verification.payload.RuleWorkflowConfig;
 import com.aiburpcopilot.core.verification.probe.IProbeRuleEngine;
 import com.aiburpcopilot.core.verification.probe.OracleDefinition;
 import com.aiburpcopilot.core.verification.probe.ProbeDefinition;
 import com.aiburpcopilot.core.verification.probe.ProbePayload;
 import com.aiburpcopilot.core.verification.probe.ProbePayloadPair;
 import com.aiburpcopilot.core.verification.probe.ProbeRole;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.slf4j.Logger;
@@ -21,7 +23,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -52,9 +53,11 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
     private static final String PAYLOADS_DIR = "rules/payloads/";
     private static final String[] PAYLOAD_FILES = {
             "sqli.yaml", "idor.yaml", "ssrf.yaml", "auth.yaml",
-            "xss.yaml", "path_traversal.yaml"
+            "xss.yaml", "path_traversal.yaml", "open_redirect.yaml", "ssti.yaml"
     };
-    private final Map<AttackType, List<ProbeDefinition>> probeMap = new EnumMap<>(AttackType.class);
+    private final Map<String, List<ProbeDefinition>> probeMap = new LinkedHashMap<>();
+    private final Map<String, RuleWorkflowConfig> workflowConfigMap = new LinkedHashMap<>();
+    private final Map<String, Set<String>> aliasMap = new LinkedHashMap<>();
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
 
     public YamlPayloadRuleEngine() {
@@ -101,10 +104,50 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
 
     @Override
     public List<ProbeDefinition> getProbes(AttackType attackType) {
-        if (attackType == null) {
-            return List.of();
+        return getProbes(RuleKeyUtil.attackTypeName(attackType));
+    }
+
+    @Override
+    public List<ProbeDefinition> getProbes(String attackTypeName) {
+        String key = resolveAttackTypeName(attackTypeName);
+        return key != null ? new ArrayList<>(probeMap.getOrDefault(key, List.of())) : List.of();
+    }
+
+    @Override
+    public Set<AttackType> getAttackTypes() {
+        Set<AttackType> result = new LinkedHashSet<>();
+        for (String attackTypeName : probeMap.keySet()) {
+            RuleKeyUtil.toAttackType(attackTypeName).ifPresent(result::add);
         }
-        return new ArrayList<>(probeMap.getOrDefault(attackType, List.of()));
+        return Collections.unmodifiableSet(result);
+    }
+
+    @Override
+    public Set<String> getAttackTypeNames() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(probeMap.keySet()));
+    }
+
+    @Override
+    public List<ProbeDefinition> getEnabledProbes(AttackType attackType) {
+        return getEnabledProbes(RuleKeyUtil.attackTypeName(attackType));
+    }
+
+    @Override
+    public List<ProbeDefinition> getEnabledProbes(String attackTypeName) {
+        return getProbes(attackTypeName).stream()
+                .filter(ProbeDefinition::isEnabledByDefault)
+                .toList();
+    }
+
+    @Override
+    public RuleWorkflowConfig getWorkflowConfig(AttackType attackType) {
+        return getWorkflowConfig(RuleKeyUtil.attackTypeName(attackType));
+    }
+
+    @Override
+    public RuleWorkflowConfig getWorkflowConfig(String attackTypeName) {
+        String key = resolveAttackTypeName(attackTypeName);
+        return key != null ? workflowConfigMap.getOrDefault(key, new RuleWorkflowConfig()) : new RuleWorkflowConfig();
     }
 
     @Override
@@ -124,18 +167,53 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
     @Override
     public Map<AttackType, Set<StrategyType>> getRuleCapabilities() {
         Map<AttackType, Set<StrategyType>> capabilities = new LinkedHashMap<>();
-        for (AttackType attackType : AttackType.values()) {
+        for (String attackTypeName : probeMap.keySet()) {
+            AttackType attackType = RuleKeyUtil.toAttackType(attackTypeName).orElse(null);
+            if (attackType == null) {
+                continue;
+            }
             Set<StrategyType> strategies = getSupportedStrategyTypes(attackType);
+            if (!strategies.isEmpty()) capabilities.put(attackType, strategies);
+        }
+        return Collections.unmodifiableMap(capabilities);
+    }
+
+    @Override
+    public Map<String, Set<String>> getRuleCapabilityNames() {
+        Map<String, Set<String>> capabilities = new LinkedHashMap<>();
+        for (String attackTypeName : probeMap.keySet()) {
+            Set<String> strategies = getSupportedStrategyNames(attackTypeName);
             if (!strategies.isEmpty()) {
-                capabilities.put(attackType, strategies);
+                capabilities.put(attackTypeName, strategies);
             }
         }
         return Collections.unmodifiableMap(capabilities);
     }
 
     @Override
+    public Map<String, Set<String>> getAttackTypeAliases() {
+        Map<String, Set<String>> copy = new LinkedHashMap<>();
+        aliasMap.forEach((key, value) -> copy.put(key, Collections.unmodifiableSet(new LinkedHashSet<>(value))));
+        return Collections.unmodifiableMap(copy);
+    }
+
+    @Override
+    public Set<String> getSupportedStrategyNames(String attackTypeName) {
+        Set<String> strategies = new LinkedHashSet<>();
+        for (ProbeDefinition probe : getProbes(attackTypeName)) {
+            String strategyName = probe.getStrategyName();
+            if (strategyName != null && probe.isEnabledByDefault()) {
+                strategies.add(strategyName);
+            }
+        }
+        return Collections.unmodifiableSet(strategies);
+    }
+
+    @Override
     public void reload() {
         probeMap.clear();
+        workflowConfigMap.clear();
+        aliasMap.clear();
         scanExternalPayloads();
         if (probeMap.isEmpty()) {
             for (String fileName : PAYLOAD_FILES) {
@@ -188,41 +266,84 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
     }
 
     private void loadRoot(String sourceName, Map<String, Object> root, boolean externalOverride) {
-        String attackTypeName = stringValue(root.get("attackType"), null);
+        String attackTypeName = RuleKeyUtil.normalize(stringValue(root.get("attackType"), null));
         if (attackTypeName == null) {
             log.warn("Missing attackType in probe file: {}", sourceName);
             return;
         }
 
-        AttackType attackType;
-        try {
-            attackType = AttackType.valueOf(attackTypeName.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            log.warn("Unknown attackType '{}' in probe file: {}", attackTypeName, sourceName);
-            return;
-        }
-
-        List<ProbeDefinition> probes = loadProbeRules(attackType, root);
+        List<ProbeDefinition> probes = loadProbeRules(attackTypeName, root);
         if (probes.isEmpty()) {
             log.warn("No probes found in probe file: {}", sourceName);
             return;
         }
 
         if (externalOverride) {
-            probeMap.put(attackType, probes);
+            probeMap.put(attackTypeName, probes);
+            workflowConfigMap.put(attackTypeName, parseWorkflowConfig(root));
         } else {
-            probeMap.computeIfAbsent(attackType, ignored -> new ArrayList<>()).addAll(probes);
+            probeMap.computeIfAbsent(attackTypeName, ignored -> new ArrayList<>()).addAll(probes);
+            workflowConfigMap.putIfAbsent(attackTypeName, parseWorkflowConfig(root));
         }
+        registerAliases(attackTypeName, root);
         log.debug("Loaded probe file: {} attackType={} probes={}",
-                sourceName, attackType, probes.size());
+                sourceName, attackTypeName, probes.size());
     }
 
     @SuppressWarnings("unchecked")
-    private List<ProbeDefinition> loadProbeRules(AttackType attackType, Map<String, Object> root) {
+    private RuleWorkflowConfig parseWorkflowConfig(Map<String, Object> root) {
+        RuleWorkflowConfig config = new RuleWorkflowConfig();
+        Object rawWorkflow = root.get("workflow");
+        if (rawWorkflow instanceof Map<?, ?> workflowMap) {
+            Map<String, Object> map = (Map<String, Object>) workflowMap;
+            config.setName(stringValue(map.get("name"), null));
+            config.setDescription(stringValue(map.get("description"), null));
+            config.setIncludeInfluenceStep(booleanValue(map.get("includeInfluenceStep"), true));
+            config.setRequiresInfluenceApproval(booleanValue(map.get("requiresInfluenceApproval"), true));
+        }
+        return config;
+    }
+
+    private void registerAliases(String attackTypeName, Map<String, Object> root) {
+        Set<String> aliases = aliasMap.computeIfAbsent(attackTypeName, ignored -> new LinkedHashSet<>());
+        aliases.add(attackTypeName);
+        addAlias(aliases, stringValue(root.get("displayName"), null));
+        addAlias(aliases, stringValue(root.get("name"), null));
+        addAlias(aliases, stringValue(root.get("description"), null));
+        for (String alias : stringList(root.get("aliases"))) {
+            addAlias(aliases, alias);
+        }
+    }
+
+    private void addAlias(Set<String> aliases, String value) {
+        String normalized = RuleKeyUtil.normalize(value);
+        if (normalized != null) {
+            aliases.add(normalized);
+        }
+    }
+
+    private String resolveAttackTypeName(String value) {
+        String normalized = RuleKeyUtil.normalize(value);
+        if (normalized == null) {
+            return null;
+        }
+        if (probeMap.containsKey(normalized)) {
+            return normalized;
+        }
+        for (Map.Entry<String, Set<String>> entry : aliasMap.entrySet()) {
+            if (entry.getValue().contains(normalized)) {
+                return entry.getKey();
+            }
+        }
+        return normalized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ProbeDefinition> loadProbeRules(String attackTypeName, Map<String, Object> root) {
         Object rawProbes = root.get("probes");
         if (!(rawProbes instanceof List<?> probeList)) {
             if (root.containsKey("rules")) {
-                log.warn("Ignoring legacy payload rules for {}. Convert them to probes.", attackType);
+                log.warn("Ignoring legacy payload rules for {}. Convert them to probes.", attackTypeName);
             }
             return List.of();
         }
@@ -230,7 +351,7 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
         List<ProbeDefinition> probes = new ArrayList<>();
         for (Object rawProbe : probeList) {
             if (rawProbe instanceof Map<?, ?> probeMap) {
-                ProbeDefinition probe = parseProbe(attackType, (Map<String, Object>) probeMap);
+                ProbeDefinition probe = parseProbe(attackTypeName, (Map<String, Object>) probeMap);
                 if (probe != null) {
                     probes.add(probe);
                 }
@@ -240,12 +361,12 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
     }
 
     @SuppressWarnings("unchecked")
-    private ProbeDefinition parseProbe(AttackType attackType, Map<String, Object> map) {
+    private ProbeDefinition parseProbe(String attackTypeName, Map<String, Object> map) {
         ProbeDefinition probe = new ProbeDefinition();
-        probe.setAttackType(attackType);
-        probe.setId(stringValue(map.get("id"), attackType.name().toLowerCase() + "_probe"));
+        probe.setAttackTypeName(attackTypeName);
+        probe.setId(stringValue(map.get("id"), attackTypeName.toLowerCase() + "_probe"));
         probe.setTechnique(stringValue(map.get("technique"), null));
-        probe.setStrategy(StrategyType.fromString(stringValue(map.get("strategy"), null)));
+        probe.setStrategyName(stringValue(map.get("strategy"), null));
         probe.setEnabledByDefault(booleanValue(map.get("enabledByDefault"), true));
         probe.setPriority(intValue(map.get("priority"), 100));
         probe.setStopOnMatch(booleanValue(map.get("stopOnMatch"), true));

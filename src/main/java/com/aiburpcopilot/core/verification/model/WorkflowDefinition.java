@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.verification.model;
 
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.technique.VerificationTechnique;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,7 @@ public class WorkflowDefinition {
 
     /** Workflow 关联的攻击类型 */
     private AttackType attackType;
+    private String attackTypeName;
 
     /** Workflow 名称 */
     private String name;
@@ -31,19 +33,22 @@ public class WorkflowDefinition {
     /** 是否需要在 Influence 验证通过后才执行 */
     private boolean requiresInfluenceApproval;
 
+    private boolean includeInfluenceStep;
+
     /** 最大并发步骤数 */
     private int maxConcurrentSteps;
 
     public WorkflowDefinition() {
         this.stepNames = new ArrayList<>();
         this.requiresInfluenceApproval = true;
+        this.includeInfluenceStep = true;
         this.maxConcurrentSteps = 1;
     }
 
     public WorkflowDefinition(AttackType attackType, String name, String description,
                               List<String> stepNames, boolean requiresInfluenceApproval) {
         this();
-        this.attackType = attackType;
+        setAttackType(attackType);
         this.name = name;
         this.description = description;
         this.stepNames = stepNames != null ? stepNames : new ArrayList<>();
@@ -53,7 +58,21 @@ public class WorkflowDefinition {
     // ---------- Getters & Setters ----------
 
     public AttackType getAttackType() { return attackType; }
-    public void setAttackType(AttackType attackType) { this.attackType = attackType; }
+    public void setAttackType(AttackType attackType) {
+        this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
+    }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -71,6 +90,11 @@ public class WorkflowDefinition {
         this.requiresInfluenceApproval = requiresInfluenceApproval;
     }
 
+    public boolean isIncludeInfluenceStep() { return includeInfluenceStep; }
+    public void setIncludeInfluenceStep(boolean includeInfluenceStep) {
+        this.includeInfluenceStep = includeInfluenceStep;
+    }
+
     public int getMaxConcurrentSteps() { return maxConcurrentSteps; }
     public void setMaxConcurrentSteps(int maxConcurrentSteps) {
         this.maxConcurrentSteps = Math.max(1, maxConcurrentSteps);
@@ -80,9 +104,11 @@ public class WorkflowDefinition {
     public String toString() {
         return "WorkflowDefinition{" +
                 "attackType=" + attackType +
+                ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", name='" + name + '\'' +
                 ", steps=" + stepNames +
                 ", requiresInfluenceApproval=" + requiresInfluenceApproval +
+                ", includeInfluenceStep=" + includeInfluenceStep +
                 '}';
     }
 }

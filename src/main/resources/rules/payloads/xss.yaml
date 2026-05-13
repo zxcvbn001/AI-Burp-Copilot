@@ -1,6 +1,7 @@
 # XSS 最小化验证规则。
 # 默认使用无害 HTML 标记，只确认响应中是否出现未转义反射痕迹。
 attackType: XSS
+aliases: [CROSS_SITE_SCRIPTING, 跨站脚本]
 goal: CONFIRM_ATTACK_TYPE
 
 probes:

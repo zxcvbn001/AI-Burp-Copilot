@@ -1,6 +1,7 @@
 package com.aiburpcopilot.core.verification.model;
 
 import com.aiburpcopilot.core.context.AttackType;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +15,7 @@ public class WorkflowResult {
 
     /** 关联的攻击类型 */
     private AttackType attackType;
+    private String attackTypeName;
 
     /** 参数名 */
     private String parameterName;
@@ -61,7 +63,21 @@ public class WorkflowResult {
     // ---------- Getters & Setters ----------
 
     public AttackType getAttackType() { return attackType; }
-    public void setAttackType(AttackType attackType) { this.attackType = attackType; }
+    public void setAttackType(AttackType attackType) {
+        this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
+    }
 
     public String getParameterName() { return parameterName; }
     public void setParameterName(String parameterName) { this.parameterName = parameterName; }
@@ -100,6 +116,7 @@ public class WorkflowResult {
     public String toString() {
         return "WorkflowResult{" +
                 "attackType=" + attackType +
+                ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", parameterName='" + parameterName + '\'' +
                 ", completed=" + completed +
                 ", overallConfidence=" + overallConfidence +

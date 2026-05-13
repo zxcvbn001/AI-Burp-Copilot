@@ -108,6 +108,9 @@ public class TechniqueRegistry implements ITechniqueRegistry {
         // ---- Path Traversal Rules ----
         registry.register(new PathTraversalProbeTechniqueRule());
 
+        registry.register(new OpenRedirectTechniqueRule());
+        registry.register(new SstiTemplateExpressionTechniqueRule());
+
         registry.lock();
         return registry;
     }

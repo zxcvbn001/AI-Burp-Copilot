@@ -10,7 +10,7 @@ public class FindingAggregator {
     private static final double MIN_FINDING_CONFIDENCE = 0.55;
 
     public VulnerabilityFinding aggregate(String requestId, String url, WorkflowResult workflowResult) {
-        if (workflowResult == null || workflowResult.getAttackType() == null) {
+        if (workflowResult == null || workflowResult.getAttackTypeName() == null) {
             return null;
         }
 
@@ -37,6 +37,7 @@ public class FindingAggregator {
 
         VulnerabilityFinding finding = new VulnerabilityFinding();
         finding.setAttackType(workflowResult.getAttackType());
+        finding.setAttackTypeName(workflowResult.getAttackTypeName());
         finding.setParameter(workflowResult.getParameterName());
         finding.setRequestId(requestId);
         finding.setUrl(url);
@@ -55,7 +56,7 @@ public class FindingAggregator {
     private String buildReasoning(WorkflowResult workflowResult, double confidence, int evidenceCount) {
         StringBuilder builder = new StringBuilder();
         builder.append("漏洞类型聚合结论：")
-                .append(workflowResult.getAttackType())
+                .append(workflowResult.getAttackTypeName())
                 .append("\n参数：")
                 .append(workflowResult.getParameterName())
                 .append("\n置信度：")

@@ -1,0 +1,53 @@
+# Open Redirect minimal verification rules.
+# The probe uses an inert example.com URL and confirms evidence only from the HTTP Location header.
+attackType: OPEN_REDIRECT
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: open_redirect_absolute_url
+    technique: OPEN_REDIRECT
+    strategy: OPEN_REDIRECT_PROBE
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.88
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [URL, STRING, UNKNOWN]
+    payloads:
+      - value: "https://example.com/ai-burp-copilot-open-redirect"
+        role: TRIGGER
+        mutation: REPLACE
+        markers:
+          - "example.com"
+          - "ai-burp-copilot-open-redirect"
+    oracle:
+      type: REDIRECT_LOCATION
+      requireMarkers:
+        - "example.com"
+        - "ai-burp-copilot-open-redirect"
+      minConfidence: 0.82
+
+  - id: open_redirect_protocol_relative
+    technique: OPEN_REDIRECT
+    strategy: OPEN_REDIRECT_PROBE
+    priority: 20
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.82
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [URL, STRING, UNKNOWN]
+    payloads:
+      - value: "//example.com/ai-burp-copilot-open-redirect"
+        role: TRIGGER
+        mutation: REPLACE
+        markers:
+          - "example.com"
+          - "ai-burp-copilot-open-redirect"
+    oracle:
+      type: REDIRECT_LOCATION
+      requireMarkers:
+        - "example.com"
+        - "ai-burp-copilot-open-redirect"
+      minConfidence: 0.78

@@ -52,7 +52,7 @@ public class AttackTypeRegistry {
     /**
      * Creates the default AttackTypeRegistry with all supported attack types.
      * <p>
-     * Registers: SQLI, IDOR, SSRF, AUTH, XSS, PATH_TRAVERSAL
+     * Registers: SQLI, IDOR, SSRF, AUTH, XSS, PATH_TRAVERSAL, OPEN_REDIRECT, SSTI
      */
     public static AttackTypeRegistry createDefault() {
         AttackTypeRegistry registry = new AttackTypeRegistry();
@@ -62,6 +62,8 @@ public class AttackTypeRegistry {
         registry.register(AttackType.AUTH);
         registry.register(AttackType.XSS);
         registry.register(AttackType.PATH_TRAVERSAL);
+        registry.register(AttackType.OPEN_REDIRECT);
+        registry.register(AttackType.SSTI);
         log.info("AttackTypeRegistry initialized with {} types", registry.getCount());
         return registry;
     }

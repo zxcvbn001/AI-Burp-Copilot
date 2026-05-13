@@ -1,6 +1,7 @@
 # IDOR / 水平越权最小化验证规则。
 # IDOR 不能只看响应相似度，建议默认要求 LLM 结合差异字段和业务语义二次研判。
 attackType: IDOR
+aliases: [HORIZONTAL_AUTHORIZATION, HORIZONTAL_PRIVILEGE_ESCALATION, 越权, 水平越权, 未授权访问]
 goal: CONFIRM_ATTACK_TYPE
 
 probes:

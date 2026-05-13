@@ -27,7 +27,11 @@ public enum AttackType {
     XSS("XSS"),
 
     /** 路径遍历（预留） */
-    PATH_TRAVERSAL("Path Traversal");
+    PATH_TRAVERSAL("Path Traversal"),
+
+    OPEN_REDIRECT("Open Redirect"),
+
+    SSTI("Server-Side Template Injection");
 
     private final String displayName;
 

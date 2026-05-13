@@ -35,6 +35,7 @@ AI Burp Copilot v2 的核心设计原则是：验证能力围绕 HTTP，而不�
 
 - 支持 OpenAI Compatible、DeepSeek、Qwen 风格接口。
 - Prompt 文件外置，可按环境调整。
+- Endpoint 分析的漏洞类型来自当前已加载并启用的规则能力，不再使用写死列表；关闭 XSS 规则后，prompt 不会再暴露 XSS。
 - Endpoint 分析只输出泛化攻击类型，例如 SQL 注入、XSS、水平越权，不要求模型细分盲注、反射型 XSS 等具体子类型。
 - Diff 与漏洞复核可以将规则证据、请求响应差异、关键片段交给 LLM 二次分析。
 
@@ -50,7 +51,7 @@ AI Burp Copilot v2 的核心设计原则是：验证能力围绕 HTTP，而不�
 ### 漏洞验证
 
 - 支持基于规则的最小化 PoC 验证。
-- 支持 SQLI、XSS、IDOR、SSRF、Path Traversal、Auth 等规则文件。
+- 支持 SQLI、XSS、IDOR、SSRF、Path Traversal、Auth、Open Redirect、SSTI 等规则文件。
 - 支持 PoC 优先级、命中即停、请求数上限、证据权重。
 - 支持请求/响应证据合并展示，例如 `Request 1`、`Response 1`。
 - 支持有效漏洞聚合记录，并自动进入漏洞级 LLM/本地二次研判队列。
@@ -146,9 +147,11 @@ ai-burp-copilot
    └─ payloads
       ├─ auth.yaml
       ├─ idor.yaml
+      ├─ open_redirect.yaml
       ├─ path_traversal.yaml
       ├─ sqli.yaml
       ├─ ssrf.yaml
+      ├─ ssti.yaml
       └─ xss.yaml
 ```
 
@@ -362,6 +365,7 @@ verification:
 - **最小化**：优先使用低风险、短 payload、少请求数的 PoC。
 - **强约束**：通过 `applicableParamTypes` 和 `valueTypes` 限制探针适用范围，避免数字字段跑字符串 PoC、URL 字段跑无关探针。
 - **可复核**：对 IDOR、SSRF、SQLI 布尔差异等容易误报的场景使用 `requiresLlmReview: true`，让 LLM 基于请求/响应差异和规则证据二次研判。
+- **动态能力**：prompt、workflow 和 probe step 会基于当前已加载规则生成；新增同类 probe 通常只需要改 YAML。
 
 规则文件位置：
 

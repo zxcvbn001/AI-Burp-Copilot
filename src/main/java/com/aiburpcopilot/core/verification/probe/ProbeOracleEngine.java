@@ -46,6 +46,8 @@ public class ProbeOracleEngine {
             case "PAIR_DIFF" -> evaluatePairDiff(probe, baselineResponse, executions);
             case "TIME_DELAY" -> evaluateTimeDelay(probe, baselineDurationMs, executions);
             case "KEYWORD" -> evaluateKeyword(probe, baselineResponse, executions);
+            case "REDIRECT_LOCATION" -> evaluateRedirectLocation(probe, baselineResponse, executions);
+            case "EXPRESSION_EVALUATION" -> evaluateExpressionEvaluation(probe, baselineResponse, executions);
             case "BASELINE_DIFF" -> evaluateBaselineDiff(probe, baselineResponse, executions);
             case "BASELINE_SIMILAR" -> evaluateBaselineSimilar(probe, baselineResponse, executions);
             case "HTML_REFLECTION", "REFLECTION" -> evaluateReflection(probe, executions);
@@ -182,6 +184,84 @@ public class ProbeOracleEngine {
         }
         if (result.getReasoning() == null) {
             result.setReasoning("未发现新增关键词证据");
+        }
+        return result;
+    }
+
+    private OracleResult evaluateRedirectLocation(ProbeDefinition probe,
+                                                  byte[] baselineResponse,
+                                                  List<ProbeExecution> executions) {
+        OracleResult result = new OracleResult();
+        OracleDefinition oracle = probe.getOracle();
+        String baselineLocation = extractHeader(text(baselineResponse), "location").toLowerCase();
+        for (ProbeExecution execution : executions) {
+            String responseText = text(execution.getResponseBytes());
+            int statusCode = parseStatusCode(responseText);
+            String location = extractHeader(responseText, "location");
+            if (location == null || location.isBlank()) {
+                continue;
+            }
+            String locationLower = location.toLowerCase();
+            boolean statusLooksRedirect = statusCode >= 300 && statusCode < 400;
+            List<String> markers = new ArrayList<>(oracle.getRequireMarkers());
+            if (markers.isEmpty()) {
+                markers.add(execution.getValue());
+            }
+            List<String> matchedMarkers = markers.stream()
+                    .filter(marker -> marker != null && !marker.isBlank())
+                    .filter(marker -> locationLower.contains(marker.toLowerCase()))
+                    .toList();
+            if (statusLooksRedirect && !matchedMarkers.isEmpty()
+                    && !baselineLocation.equalsIgnoreCase(location)) {
+                double confidence = Math.min(0.95, oracle.getMinConfidence() + 0.05);
+                result.setMatched(true);
+                result.setConfidence(Math.max(result.getConfidence(), confidence));
+                result.setReasoning("Location 响应头跳转到可控标记：" + location);
+                Evidence evidence = Evidence.general(result.getReasoning(), "REDIRECT_LOCATION", confidence);
+                evidence.setMutatedRequest(execution.getRequestBytes());
+                evidence.setOriginalResponse(baselineResponse);
+                evidence.setMutatedResponse(execution.getResponseBytes());
+                result.addEvidence(evidence);
+            }
+        }
+        if (result.getReasoning() == null) {
+            result.setReasoning("未发现可控 Location 重定向证据");
+        }
+        return result;
+    }
+
+    private OracleResult evaluateExpressionEvaluation(ProbeDefinition probe,
+                                                      byte[] baselineResponse,
+                                                      List<ProbeExecution> executions) {
+        OracleResult result = new OracleResult();
+        String baselineText = text(baselineResponse);
+        for (ProbeExecution execution : executions) {
+            String responseText = text(execution.getResponseBytes());
+            if (responseText.isBlank()) {
+                continue;
+            }
+            List<String> markers = markersForExecution(probe, execution);
+            List<String> matchedMarkers = markers.stream()
+                    .filter(marker -> marker != null && !marker.isBlank())
+                    .filter(marker -> responseText.contains(marker) && !baselineText.contains(marker))
+                    .toList();
+            boolean rawExpressionReflected = execution.getValue() != null
+                    && !execution.getValue().isBlank()
+                    && responseText.contains(execution.getValue());
+            if (!matchedMarkers.isEmpty() && !rawExpressionReflected) {
+                double confidence = probe.getOracle().getMinConfidence();
+                result.setMatched(true);
+                result.setConfidence(Math.max(result.getConfidence(), confidence));
+                result.setReasoning("模板表达式疑似被服务端求值，出现结果标记：" + matchedMarkers);
+                Evidence evidence = Evidence.general(result.getReasoning(), "EXPRESSION_EVALUATION", confidence);
+                evidence.setMutatedRequest(execution.getRequestBytes());
+                evidence.setOriginalResponse(baselineResponse);
+                evidence.setMutatedResponse(execution.getResponseBytes());
+                result.addEvidence(evidence);
+            }
+        }
+        if (result.getReasoning() == null) {
+            result.setReasoning("未发现模板表达式求值证据");
         }
         return result;
     }
@@ -644,6 +724,46 @@ public class ProbeOracleEngine {
                 ? responseText.substring(separator + offset)
                 : responseText;
         return body;
+    }
+
+    private String extractHeader(String responseText, String headerName) {
+        if (responseText == null || responseText.isBlank()
+                || headerName == null || headerName.isBlank()) {
+            return "";
+        }
+        String normalizedName = headerName.trim().toLowerCase();
+        String[] lines = responseText.split("\\r?\\n");
+        for (String line : lines) {
+            if (line.isBlank()) {
+                break;
+            }
+            int colon = line.indexOf(':');
+            if (colon <= 0) {
+                continue;
+            }
+            String name = line.substring(0, colon).trim().toLowerCase();
+            if (normalizedName.equals(name)) {
+                return line.substring(colon + 1).trim();
+            }
+        }
+        return "";
+    }
+
+    private List<String> markersForExecution(ProbeDefinition probe, ProbeExecution execution) {
+        List<String> markers = new ArrayList<>(probe.getOracle().getRequireMarkers());
+        for (ProbePayload payload : probe.getPayloads()) {
+            if (payload.getValue() != null && payload.getValue().equals(execution.getValue())) {
+                markers.addAll(payload.getMarkers());
+                if (markers.isEmpty() || probe.getOracle().isRequireExactPayload()) {
+                    markers.add(payload.getValue());
+                }
+                break;
+            }
+        }
+        if (markers.isEmpty()) {
+            markers.add(execution.getValue());
+        }
+        return markers;
     }
 
     private DiffResult diff(byte[] original, byte[] mutated, long originalDurationMs, long mutatedDurationMs) {

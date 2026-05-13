@@ -65,13 +65,14 @@ public class WorkflowEngine implements IWorkflowEngine {
 
         // 1. 閺屻儲澹?WorkflowDefinition
         Optional<WorkflowDefinition> defOpt = Optional.empty();
-        if (workflowRegistry != null && context.getCandidate().getAttackType() != null) {
-            defOpt = workflowRegistry.findWorkflow(context.getCandidate().getAttackType());
+        String candidateAttackTypeName = context.getCandidate().getAttackTypeName();
+        if (workflowRegistry != null && candidateAttackTypeName != null) {
+            defOpt = workflowRegistry.findWorkflow(candidateAttackTypeName);
         }
 
         if (!defOpt.isPresent()) {
             String msg = "No workflow definition found for attackType="
-                    + context.getCandidate().getAttackType();
+                    + candidateAttackTypeName;
             log.warn("WorkflowEngine: {}", msg);
             PluginLogger.getInstance().warn("WorkflowEngine", msg);
             return buildErrorResult(result, msg);
@@ -81,7 +82,7 @@ public class WorkflowEngine implements IWorkflowEngine {
         context.setWorkflowDefinition(def);
 
         log.info("WorkflowEngine: executing workflow '{}' for attackType={}, param={}, steps={}",
-                def.getName(), def.getAttackType(),
+                def.getName(), def.getAttackTypeName(),
                 context.getCandidate().getParameterName(), def.getStepNames().size());
 
         PluginLogger.getInstance().info("WorkflowEngine",
@@ -90,6 +91,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                         + " | steps=" + def.getStepNames());
 
         result.setAttackType(def.getAttackType());
+        result.setAttackTypeName(def.getAttackTypeName());
         result.setWorkflowName(def.getName());
         result.setParameterName(context.getCandidate().getParameterName());
 

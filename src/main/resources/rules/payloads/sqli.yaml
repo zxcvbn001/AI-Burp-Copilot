@@ -1,6 +1,7 @@
 # SQL 注入最小化验证规则。
 # 规则目标只确认“SQLI 大类是否成立”，不区分报错、布尔、延时等子类型。
 attackType: SQLI
+aliases: [SQL, SQL_INJECTION, SQL注入, 注入]
 goal: CONFIRM_ATTACK_TYPE
 
 probes:

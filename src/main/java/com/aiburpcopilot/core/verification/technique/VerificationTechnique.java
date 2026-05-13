@@ -66,7 +66,11 @@ public enum VerificationTechnique {
     REFLECTION("Reflection", "XSS"),
 
     // ---- Path Traversal ----
-    PATH_TRAVERSAL_PROBE("Path Traversal Probe", "PATH_TRAVERSAL");
+    PATH_TRAVERSAL_PROBE("Path Traversal Probe", "PATH_TRAVERSAL"),
+
+    OPEN_REDIRECT("Open Redirect", "OPEN_REDIRECT"),
+
+    TEMPLATE_EXPRESSION("Template Expression", "SSTI");
 
     private final String displayName;
 

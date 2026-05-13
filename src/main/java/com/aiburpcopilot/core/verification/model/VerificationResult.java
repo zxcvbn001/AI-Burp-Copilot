@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.verification.model;
 
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.context.RiskLevel;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 /**
  * 验证结果。
@@ -14,6 +15,7 @@ public class VerificationResult {
 
     /** 攻击类型 */
     private AttackType attackType;
+    private String attackTypeName;
 
     /** 目标参数名 */
     private String parameter;
@@ -80,7 +82,7 @@ public class VerificationResult {
      */
     public String toSummaryString() {
         StringBuilder sb = new StringBuilder();
-        sb.append(attackType != null ? attackType.getDisplayName() : "Unknown");
+        sb.append(attackType != null ? attackType.getDisplayName() : (getAttackTypeName() != null ? getAttackTypeName() : "Unknown"));
         sb.append(" on '").append(parameter).append("'");
         sb.append(" [").append(riskLevel).append("]");
         sb.append(" conf=").append(String.format("%.2f", confidence));
@@ -97,7 +99,21 @@ public class VerificationResult {
     // ---------- Getters & Setters ----------
 
     public AttackType getAttackType() { return attackType; }
-    public void setAttackType(AttackType attackType) { this.attackType = attackType; }
+    public void setAttackType(AttackType attackType) {
+        this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
+    }
 
     public String getParameter() { return parameter; }
     public void setParameter(String parameter) { this.parameter = parameter; }

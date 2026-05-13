@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.verification.model;
 
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.technique.VerificationTechnique;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +26,7 @@ public class CandidateParameter {
 
     /** 攻击类型 */
     private AttackType attackType;
+    private String attackTypeName;
 
     /** AI 置信度 (0.0 ~ 1.0) */
     private double confidence;
@@ -48,7 +50,7 @@ public class CandidateParameter {
                               List<VerificationTechnique> recommendedTechniques) {
         this.parameterName = parameterName;
         this.parameterType = parameterType;
-        this.attackType = attackType;
+        setAttackType(attackType);
         this.confidence = confidence;
         this.reasoning = reasoning;
         this.source = source;
@@ -64,7 +66,21 @@ public class CandidateParameter {
     public void setParameterType(String parameterType) { this.parameterType = parameterType; }
 
     public AttackType getAttackType() { return attackType; }
-    public void setAttackType(AttackType attackType) { this.attackType = attackType; }
+    public void setAttackType(AttackType attackType) {
+        this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
+    }
 
     public double getConfidence() { return confidence; }
     public void setConfidence(double confidence) { this.confidence = Math.max(0.0, Math.min(1.0, confidence)); }
@@ -86,6 +102,7 @@ public class CandidateParameter {
                 "parameterName='" + parameterName + '\'' +
                 ", parameterType='" + parameterType + '\'' +
                 ", attackType=" + attackType +
+                ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", confidence=" + confidence +
                 ", source='" + source + '\'' +
                 ", techniques=" + recommendedTechniques +

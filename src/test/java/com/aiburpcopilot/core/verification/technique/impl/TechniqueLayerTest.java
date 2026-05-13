@@ -243,7 +243,7 @@ class TechniqueLayerTest {
     @Test
     @DisplayName("Registry has correct rule count")
     void registryShouldHaveCorrectRuleCount() {
-        assertEquals(11, registry.getRuleCount());
+        assertEquals(13, registry.getRuleCount());
     }
 
     // ==================== 11. 枚举 fromString ====================

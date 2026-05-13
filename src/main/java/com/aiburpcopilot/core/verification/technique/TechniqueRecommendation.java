@@ -1,6 +1,7 @@
 package com.aiburpcopilot.core.verification.technique;
 
 import com.aiburpcopilot.core.context.AttackType;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 /**
  * 技术推荐。
@@ -22,9 +23,11 @@ public class TechniqueRecommendation {
 
     /** 攻击类型 */
     private AttackType attackType;
+    private String attackTypeName;
 
     /** 推荐的技术 */
     private VerificationTechnique technique;
+    private String techniqueName;
 
     /** AI 置信度 (0.0 ~ 1.0) */
     private double confidence;
@@ -40,8 +43,8 @@ public class TechniqueRecommendation {
                                    VerificationTechnique technique, double confidence,
                                    String reasoning) {
         this.parameterName = parameterName;
-        this.attackType = attackType;
-        this.technique = technique;
+        setAttackType(attackType);
+        setTechnique(technique);
         this.confidence = Math.max(0.0, Math.min(1.0, confidence));
         this.reasoning = reasoning;
     }
@@ -52,10 +55,38 @@ public class TechniqueRecommendation {
     public void setParameterName(String parameterName) { this.parameterName = parameterName; }
 
     public AttackType getAttackType() { return attackType; }
-    public void setAttackType(AttackType attackType) { this.attackType = attackType; }
+    public void setAttackType(AttackType attackType) {
+        this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
+    }
 
     public VerificationTechnique getTechnique() { return technique; }
-    public void setTechnique(VerificationTechnique technique) { this.technique = technique; }
+    public void setTechnique(VerificationTechnique technique) {
+        this.technique = technique;
+        if (technique != null) {
+            this.techniqueName = technique.name();
+        }
+    }
+
+    public String getTechniqueName() {
+        return techniqueName != null ? techniqueName : (technique != null ? technique.name() : null);
+    }
+
+    public void setTechniqueName(String techniqueName) {
+        this.techniqueName = RuleKeyUtil.normalize(techniqueName);
+        this.technique = VerificationTechnique.fromString(this.techniqueName);
+    }
 
     public double getConfidence() { return confidence; }
     public void setConfidence(double confidence) { this.confidence = Math.max(0.0, Math.min(1.0, confidence)); }
@@ -68,8 +99,8 @@ public class TechniqueRecommendation {
      */
     public boolean isValid() {
         return parameterName != null && !parameterName.isBlank()
-                && attackType != null
-                && technique != null;
+                && getAttackTypeName() != null
+                && getTechniqueName() != null;
     }
 
     @Override
@@ -77,7 +108,9 @@ public class TechniqueRecommendation {
         return "TechniqueRecommendation{" +
                 "param='" + parameterName + '\'' +
                 ", attackType=" + attackType +
+                ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", technique=" + technique +
+                ", techniqueName='" + getTechniqueName() + '\'' +
                 ", confidence=" + String.format("%.2f", confidence) +
                 '}';
     }

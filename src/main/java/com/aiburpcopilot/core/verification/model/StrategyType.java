@@ -53,7 +53,11 @@ public enum StrategyType {
     /** 本地回环探测 — URL 替换为 localhost */
     LOCALHOST_PROBE("Localhost Probe"),
 
-    PATH_TRAVERSAL_PROBE("Path Traversal Probe");
+    PATH_TRAVERSAL_PROBE("Path Traversal Probe"),
+
+    OPEN_REDIRECT_PROBE("Open Redirect Probe"),
+
+    TEMPLATE_EXPRESSION("Template Expression");
 
     private final String displayName;
 

@@ -177,7 +177,7 @@ public class WorkflowVerificationStage implements IPipelineStage {
                 processed++;
             } catch (Exception e) {
                 log.warn("Workflow verification failed for param={} type={}",
-                        candidate.getParameterName(), candidate.getAttackType(), e);
+                        candidate.getParameterName(), candidate.getAttackTypeName(), e);
                 pluginLog.warn("WorkflowVerification", "Candidate failed: "
                         + candidate.getParameterName() + " - " + e.getMessage());
             }
@@ -229,6 +229,7 @@ public class WorkflowVerificationStage implements IPipelineStage {
     private VerificationResult toFindingResult(VulnerabilityFinding finding) {
         VerificationResult result = new VerificationResult();
         result.setAttackType(finding.getAttackType());
+        result.setAttackTypeName(finding.getAttackTypeName());
         result.setParameter(finding.getParameter());
         result.setRequestId(finding.getRequestId());
         result.setUrl(finding.getUrl());
@@ -253,6 +254,7 @@ public class WorkflowVerificationStage implements IPipelineStage {
                                                     StepResult stepResult) {
         VerificationResult result = new VerificationResult();
         result.setAttackType(workflowResult.getAttackType());
+        result.setAttackTypeName(workflowResult.getAttackTypeName());
         result.setParameter(workflowResult.getParameterName());
         result.setRequestId(context.getRequestId());
         result.setUrl(context.getUrl());

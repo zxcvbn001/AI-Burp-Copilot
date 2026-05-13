@@ -69,9 +69,11 @@ public class ExternalConfigManager {
     private static final List<String> CLASS_PATH_PAYLOAD_FILES = List.of(
             "auth.yaml",
             "idor.yaml",
+            "open_redirect.yaml",
             "path_traversal.yaml",
             "sqli.yaml",
             "ssrf.yaml",
+            "ssti.yaml",
             "xss.yaml"
     );
 

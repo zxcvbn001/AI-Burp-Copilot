@@ -18,6 +18,7 @@ import com.aiburpcopilot.core.verification.probe.ProbePayload;
 import com.aiburpcopilot.core.verification.probe.ProbePayloadPair;
 import com.aiburpcopilot.core.verification.probe.ProbeRole;
 import com.aiburpcopilot.core.verification.safety.DangerousPayloadFilter;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 import com.aiburpcopilot.core.verification.workflow.VerificationStep;
 import com.aiburpcopilot.core.verification.workflow.WorkflowContext;
 import com.aiburpcopilot.utils.PluginLogger;
@@ -35,9 +36,12 @@ public class GenericProbeStep implements VerificationStep {
     public static final String AUTH_STEP = "AUTHProbes";
     public static final String SSRF_STEP = "SSRFProbes";
     public static final String PATH_TRAVERSAL_STEP = "PathTraversalProbes";
+    public static final String OPEN_REDIRECT_STEP = "OpenRedirectProbes";
+    public static final String SSTI_STEP = "SSTIProbes";
 
     private final String name;
     private final AttackType attackType;
+    private final String attackTypeName;
     private final IReplayEngine replayEngine;
     private final IProbeRuleEngine probeRuleEngine;
     private final ProbeOracleEngine oracleEngine;
@@ -51,8 +55,20 @@ public class GenericProbeStep implements VerificationStep {
                             ProbeOracleEngine oracleEngine,
                             IPolicyEngine policyEngine,
                             int defaultMaxPayloadLength) {
+        this(name, RuleKeyUtil.attackTypeName(attackType), replayEngine, probeRuleEngine,
+                oracleEngine, policyEngine, defaultMaxPayloadLength);
+    }
+
+    public GenericProbeStep(String name,
+                            String attackTypeName,
+                            IReplayEngine replayEngine,
+                            IProbeRuleEngine probeRuleEngine,
+                            ProbeOracleEngine oracleEngine,
+                            IPolicyEngine policyEngine,
+                            int defaultMaxPayloadLength) {
         this.name = name;
-        this.attackType = attackType;
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
         this.replayEngine = replayEngine;
         this.probeRuleEngine = probeRuleEngine;
         this.oracleEngine = oracleEngine;
@@ -96,14 +112,14 @@ public class GenericProbeStep implements VerificationStep {
                 ? context.getPolicyEngine()
                 : policyEngine;
 
-        List<ProbeDefinition> probes = probeRuleEngine.getProbes(attackType).stream()
+        List<ProbeDefinition> probes = probeRuleEngine.getProbes(attackTypeName).stream()
                 .filter(ProbeDefinition::isEnabledByDefault)
                 .filter(probe -> isAllowedByPolicy(probe, effectivePolicy))
                 .filter(probe -> isApplicableToParameter(probe, httpContext, candidate, context.getParameterProfile()))
                 .sorted(Comparator.comparingInt(ProbeDefinition::getPriority))
                 .toList();
         if (probes.isEmpty()) {
-            return StepResult.softFail(name, "No applicable probe rules for " + attackType.name());
+            return StepResult.softFail(name, "No applicable probe rules for " + attackTypeName);
         }
 
         byte[] baseline = context.getBaselineResponse();
@@ -183,14 +199,14 @@ public class GenericProbeStep implements VerificationStep {
         result.setSuccess(matched > 0);
         result.setConfidence(combinedConfidence);
         result.setExchangeTranscript(transcript.toString());
-        result.setReasoning("漏洞类型聚合探测：" + attackType.name()
+        result.setReasoning("漏洞类型聚合探测：" + attackTypeName
                 + "，规则数=" + probes.size()
                 + "，请求数=" + tested
                 + "，命中证据=" + matched
                 + "，置信度=" + String.format("%.2f", combinedConfidence));
 
         PluginLogger.getInstance().info(name,
-                "Completed: attackType=" + attackType.name()
+                "Completed: attackType=" + attackTypeName
                         + " param='" + candidate.getParameterName()
                         + "' requests=" + tested
                         + " matched=" + matched
