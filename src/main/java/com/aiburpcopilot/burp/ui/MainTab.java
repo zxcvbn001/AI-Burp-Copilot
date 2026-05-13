@@ -15,7 +15,6 @@ public class MainTab extends JPanel {
 
     private final HistoryPanel historyPanel;
     private final EndpointAnalysisPanel endpointPanel;
-    private final VerificationWorkbenchPanel workbenchPanel;
     private final ParameterInfluencePanel parameterInfluencePanel;
     private final VerificationPanel verificationPanel;
     private final StaticScanPanel staticScanPanel;
@@ -32,8 +31,6 @@ public class MainTab extends JPanel {
 
         this.historyPanel = new HistoryPanel(historyService);
         this.endpointPanel = new EndpointAnalysisPanel(api, historyService);
-        this.workbenchPanel = new VerificationWorkbenchPanel(
-                api, historyService, manualVerificationService);
         this.parameterInfluencePanel = new ParameterInfluencePanel(
                 api, historyService, manualVerificationService);
         this.verificationPanel = new VerificationPanel(api, historyService);
@@ -45,7 +42,6 @@ public class MainTab extends JPanel {
         JTabbedPane tabbedPane = new JTabbedPane();
         UiUtil.applyBurpFont(tabbedPane);
         tabbedPane.addTab("\u5386\u53f2", historyPanel);
-        tabbedPane.addTab("\u9a8c\u8bc1\u5de5\u4f5c\u53f0", workbenchPanel);
         tabbedPane.addTab("Endpoint\u5206\u6790", endpointPanel);
         tabbedPane.addTab("\u53c2\u6570\u5206\u6790", parameterInfluencePanel);
         tabbedPane.addTab("\u6f0f\u6d1e\u9a8c\u8bc1\u8fc7\u7a0b", verificationPanel);
@@ -78,7 +74,6 @@ public class MainTab extends JPanel {
     private void refreshAllPanels() {
         SwingUtilities.invokeLater(() -> {
             historyPanel.refresh();
-            workbenchPanel.refresh();
             endpointPanel.refresh();
             parameterInfluencePanel.refresh();
             verificationPanel.refresh();

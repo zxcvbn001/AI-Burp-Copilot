@@ -1,6 +1,5 @@
 package com.aiburpcopilot.core.verification;
 
-import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterContext;
 import com.aiburpcopilot.core.context.RiskLevel;
@@ -13,6 +12,7 @@ import com.aiburpcopilot.core.verification.model.CandidateParameter;
 import com.aiburpcopilot.core.verification.model.InfluenceResult;
 import com.aiburpcopilot.core.verification.model.InfluenceStatus;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
+import com.aiburpcopilot.core.verification.model.ReviewStatus;
 import com.aiburpcopilot.core.verification.model.StepResult;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 import com.aiburpcopilot.core.verification.model.WorkflowResult;
@@ -78,85 +78,6 @@ public class ManualVerificationService {
         List<VerificationResult> results = toVerificationResults(context, workflowResult);
         results.removeIf(result -> "Influence Gate".equalsIgnoreCase(result.getPhase()));
         return results;
-    }
-
-    public List<VerificationResult> runManualVerification(HistoryEntry entry,
-                                                          String parameterName,
-                                                          AttackType attackType) {
-        if (entry == null || parameterName == null || parameterName.isBlank() || attackType == null) {
-            return List.of();
-        }
-
-        HTTPContext context = rebuildContext(entry);
-        VerificationResult preflightFailure = preflightManualRun(context, parameterName, attackType);
-        if (preflightFailure != null) {
-            return List.of(preflightFailure);
-        }
-
-        CandidateParameter candidate = new CandidateParameter();
-        candidate.setParameterName(parameterName);
-        candidate.setAttackType(attackType);
-        candidate.setConfidence(1.0);
-        candidate.setSource("MANUAL_WORKBENCH");
-
-        WorkflowContext workflowContext = new WorkflowContext(context, candidate);
-        workflowContext.setPolicyEngine(policyEngine);
-        workflowContext.setReplayEngine(replayEngine);
-        workflowContext.setParameterProfile(profile(context, parameterName));
-        workflowContext.setInfluenceResult(approvedInfluence(parameterName));
-        workflowContext.setBaselineResponse(entry.getRawResponse());
-
-        WorkflowResult workflowResult = workflowEngine.execute(workflowContext);
-        List<VerificationResult> results = toVerificationResults(context, workflowResult);
-        results.removeIf(result -> "Influence Gate".equalsIgnoreCase(result.getPhase()));
-        if (results.isEmpty()) {
-            results.add(toDiagnosticResult(context, parameterName, attackType,
-                    workflowResult != null ? workflowResult.getStopReason() : null,
-                    "\u624b\u52a8\u9a8c\u8bc1\u5df2\u542f\u52a8\uff0c\u4f46 Workflow \u6ca1\u6709\u4ea7\u751f\u53ef\u5c55\u793a\u7684\u6b65\u9aa4\u7ed3\u679c\u3002"));
-        }
-        return results;
-    }
-
-    private VerificationResult preflightManualRun(HTTPContext context,
-                                                  String parameterName,
-                                                  AttackType attackType) {
-        if (context == null || context.getRawRequest() == null || context.getRawRequest().length == 0) {
-            return toDiagnosticResult(context, parameterName, attackType, null,
-                    "\u539f\u59cb\u8bf7\u6c42\u5b57\u8282\u4e0d\u5b58\u5728\uff0c\u65e0\u6cd5\u91cd\u653e\u9a8c\u8bc1\u3002");
-        }
-        if (context.getUrl() == null || context.getUrl().isBlank()) {
-            return toDiagnosticResult(context, parameterName, attackType, null,
-                    "URL \u4e0d\u5b58\u5728\uff0c\u65e0\u6cd5\u5224\u65ad\u76ee\u6807 Host\u3002");
-        }
-        if (verificationGuard != null && !verificationGuard.isHostAllowed(context.getUrl())) {
-            return toDiagnosticResult(context, parameterName, attackType, null,
-                    "\u672a\u53d1\u5305\uff1a\u76ee\u6807 Host \u4e0d\u5728 verification.whitelist \u4e2d\u3002\n"
-                            + "\u76ee\u6807: " + context.getUrl() + "\n"
-                            + "\u5f53\u524d\u767d\u540d\u5355: " + verificationGuard.getWhitelist() + "\n"
-                            + "\u8bf7\u5728\u8bbe\u7f6e\u91cc\u628a\u76ee\u6807 Host \u52a0\u5165\u767d\u540d\u5355\uff0c"
-                            + "\u4f8b\u5982: 192.0.2.10\uff0c\u7136\u540e\u91cd\u8bd5\u3002");
-        }
-        return null;
-    }
-
-    private VerificationResult toDiagnosticResult(HTTPContext context,
-                                                  String parameterName,
-                                                  AttackType attackType,
-                                                  String stopReason,
-                                                  String message) {
-        VerificationResult result = new VerificationResult();
-        result.setAttackType(attackType);
-        result.setParameter(parameterName);
-        result.setRequestId(context != null ? context.getRequestId() : null);
-        result.setUrl(context != null ? context.getUrl() : null);
-        result.setRiskLevel(RiskLevel.INFO);
-        result.setConfidence(0.0);
-        result.setPhase("\u624b\u52a8\u9a8c\u8bc1\u9884\u68c0");
-        result.setPayload("-");
-        result.setReasoning(message + (stopReason != null && !stopReason.isBlank()
-                ? "\nWorkflow stopReason: " + stopReason
-                : ""));
-        return result;
     }
 
     private HTTPContext rebuildContext(HistoryEntry entry) {
@@ -255,8 +176,8 @@ public class ManualVerificationService {
         result.setMutatedResponseBytes(finding.getResponseBytes());
         result.setResponseLength(finding.getResponseBytes() != null ? finding.getResponseBytes().length : 0);
         result.setExchangeTranscript(finding.getExchangeTranscript());
-        result.setLlmReview(finding.getLlmReview());
         result.setConfirmedVulnerability(true);
+        result.setReviewStatus(ReviewStatus.PENDING);
         return result;
     }
 

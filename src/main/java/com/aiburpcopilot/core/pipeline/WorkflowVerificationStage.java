@@ -13,6 +13,7 @@ import com.aiburpcopilot.core.verification.model.CandidateParameter;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
 import com.aiburpcopilot.core.verification.model.InfluenceResult;
 import com.aiburpcopilot.core.verification.model.InfluenceStatus;
+import com.aiburpcopilot.core.verification.model.ReviewStatus;
 import com.aiburpcopilot.core.verification.model.StepResult;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 import com.aiburpcopilot.core.verification.model.WorkflowResult;
@@ -225,8 +226,8 @@ public class WorkflowVerificationStage implements IPipelineStage {
         result.setMutatedResponseBytes(finding.getResponseBytes());
         result.setResponseLength(finding.getResponseBytes() != null ? finding.getResponseBytes().length : 0);
         result.setExchangeTranscript(finding.getExchangeTranscript());
-        result.setLlmReview(finding.getLlmReview());
         result.setConfirmedVulnerability(true);
+        result.setReviewStatus(ReviewStatus.PENDING);
         return result;
     }
 

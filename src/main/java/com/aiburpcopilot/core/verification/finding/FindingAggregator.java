@@ -49,7 +49,6 @@ public class FindingAggregator {
         finding.setResponseBytes(representative.getResponseBytes());
         finding.setResponseTimeMs(representative.getDurationMs());
         finding.setExchangeTranscript(buildTranscript(workflowResult));
-        finding.setLlmReview(representative.getLlmReview());
         return finding;
     }
 

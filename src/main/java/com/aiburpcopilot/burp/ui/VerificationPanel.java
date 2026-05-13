@@ -3,6 +3,7 @@ package com.aiburpcopilot.burp.ui;
 import burp.api.montoya.MontoyaApi;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.pipeline.HistoryEventBus;
+import com.aiburpcopilot.core.verification.model.ReviewStatus;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 
 import javax.swing.*;
@@ -187,6 +188,10 @@ public class VerificationPanel extends JPanel {
             return;
         }
         row.result().setConfirmedVulnerability(confirmed);
+        row.result().setReviewStatus(confirmed ? ReviewStatus.PENDING : ReviewStatus.NOT_REQUIRED);
+        if (!confirmed) {
+            row.result().setLlmReview(null);
+        }
         historyService.update(row.entry());
         HistoryEventBus.getInstance().fireRefreshNeeded();
         refresh();

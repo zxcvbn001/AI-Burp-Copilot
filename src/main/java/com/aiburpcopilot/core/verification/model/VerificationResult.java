@@ -61,6 +61,7 @@ public class VerificationResult {
     private boolean manualInfluenceOverride;
     private boolean confirmedVulnerability;
     private String llmReview;
+    private ReviewStatus reviewStatus = ReviewStatus.NOT_REQUIRED;
     private String exchangeTranscript;
     private InfluenceStatus influenceStatus;
 
@@ -155,6 +156,11 @@ public class VerificationResult {
 
     public String getLlmReview() { return llmReview; }
     public void setLlmReview(String llmReview) { this.llmReview = llmReview; }
+
+    public ReviewStatus getReviewStatus() { return reviewStatus; }
+    public void setReviewStatus(ReviewStatus reviewStatus) {
+        this.reviewStatus = reviewStatus != null ? reviewStatus : ReviewStatus.NOT_REQUIRED;
+    }
 
     public String getExchangeTranscript() { return exchangeTranscript; }
     public void setExchangeTranscript(String exchangeTranscript) { this.exchangeTranscript = exchangeTranscript; }

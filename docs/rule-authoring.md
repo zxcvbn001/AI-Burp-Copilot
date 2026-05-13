@@ -752,11 +752,11 @@ Influence Gate 有三种结论：
 
 1. 打开 Burp，加载插件。
 2. 确认日志显示加载的是你期望的 `ai-burp-copilot/rules/payloads/*.yaml`。
-3. 用“验证工作台”选择一个请求、一个参数、一个漏洞大类。
+3. 在“参数分析”页选择目标参数，必要时手动标记为有影响并触发后续验证。
 4. 查看“漏洞验证过程”中的 Request/Response。
 5. 检查是否只跑了预期数量的请求。
 6. 检查 diff summary 和 evidence 是否能解释命中原因。
-7. 对 `requiresLlmReview: true` 的规则，确认 LLM Review 是否真的执行。
+7. 在“有效漏洞”页确认漏洞级二次研判状态和 Review 内容。
 8. 低风险确认后再开启自动验证。
 
 ## 16. 常见错误
@@ -884,5 +884,5 @@ requiresLlmReview: true
 - 是否避免危险 payload？
 - 是否对语义 diff 类规则开启 `requiresLlmReview`？
 - 是否能解释正证据和反证？
-- 是否能在验证工作台复现？
+- 是否能通过参数分析手动触发并在漏洞验证过程复现？
 - 是否不会污染 History 原始流量？
