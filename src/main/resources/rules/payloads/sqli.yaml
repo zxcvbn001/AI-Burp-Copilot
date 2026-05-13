@@ -1,0 +1,114 @@
+# SQL 注入最小化验证规则。
+# 规则目标只确认“SQLI 大类是否成立”，不区分报错、布尔、延时等子类型。
+attackType: SQLI
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  # 字符串参数：单引号触发、双单引号恢复。
+  # 适合 name/search/q 等文本参数；不适合数字 JSON 字段，避免破坏类型后误判为注入。
+  - id: generic_quote_error_recovery
+    technique: ERROR_BASED
+    strategy: ERROR_BASED
+    priority: 1
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 16
+    evidenceWeight: 0.88
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN]
+    payloads:
+      - value: "'"
+        role: TRIGGER
+        mutation: APPEND
+      - value: "''"
+        role: RECOVERY
+        mutation: APPEND
+    oracle:
+      type: ERROR_KEYWORD_OR_RECOVERY
+      errorKeywords:
+        - "sql syntax"
+        - "database error"
+        - "mysql"
+        - "postgresql"
+        - "sqlite"
+        - "oracle"
+        - "sql server"
+        - "sqlstate"
+        - "odbc"
+        - "jdbc"
+        - "unclosed quotation mark"
+        - "quoted string not properly terminated"
+      minConfidence: 0.78
+
+  # 字符串参数：布尔真/假条件对比。
+  # 使用 APPEND 保留原参数值，例如 name=abc -> name=abc' AND 1=1--。
+  # 需要 LLM 二次研判，避免把普通输入校验错误当成布尔盲注。
+  - id: generic_boolean_pair_string
+    technique: BOOLEAN_BASED
+    strategy: BOOLEAN_BASED_MINIMAL
+    priority: 2
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.82
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: "' AND 1=1--"
+        falseValue: "' AND 1=2--"
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.90
+      maxSimilarityTrueFalse: 0.80
+      minConfidence: 0.78
+
+  # 数字参数：布尔真/假条件对比。
+  # 只允许 NUMERIC 值类型执行。非数字字段不要跑这个 probe。
+  # 注意：JSON 数字字段遇到 "1 AND 1=1" 会被转为字符串，因此必须依赖 LLM 复核。
+  - id: generic_boolean_pair_integer
+    technique: BOOLEAN_BASED
+    strategy: BOOLEAN_BASED_MINIMAL
+    priority: 3
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [NUMERIC]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: " AND 1=1"
+        falseValue: " AND 1=2"
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.90
+      maxSimilarityTrueFalse: 0.80
+      minConfidence: 0.78
+
+  # DBMS 专用探针默认关闭。
+  # 需要确认目标数据库或手动验证时再在外置规则中启用。
+  - id: mysql_time_delay
+    technique: TIME_BASED
+    strategy: TIME_BASED
+    enabledByDefault: false
+    priority: 90
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.92
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [STRING, NUMERIC, UNKNOWN]
+    payloads:
+      - value: "' AND SLEEP(3)--"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: TIME_DELAY
+      minDelayMs: 2500
+      baselineMultiplier: 2.5
+      minConfidence: 0.86

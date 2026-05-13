@@ -1,0 +1,48 @@
+# 认证/授权绕过候选验证规则。
+# 当前通用变异器对 Header/Cookie 的上下文能力有限，默认关闭高误报探针。
+# 如果你有明确的低权限 token 或测试账号上下文，建议在外置规则中启用并改成真实安全样本。
+attackType: AUTH
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: auth_remove_token
+    technique: REMOVE_TOKEN
+    strategy: REMOVE_TOKEN
+    enabledByDefault: false
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.70
+    applicableParamTypes: [HEADER, COOKIE]
+    valueTypes: [JWT, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: ""
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: BASELINE_SIMILAR
+      minSimilarityTrueBaseline: 0.90
+      minConfidence: 0.62
+
+  - id: auth_invalid_role_token
+    technique: ROLE_SWITCH
+    strategy: ROLE_SWITCH
+    enabledByDefault: false
+    priority: 20
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.65
+    applicableParamTypes: [HEADER, COOKIE]
+    valueTypes: [JWT, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "Bearer invalid-role-token"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: BASELINE_SIMILAR
+      minSimilarityTrueBaseline: 0.90
+      minConfidence: 0.58

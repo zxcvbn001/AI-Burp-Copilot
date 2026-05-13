@@ -1,0 +1,70 @@
+# IDOR / 水平越权最小化验证规则。
+# IDOR 不能只看响应相似度，建议默认要求 LLM 结合差异字段和业务语义二次研判。
+attackType: IDOR
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  # 数字 ID +1。value 是增量，不是替换后的最终值。
+  - id: idor_numeric_neighbor_plus
+    technique: NUMERIC_INCREMENT
+    strategy: NUMERIC_INCREMENT
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.70
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "1"
+        mutation: ADD
+        role: TRIGGER
+    oracle:
+      type: BASELINE_DIFF
+      maxSimilarityTrueFalse: 0.96
+      minConfidence: 0.55
+
+  # 数字 ID -1。与 +1 分开写，方便通过 priority 控制顺序和命中即停。
+  - id: idor_numeric_neighbor_minus
+    technique: NUMERIC_INCREMENT
+    strategy: NUMERIC_INCREMENT
+    priority: 20
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.70
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "1"
+        mutation: SUBTRACT
+        role: TRIGGER
+    oracle:
+      type: BASELINE_DIFF
+      maxSimilarityTrueFalse: 0.96
+      minConfidence: 0.55
+
+  # UUID 固定值替换默认关闭。
+  # 没有“另一个真实对象 ID”上下文时，这类探针通常只会产生 404 或校验错误。
+  - id: idor_uuid_known_value
+    technique: UUID_SWAP
+    strategy: UUID_SWAP
+    enabledByDefault: false
+    priority: 50
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.60
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [UUID]
+    requiresLlmReview: true
+    payloads:
+      - value: "00000000-0000-0000-0000-000000000001"
+        mutation: REPLACE
+        role: TRIGGER
+    oracle:
+      type: BASELINE_DIFF
+      maxSimilarityTrueFalse: 0.96
+      minConfidence: 0.50

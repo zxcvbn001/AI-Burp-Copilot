@@ -1,0 +1,30 @@
+# XSS 最小化验证规则。
+# 默认使用无害 HTML 标记，只确认响应中是否出现未转义反射痕迹。
+attackType: XSS
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: xss_harmless_html_reflection
+    technique: REFLECTION
+    strategy: BOOLEAN_BASED_MINIMAL
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.85
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN]
+    payloads:
+      - value: "<aaaa>bbbb</aaaaa>"
+        role: TRIGGER
+        mutation: APPEND
+        markers:
+          - "bbbb"
+          - "<aaaa"
+    oracle:
+      type: HTML_REFLECTION
+      requireExactPayload: false
+      requireUnescaped: true
+      requireMarkers:
+        - "bbbb"
+      minConfidence: 0.72
