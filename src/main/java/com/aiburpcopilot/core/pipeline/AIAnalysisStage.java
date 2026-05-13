@@ -4,6 +4,7 @@ import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.cache.ICacheService;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.context.AnalysisResult;
+import com.aiburpcopilot.core.context.EndpointActionClassifier;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.verification.capability.AnalysisResultCapabilityFilter;
@@ -114,6 +115,7 @@ public class AIAnalysisStage implements IPipelineStage {
                     if (capabilityFilter != null) {
                         cachedResult = capabilityFilter.filter(cachedResult, context);
                     }
+                    context.setEndpointActionType(EndpointActionClassifier.classify(context, cachedResult));
                     context.setAnalysisResult(cachedResult);
                     context.getAnalysisResult().setAiCallDurationMs(System.currentTimeMillis() - startTime);
                     return;
@@ -162,6 +164,7 @@ public class AIAnalysisStage implements IPipelineStage {
             if (capabilityFilter != null) {
                 result = capabilityFilter.filter(result, context);
             }
+            context.setEndpointActionType(EndpointActionClassifier.classify(context, result));
             result.setAiCallDurationMs(System.currentTimeMillis() - startTime);
             result.setRawResponse(aiResponse);
             context.setAnalysisResult(result);

@@ -241,6 +241,12 @@ public class AppConfig {
         @JsonProperty("maxPayloadLength")
         private int maxPayloadLength = 128;
 
+        @JsonProperty("allowedInfluenceActions")
+        private List<String> allowedInfluenceActions = new ArrayList<>(List.of("READ"));
+
+        @JsonProperty("allowedVerificationActions")
+        private List<String> allowedVerificationActions = new ArrayList<>(List.of("READ"));
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
         public int getMaxRequestsPerEndpoint() { return maxRequestsPerEndpoint; }
@@ -251,6 +257,14 @@ public class AppConfig {
         public void setWhitelist(List<String> whitelist) { this.whitelist = whitelist; }
         public int getMaxPayloadLength() { return maxPayloadLength; }
         public void setMaxPayloadLength(int maxPayloadLength) { this.maxPayloadLength = maxPayloadLength; }
+        public List<String> getAllowedInfluenceActions() { return allowedInfluenceActions; }
+        public void setAllowedInfluenceActions(List<String> allowedInfluenceActions) {
+            this.allowedInfluenceActions = allowedInfluenceActions != null ? allowedInfluenceActions : new ArrayList<>();
+        }
+        public List<String> getAllowedVerificationActions() { return allowedVerificationActions; }
+        public void setAllowedVerificationActions(List<String> allowedVerificationActions) {
+            this.allowedVerificationActions = allowedVerificationActions != null ? allowedVerificationActions : new ArrayList<>();
+        }
     }
 
     // ---------- Top-level Getters & Setters ----------

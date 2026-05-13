@@ -140,7 +140,8 @@ public class EndpointAnalysisPanel extends JPanel {
             clearDetail();
             return;
         }
-        summaryArea.setText(entry.getAiSummary() != null ? entry.getAiSummary() : "\u6682\u65e0\u5206\u6790\u7ed3\u679c");
+        summaryArea.setText("端点动作类型: " + (entry.getEndpointActionType() != null ? entry.getEndpointActionType() : "UNKNOWN")
+                + "\n\n" + (entry.getAiSummary() != null ? entry.getAiSummary() : "\u6682\u65e0\u5206\u6790\u7ed3\u679c"));
         attackSurfaceArea.setText(formatLines(entry.getAttackSurface(), "\u6682\u65e0\u653b\u51fb\u9762\u5206\u6790"));
         vulnArea.setText(formatVulnerabilities(entry));
         testArea.setText(formatLines(entry.getRecommendedTests(), "\u6682\u65e0\u63a8\u8350\u6d4b\u8bd5"));
@@ -214,7 +215,7 @@ public class EndpointAnalysisPanel extends JPanel {
     }
 
     private static class EndpointTableModel extends AbstractTableModel {
-        private final String[] columns = {"\u65f6\u95f4", "\u65b9\u6cd5", "URL", "\u5206\u6790\u6458\u8981"};
+        private final String[] columns = {"\u65f6\u95f4", "\u65b9\u6cd5", "URL", "\u52a8\u4f5c", "\u5206\u6790\u6458\u8981"};
         private List<HistoryEntry> entries = List.of();
 
         void setEntries(List<HistoryEntry> entries) {
@@ -237,7 +238,8 @@ public class EndpointAnalysisPanel extends JPanel {
                 case 0 -> DATE_FORMAT.format(new Date(entry.getTimestamp()));
                 case 1 -> entry.getMethod();
                 case 2 -> entry.getUrl();
-                case 3 -> truncate(entry.getAiSummary(), 100);
+                case 3 -> entry.getEndpointActionType();
+                case 4 -> truncate(entry.getAiSummary(), 100);
                 default -> "";
             };
         }

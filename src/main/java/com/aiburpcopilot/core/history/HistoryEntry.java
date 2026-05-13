@@ -36,6 +36,8 @@ public class HistoryEntry {
     /** 端点类型 */
     private EndpointType endpointType;
 
+    private EndpointActionType endpointActionType;
+
     /** 最高风险等级 */
     private RiskLevel riskLevel;
 
@@ -102,6 +104,7 @@ public class HistoryEntry {
         entry.statusCode = context.getStatusCode();
         entry.contentType = context.getContentType();
         entry.endpointType = context.getEndpointType();
+        entry.endpointActionType = context.getEndpointActionType();
         entry.analysisStatus = context.getAnalysisStatus();
         entry.parameterCount = context.getParameters() != null ? context.getParameters().size() : 0;
         entry.responseBodySize = context.getResponseBodySize();
@@ -183,6 +186,8 @@ public class HistoryEntry {
     public void setContentType(String contentType) { this.contentType = contentType; }
     public EndpointType getEndpointType() { return endpointType; }
     public void setEndpointType(EndpointType endpointType) { this.endpointType = endpointType; }
+    public EndpointActionType getEndpointActionType() { return endpointActionType; }
+    public void setEndpointActionType(EndpointActionType endpointActionType) { this.endpointActionType = endpointActionType; }
     public RiskLevel getRiskLevel() { return riskLevel; }
     public void setRiskLevel(RiskLevel riskLevel) { this.riskLevel = riskLevel; }
     public AnalysisStatus getAnalysisStatus() { return analysisStatus; }

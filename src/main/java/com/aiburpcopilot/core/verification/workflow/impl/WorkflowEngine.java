@@ -125,6 +125,16 @@ public class WorkflowEngine implements IWorkflowEngine {
 
             String stepName = def.getStepNames().get(i);
             context.setCurrentStepIndex(i);
+            if (!context.isPayloadVerificationAllowed()
+                    && !InfluenceValidationStep.STEP_NAME.equals(stepName)) {
+                String msg = "Payload verification blocked by endpoint action policy";
+                log.info("WorkflowEngine: {}", msg);
+                PluginLogger.getInstance().warn("WorkflowEngine", msg);
+                result.setCompleted(false);
+                result.setStopReason(msg);
+                result.setStoppedAtStep(i);
+                break;
+            }
             if (InfluenceValidationStep.STEP_NAME.equals(stepName)
                     && context.getInfluenceResult() != null
                     && context.getInfluenceResult().isApproved()) {

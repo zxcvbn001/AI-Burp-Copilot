@@ -90,6 +90,11 @@ public class WorkflowVerificationStage implements IPipelineStage {
             pluginLog.warn("WorkflowVerification", "Skip host not allowed: " + context.getUrl());
             return false;
         }
+        if (!guard.isInfluenceActionAllowed(context) && !guard.isVerificationActionAllowed(context)) {
+            pluginLog.warn("WorkflowVerification",
+                    "Skip unsafe endpoint action: " + guard.describeActionPolicy(context, true));
+            return false;
+        }
         if (context.getAnalysisResult() == null || !context.getAnalysisResult().isSuccess()) {
             return false;
         }
@@ -143,6 +148,18 @@ public class WorkflowVerificationStage implements IPipelineStage {
                 WorkflowContext workflowContext = new WorkflowContext(context, candidate);
                 workflowContext.setPolicyEngine(policyEngine);
                 workflowContext.setReplayEngine(replayEngine);
+                workflowContext.setPayloadVerificationAllowed(guard.isVerificationActionAllowed(context));
+                if (!guard.isInfluenceActionAllowed(context)) {
+                    pluginLog.warn("WorkflowVerification",
+                            "Skip influence replay by action policy: "
+                                    + guard.describeActionPolicy(context, true));
+                    continue;
+                }
+                if (!workflowContext.isPayloadVerificationAllowed()) {
+                    pluginLog.warn("WorkflowVerification",
+                            "Payload verification will be blocked by action policy: "
+                                    + guard.describeActionPolicy(context, false));
+                }
                 workflowContext.setParameterProfile(profileCandidate(context, candidate));
                 InfluenceResult cachedInfluence = influenceCache.get(influenceCacheKey(candidate));
                 if (cachedInfluence != null) {

@@ -31,6 +31,8 @@ public class AnalysisResult {
     /** AI 分析总结 */
     private String summary;
 
+    private String endpointActionType;
+
     /** AI 推荐的结构化验证技术列表（Phase 2 架构修正新增） */
     private List<TechniqueRecommendation> recommendedTechniques;
 
@@ -146,6 +148,14 @@ public class AnalysisResult {
 
     public void setSummary(String summary) {
         this.summary = summary;
+    }
+
+    public String getEndpointActionType() {
+        return endpointActionType;
+    }
+
+    public void setEndpointActionType(String endpointActionType) {
+        this.endpointActionType = endpointActionType;
     }
 
     public List<TechniqueRecommendation> getRecommendedTechniques() {

@@ -11,9 +11,11 @@
 3. 可能的漏洞 - 只能输出泛化漏洞类型，并明确关联具体参数名
 4. 推荐测试 - 只能描述规则内验证思路，不要写 payload
 5. 推荐验证技术 - 只作为引擎内部建议，不要把技术细分当成漏洞名称
+6. 端点动作类型 - 判断该接口属于查询、创建、更新、删除、认证还是未知
 
 返回 JSON，字段必须完整：
 {
+  "endpointActionType": "READ/CREATE/UPDATE/DELETE/AUTH/UNKNOWN",
   "attackSurface": ["攻击面列表"],
   "highValueParams": [{"paramName": "参数名", "reason": "原因说明", "riskLevel": "HIGH/MEDIUM/LOW"}],
   "possibleVulnerabilities": ["漏洞类型 -> 关联参数名"],
@@ -32,6 +34,8 @@
 
 字段规则：
 - parameterName 必须是请求中真实存在的参数名。
+- endpointActionType 含义：READ=查询/详情/列表，CREATE=新增/上传/注册，UPDATE=修改/提交/状态变更，DELETE=删除/移除，AUTH=登录/退出/token/session，UNKNOWN=无法判断。
+- 如果 HTTP 方法或路径明显是 POST/PUT/PATCH/DELETE 等写操作，不要把 endpointActionType 输出为 READ。
 - possibleVulnerabilities 只能使用泛化漏洞类型：SQLI、XSS、IDOR、SSRF、AUTH、PATH_TRAVERSAL；格式建议为 "SQLI -> id"。
 - 不要在 possibleVulnerabilities、attackSurface、summary 中输出细分漏洞名，例如：盲注、报错注入、延时注入、布尔注入、反射型 XSS、存储型 XSS、DOM XSS。
 - attackType 必须来自本地规则能力边界，且只能是泛化类型。

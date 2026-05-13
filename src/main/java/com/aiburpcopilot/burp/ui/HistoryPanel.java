@@ -144,6 +144,7 @@ public class HistoryPanel extends JPanel {
         sb.append("URL: ").append(entry.getUrl()).append("\n");
         sb.append("Status: ").append(entry.getStatusCode()).append("\n");
         sb.append("Type: ").append(entry.getEndpointType()).append("\n");
+        sb.append("Action: ").append(entry.getEndpointActionType()).append("\n");
         sb.append("Risk: ").append(entry.getRiskLevel()).append("\n");
         sb.append("Analysis: ").append(entry.getAnalysisStatus()).append("\n\n");
 
@@ -199,7 +200,7 @@ public class HistoryPanel extends JPanel {
     // ========== Table Model ==========
 
     private static class HistoryTableModel extends AbstractTableModel {
-        private final String[] columns = {"Time", "Method", "URL", "Type", "Risk", "Status", "Summary"};
+        private final String[] columns = {"Time", "Method", "URL", "Type", "Action", "Risk", "Status", "Summary"};
         private List<HistoryEntry> entries = List.of();
 
         void setEntries(List<HistoryEntry> entries) {
@@ -231,9 +232,10 @@ public class HistoryPanel extends JPanel {
                 case 1 -> e.getMethod();
                 case 2 -> e.getUrl();
                 case 3 -> e.getEndpointType();
-                case 4 -> e.getRiskLevel();
-                case 5 -> e.getAnalysisStatus();
-                case 6 -> {
+                case 4 -> e.getEndpointActionType();
+                case 5 -> e.getRiskLevel();
+                case 6 -> e.getAnalysisStatus();
+                case 7 -> {
                     String summary = e.getAiSummary();
                     yield (summary != null && summary.length() > 80) ? summary.substring(0, 80) + "..." : summary;
                 }

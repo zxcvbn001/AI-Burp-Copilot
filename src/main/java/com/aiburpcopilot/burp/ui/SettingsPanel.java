@@ -22,7 +22,7 @@ public class SettingsPanel extends JPanel {
     private JTextField apiKeyField;
     private JTextField modelField;
     private JTextField apiUrlField;
-    private JTextField providerField;
+    private JComboBox<String> providerCombo;
 
     // Scan Settings
     private JTextField skipExtensionsField;
@@ -46,6 +46,8 @@ public class SettingsPanel extends JPanel {
     private JTextField verificationTimeoutField;
     private JTextField verificationWhitelistField;
     private JTextField verificationMaxPayloadLengthField;
+    private java.util.Map<String, JCheckBox> allowedInfluenceActionChecks;
+    private java.util.Map<String, JCheckBox> allowedVerificationActionChecks;
 
     public SettingsPanel(IConfigService configService, MontoyaApi api) {
         this.configService = configService;
@@ -59,11 +61,7 @@ public class SettingsPanel extends JPanel {
 
         JTabbedPane settingsTabs = new JTabbedPane();
         UiUtil.applyBurpFont(settingsTabs);
-        settingsTabs.addTab("LLM", createLLMPanel());
-        settingsTabs.addTab("Scan", createScanPanel());
-        settingsTabs.addTab("AI", createAIPanel());
-        settingsTabs.addTab("Storage", createStoragePanel());
-        settingsTabs.addTab("Verification", createVerificationPanel());
+        settingsTabs.addTab("Basic", createBasicSettingsPanel());
         ConfigStatusPanel configStatusPanel = new ConfigStatusPanel();
         configStatusPanel.setOnReload(this::reloadSettingsFromDisk);
         settingsTabs.addTab("Config Files", configStatusPanel);
@@ -98,6 +96,28 @@ public class SettingsPanel extends JPanel {
 
     // ---------- Panels ----------
 
+    private JPanel createBasicSettingsPanel() {
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.add(wrapSection("LLM", createLLMPanel()));
+        content.add(wrapSection("AI", createAIPanel()));
+        content.add(wrapSection("Scan", createScanPanel()));
+        content.add(wrapSection("Storage", createStoragePanel()));
+        content.add(wrapSection("Verification Safety", createVerificationPanel()));
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel wrapSection(String title, JPanel inner) {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBorder(BorderFactory.createTitledBorder(title));
+        wrapper.add(inner, BorderLayout.CENTER);
+        return wrapper;
+    }
+
     private JPanel createLLMPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
@@ -109,8 +129,9 @@ public class SettingsPanel extends JPanel {
         // Provider
         panel.add(new JLabel("Provider:"), gbc);
         gbc.gridx = 1;
-        providerField = new JTextField(30);
-        panel.add(providerField, gbc);
+        providerCombo = new JComboBox<>(new String[]{"deepseek", "qwen", "openai"});
+        providerCombo.setEditable(true);
+        panel.add(providerCombo, gbc);
 
         // Model
         gbc.gridx = 0; gbc.gridy++;
@@ -280,11 +301,39 @@ public class SettingsPanel extends JPanel {
         verificationWhitelistField.setToolTipText("Only verify these hosts. Leave empty to allow all.");
         panel.add(verificationWhitelistField, gbc);
 
+        gbc.gridx = 0; gbc.gridy++;
+        panel.add(new JLabel("Allowed Influence Actions:"), gbc);
+        gbc.gridx = 1;
+        allowedInfluenceActionChecks = createActionChecks();
+        panel.add(createActionCheckPanel(allowedInfluenceActionChecks), gbc);
+
+        gbc.gridx = 0; gbc.gridy++;
+        panel.add(new JLabel("Allowed Verification Actions:"), gbc);
+        gbc.gridx = 1;
+        allowedVerificationActionChecks = createActionChecks();
+        panel.add(createActionCheckPanel(allowedVerificationActionChecks), gbc);
+
         // 鍗犱綅濉厖
         gbc.gridx = 0; gbc.gridy++;
         gbc.weighty = 1.0;
         panel.add(new JLabel(), gbc);
 
+        return panel;
+    }
+
+    private java.util.Map<String, JCheckBox> createActionChecks() {
+        java.util.Map<String, JCheckBox> checks = new java.util.LinkedHashMap<>();
+        for (String action : java.util.List.of("READ", "CREATE", "UPDATE", "DELETE", "AUTH", "UNKNOWN", "ALL")) {
+            checks.put(action, new JCheckBox(action));
+        }
+        return checks;
+    }
+
+    private JPanel createActionCheckPanel(java.util.Map<String, JCheckBox> checks) {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        for (JCheckBox checkBox : checks.values()) {
+            panel.add(checkBox);
+        }
         return panel;
     }
 
@@ -296,7 +345,7 @@ public class SettingsPanel extends JPanel {
             configPathField.setText(String.valueOf(configService.getConfigFilePath()));
         }
 
-        providerField.setText(config.getLlm().getProvider());
+        providerCombo.setSelectedItem(config.getLlm().getProvider());
         modelField.setText(config.getLlm().getModel());
         apiUrlField.setText(config.getLlm().getApiUrl());
         apiKeyField.setText(config.getLlm().getApiKey());
@@ -319,6 +368,8 @@ public class SettingsPanel extends JPanel {
         verificationTimeoutField.setText(String.valueOf(config.getVerification().getRequestTimeoutSeconds()));
         verificationWhitelistField.setText(joinList(config.getVerification().getWhitelist()));
         verificationMaxPayloadLengthField.setText(String.valueOf(config.getVerification().getMaxPayloadLength()));
+        setActionChecks(allowedInfluenceActionChecks, config.getVerification().getAllowedInfluenceActions());
+        setActionChecks(allowedVerificationActionChecks, config.getVerification().getAllowedVerificationActions());
     }
 
     private String joinList(java.util.List<String> values) {
@@ -335,7 +386,7 @@ public class SettingsPanel extends JPanel {
         try {
             AppConfig config = configService.getConfig();
 
-            config.getLlm().setProvider(providerField.getText().trim());
+            config.getLlm().setProvider(String.valueOf(providerCombo.getSelectedItem()).trim());
             config.getLlm().setModel(modelField.getText().trim());
             config.getLlm().setApiUrl(apiUrlField.getText().trim());
             config.getLlm().setApiKey(apiKeyField.getText().trim());
@@ -370,6 +421,8 @@ public class SettingsPanel extends JPanel {
                             .filter(s -> !s.isEmpty())
                             .toList());
             config.getVerification().setMaxPayloadLength(Integer.parseInt(verificationMaxPayloadLengthField.getText().trim()));
+            config.getVerification().setAllowedInfluenceActions(selectedActions(allowedInfluenceActionChecks));
+            config.getVerification().setAllowedVerificationActions(selectedActions(allowedVerificationActionChecks));
 
             configService.updateConfig(config);
             configService.save();
@@ -418,6 +471,38 @@ public class SettingsPanel extends JPanel {
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(Integer::parseInt)
+                .toList();
+    }
+
+    private void setActionChecks(java.util.Map<String, JCheckBox> checks, java.util.List<String> selected) {
+        if (checks == null) {
+            return;
+        }
+        java.util.Set<String> values = selected != null
+                ? selected.stream().map(value -> value.toUpperCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toSet())
+                : java.util.Set.of();
+        for (java.util.Map.Entry<String, JCheckBox> entry : checks.entrySet()) {
+            entry.getValue().setSelected(values.contains(entry.getKey()));
+        }
+    }
+
+    private java.util.List<String> selectedActions(java.util.Map<String, JCheckBox> checks) {
+        if (checks == null) {
+            return java.util.List.of();
+        }
+        return checks.entrySet().stream()
+                .filter(entry -> entry.getValue().isSelected())
+                .map(java.util.Map.Entry::getKey)
+                .toList();
+    }
+
+    private java.util.List<String> parseStringList(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
                 .toList();
     }
 

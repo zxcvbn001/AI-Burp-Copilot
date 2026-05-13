@@ -33,6 +33,8 @@ public class WorkflowContext {
     /** Replay 引擎 */
     private IReplayEngine replayEngine;
 
+    private boolean payloadVerificationAllowed = true;
+
     /** 收集到的所有证据 */
     private final List<Evidence> allEvidences = new ArrayList<>();
 
@@ -107,6 +109,11 @@ public class WorkflowContext {
 
     public IReplayEngine getReplayEngine() { return replayEngine; }
     public void setReplayEngine(IReplayEngine replayEngine) { this.replayEngine = replayEngine; }
+
+    public boolean isPayloadVerificationAllowed() { return payloadVerificationAllowed; }
+    public void setPayloadVerificationAllowed(boolean payloadVerificationAllowed) {
+        this.payloadVerificationAllowed = payloadVerificationAllowed;
+    }
 
     public List<Evidence> getAllEvidences() { return allEvidences; }
 

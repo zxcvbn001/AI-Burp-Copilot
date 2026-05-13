@@ -59,6 +59,8 @@ public class HTTPContext {
     /** 端点类型（由 EndpointClassifier 填充） */
     private EndpointType endpointType;
 
+    private EndpointActionType endpointActionType;
+
     /** AI 分析结果（由 AIAnalysisStage 填充） */
     private AnalysisResult analysisResult;
 
@@ -93,6 +95,7 @@ public class HTTPContext {
         this.requestId = UUID.randomUUID().toString().replace("-", "");
         this.parameters = new ArrayList<>();
         this.endpointType = EndpointType.UNKNOWN;
+        this.endpointActionType = EndpointActionType.UNKNOWN;
         this.analysisStatus = AnalysisStatus.PENDING;
         this.riskLevel = RiskLevel.INFO;
         this.timestamp = System.currentTimeMillis();
@@ -215,6 +218,14 @@ public class HTTPContext {
         this.endpointType = endpointType;
     }
 
+    public EndpointActionType getEndpointActionType() {
+        return endpointActionType;
+    }
+
+    public void setEndpointActionType(EndpointActionType endpointActionType) {
+        this.endpointActionType = endpointActionType != null ? endpointActionType : EndpointActionType.UNKNOWN;
+    }
+
     public AnalysisResult getAnalysisResult() {
         return analysisResult;
     }
@@ -326,6 +337,9 @@ public class HTTPContext {
         sb.append("Path: ").append(path).append("\n");
         sb.append("Content-Type: ").append(contentType).append("\n");
         sb.append("Response Content-Type: ").append(responseContentType).append("\n");
+        sb.append("Heuristic Endpoint Action: ")
+                .append(EndpointActionClassifier.classifyByHttp(this))
+                .append("\n");
 
         // 仅传递参数名和样本值，不传递敏感值
         if (parameters != null && !parameters.isEmpty()) {

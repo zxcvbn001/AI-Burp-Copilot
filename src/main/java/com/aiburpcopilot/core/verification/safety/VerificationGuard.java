@@ -1,6 +1,8 @@
 package com.aiburpcopilot.core.verification.safety;
 
 import com.aiburpcopilot.core.config.AppConfig;
+import com.aiburpcopilot.core.context.EndpointActionClassifier;
+import com.aiburpcopilot.core.context.EndpointActionType;
 import com.aiburpcopilot.core.context.HTTPContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,6 +92,22 @@ public class VerificationGuard {
         return config != null ? config.getRequestTimeoutSeconds() : 5;
     }
 
+    public boolean isInfluenceActionAllowed(HTTPContext context) {
+        return isActionAllowed(context, config != null ? config.getAllowedInfluenceActions() : List.of("READ"));
+    }
+
+    public boolean isVerificationActionAllowed(HTTPContext context) {
+        return isActionAllowed(context, config != null ? config.getAllowedVerificationActions() : List.of("READ"));
+    }
+
+    public String describeActionPolicy(HTTPContext context, boolean influence) {
+        EndpointActionType actionType = resolveActionType(context);
+        List<String> allowed = influence
+                ? (config != null ? config.getAllowedInfluenceActions() : List.of("READ"))
+                : (config != null ? config.getAllowedVerificationActions() : List.of("READ"));
+        return "endpointAction=" + actionType + ", allowed=" + allowed;
+    }
+
     /**
      * 检查是否应该跳过该端点的验证。
      *
@@ -105,5 +123,31 @@ public class VerificationGuard {
             return true;
         }
         return false;
+    }
+
+    private boolean isActionAllowed(HTTPContext context, List<String> allowedActions) {
+        if (allowedActions == null || allowedActions.isEmpty()) {
+            return false;
+        }
+        EndpointActionType actionType = resolveActionType(context);
+        for (String allowed : allowedActions) {
+            if ("ALL".equalsIgnoreCase(allowed)
+                    || actionType.name().equalsIgnoreCase(String.valueOf(allowed).trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private EndpointActionType resolveActionType(HTTPContext context) {
+        if (context == null) {
+            return EndpointActionType.UNKNOWN;
+        }
+        EndpointActionType actionType = context.getEndpointActionType();
+        if (actionType == null || actionType == EndpointActionType.UNKNOWN) {
+            actionType = EndpointActionClassifier.classifyByHttp(context);
+            context.setEndpointActionType(actionType);
+        }
+        return actionType;
     }
 }

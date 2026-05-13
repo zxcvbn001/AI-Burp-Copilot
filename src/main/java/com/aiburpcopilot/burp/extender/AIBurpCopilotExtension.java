@@ -116,12 +116,6 @@ public class AIBurpCopilotExtension implements BurpExtension {
 
             VerificationGuard verificationGuard = new VerificationGuard(
                     configService.getConfig().getVerification());
-            configService.addChangeListener(newConfig -> {
-                if (newConfig != null && newConfig.getVerification() != null) {
-                    verificationGuard.updateConfig(newConfig.getVerification());
-                }
-            });
-
             IPayloadRuleEngine payloadEngine = new YamlPayloadRuleEngine();
             ParameterMutatorRegistry mutatorRegistry = new ParameterMutatorRegistry();
             HostRateLimiter hostRateLimiter = new HostRateLimiter(
@@ -155,6 +149,13 @@ public class AIBurpCopilotExtension implements BurpExtension {
             workflowStepFactory.setAiProvider(aiProvider);
             workflowStepFactory.setPolicyEngine(policyEngine);
             workflowStepFactory.setMaxPayloadLength(verificationGuard.getMaxPayloadLength());
+            configService.addChangeListener(newConfig -> {
+                if (newConfig != null && newConfig.getVerification() != null) {
+                    verificationGuard.updateConfig(newConfig.getVerification());
+                    workflowStepFactory.setMaxPayloadLength(
+                            newConfig.getVerification().getMaxPayloadLength());
+                }
+            });
             IWorkflowEngine workflowEngine = workflowStepFactory.createEngine();
 
             log.info("Phase 3 verification components initialized");
