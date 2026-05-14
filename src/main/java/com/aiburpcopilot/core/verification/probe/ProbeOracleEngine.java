@@ -334,7 +334,7 @@ public class ProbeOracleEngine {
             double confidence = llmDecision.available
                     ? llmDecision.confidence
                     : probe.getOracle().getMinConfidence();
-            if (hasNegativeEvidence) {
+            if (!llmDecision.available && hasNegativeEvidence) {
                 confidence = Math.min(confidence, 0.45);
             }
             result.setMatched(true);
@@ -378,7 +378,7 @@ public class ProbeOracleEngine {
                 double confidence = llmDecision.available
                         ? llmDecision.confidence
                         : probe.getOracle().getMinConfidence();
-                if (hasNegativeEvidence) {
+                if (!llmDecision.available && hasNegativeEvidence) {
                     confidence = Math.min(confidence, 0.45);
                 }
                 result.setMatched(true);

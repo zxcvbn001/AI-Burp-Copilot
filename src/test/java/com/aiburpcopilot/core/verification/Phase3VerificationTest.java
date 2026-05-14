@@ -31,6 +31,7 @@ import com.aiburpcopilot.core.pipeline.AIAnalysisStage;
 import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.scanner.endpoint.EndpointClassifier;
 import com.aiburpcopilot.core.cache.ICacheService;
+import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.prompts.IPromptService;
 import com.aiburpcopilot.core.ai.IAIProvider;
@@ -935,14 +936,33 @@ public class Phase3VerificationTest {
     @Order(43)
     @DisplayName("External payload rule reload updates probe filters and catalog capabilities")
     void testExternalPayloadRuleReloadUpdatesRuntimeViews() throws Exception {
-        String previousHome = System.getProperty("aiburpcopilot.home");
+        Path previousHome = ExternalResourcePaths.homeDirOrNull();
         Path tempHome = Files.createTempDirectory("aiburpcopilot-rule-reload");
         try {
-            System.setProperty("aiburpcopilot.home", tempHome.toString());
+            ExternalResourcePaths.setManualHomeDir(tempHome);
+            Path sqliRule = tempHome.resolve("rules").resolve("payloads").resolve("sqli.yaml");
+            Files.createDirectories(sqliRule.getParent());
+            Files.writeString(sqliRule, """
+                    attackType: SQLI
+                    aliases: [SQL]
+                    probes:
+                      - id: generic_quote_error_recovery
+                        technique: ERROR_BASED
+                        strategy: ERROR_BASED
+                        applicableParamTypes: [QUERY, BODY, PATH]
+                        valueTypes: [STRING, EMAIL, URL, UNKNOWN]
+                        payloads:
+                          - value: "'"
+                            role: TRIGGER
+                            mutation: APPEND
+                        oracle:
+                          type: ERROR_KEYWORD
+                          minConfidence: 0.78
+                    """, StandardCharsets.UTF_8);
+
             YamlPayloadRuleEngine ruleEngine = new YamlPayloadRuleEngine();
             RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(null, ruleEngine);
 
-            Path sqliRule = tempHome.resolve("rules").resolve("payloads").resolve("sqli.yaml");
             String updated = Files.readString(sqliRule, StandardCharsets.UTF_8)
                     .replace("valueTypes: [STRING, EMAIL, URL, UNKNOWN]",
                             "valueTypes: [STRING, EMAIL, URL, UNKNOWN, NUMERIC]");
@@ -959,11 +979,7 @@ public class Phase3VerificationTest {
             assertTrue(catalog.supportsAttackType(AttackType.SQLI));
             assertTrue(catalog.supportsStrategy("SQLI", "ERROR_BASED"));
         } finally {
-            if (previousHome == null) {
-                System.clearProperty("aiburpcopilot.home");
-            } else {
-                System.setProperty("aiburpcopilot.home", previousHome);
-            }
+            ExternalResourcePaths.setManualHomeDir(previousHome);
         }
     }
 
