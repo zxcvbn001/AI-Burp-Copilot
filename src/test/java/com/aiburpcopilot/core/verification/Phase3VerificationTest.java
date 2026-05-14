@@ -56,6 +56,55 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class Phase3VerificationTest {
 
+    private static Path originalHomeDir;
+    private static Path testHomeDir;
+
+    @BeforeAll
+    static void setupExternalConfigDir() throws Exception {
+        Path existing = ExternalResourcePaths.homeDirOrNull();
+        originalHomeDir = existing;
+        if (existing != null) {
+            testHomeDir = existing;
+            return;
+        }
+
+        testHomeDir = Files.createTempDirectory("aiburpcopilot-test-home");
+        ExternalResourcePaths.setManualHomeDir(testHomeDir);
+        Files.createDirectories(testHomeDir.resolve("prompts"));
+        Files.createDirectories(testHomeDir.resolve("rules").resolve("payloads"));
+        Files.writeString(testHomeDir.resolve("application.yml"), """
+                llm:
+                  provider: deepseek
+                  model: deepseek-chat
+                  apiKey: test-key
+                  apiUrl: https://example.invalid/v1/chat/completions
+                ai:
+                  maxTokens: 1024
+                  timeoutMs: 30000
+                  maxPromptLength: 8000
+                verification:
+                  enabled: true
+                  allowedInfluenceActions: [READ, CREATE, UPDATE, DELETE, AUTH, UNKNOWN, ALL]
+                  allowedVerificationActions: [READ, CREATE, UPDATE, DELETE, AUTH, UNKNOWN, ALL]
+                """, StandardCharsets.UTF_8);
+    }
+
+    @AfterAll
+    static void cleanupExternalConfigDir() throws Exception {
+        ExternalResourcePaths.setManualHomeDir(originalHomeDir);
+        if (originalHomeDir == null && testHomeDir != null && Files.exists(testHomeDir)) {
+            try (var walk = Files.walk(testHomeDir)) {
+                walk.sorted((a, b) -> b.getNameCount() - a.getNameCount())
+                        .forEach(path -> {
+                            try {
+                                Files.deleteIfExists(path);
+                            } catch (Exception ignored) {
+                            }
+                        });
+            }
+        }
+    }
+
     // ============================================================
     // Test 1: Numeric Mutation
     // ============================================================

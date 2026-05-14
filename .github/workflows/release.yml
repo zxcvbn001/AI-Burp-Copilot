@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     name: Build and publish release
@@ -22,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -30,27 +36,48 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Test
-        run: mvn --batch-mode test
-
-      - name: Package
-        run: mvn --batch-mode -DskipTests package
-
-      - name: Prepare release asset
+      - name: Resolve release tag
         shell: bash
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG_NAME="${{ inputs.tag }}"
           fi
-          cp target/ai-burp-copilot-v2-jar-with-dependencies.jar "target/ai-burp-copilot-${TAG_NAME}.jar"
+          if [[ -z "${TAG_NAME}" ]]; then
+            echo "Release tag is empty"
+            exit 1
+          fi
+          if [[ ! "${TAG_NAME}" =~ ^v[0-9].* ]]; then
+            echo "Release tag must start with v, got: ${TAG_NAME}"
+            exit 1
+          fi
           echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_ENV"
-          echo "ASSET_PATH=target/ai-burp-copilot-${TAG_NAME}.jar" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: Prepare release asset
+        shell: bash
+        run: |
+          SOURCE_JAR="target/ai-burp-copilot-v2-jar-with-dependencies.jar"
+          TARGET_JAR="target/ai-burp-copilot-${TAG_NAME}.jar"
+          if [ ! -f "${SOURCE_JAR}" ]; then
+            echo "Release asset not found: ${SOURCE_JAR}"
+            ls -la target || true
+            exit 1
+          fi
+          cp "${SOURCE_JAR}" "${TARGET_JAR}"
+          sha256sum "${TARGET_JAR}" > "${TARGET_JAR}.sha256"
+          echo "ASSET_PATH=${TARGET_JAR}" >> "$GITHUB_ENV"
+          echo "CHECKSUM_PATH=${TARGET_JAR}.sha256" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: AI Burp Copilot ${{ env.TAG_NAME }}
-          files: ${{ env.ASSET_PATH }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            ${{ env.ASSET_PATH }}
+            ${{ env.CHECKSUM_PATH }}
           generate_release_notes: true

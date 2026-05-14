@@ -1,13 +1,18 @@
 package com.aiburpcopilot.burp.ui;
 
 import burp.api.montoya.MontoyaApi;
+import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.ai.impl.AIProviderFactory;
 import com.aiburpcopilot.core.config.AppConfig;
+import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.utils.JsonUtil;
 import com.aiburpcopilot.utils.PluginLogger;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.io.FileNotFoundException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -28,6 +33,7 @@ public class SettingsPanel extends JPanel {
     private JTextField modelField;
     private JTextField apiUrlField;
     private JComboBox<String> providerCombo;
+    private JButton testLlmButton;
 
     private JTextField skipExtensionsField;
     private JTextField skipKeywordsField;
@@ -148,6 +154,13 @@ public class SettingsPanel extends JPanel {
         gbc.gridx = 1;
         apiKeyField = new JPasswordField(30);
         panel.add(apiKeyField, gbc);
+
+        gbc.gridx = 1;
+        gbc.gridy++;
+        gbc.anchor = GridBagConstraints.WEST;
+        testLlmButton = new JButton("Test LLM");
+        testLlmButton.addActionListener(e -> testLlmConfiguration());
+        panel.add(testLlmButton, gbc);
 
         return panel;
     }
@@ -528,6 +541,146 @@ public class SettingsPanel extends JPanel {
                     "Failed to reset config: " + e.getMessage(),
                     "Error",
                     JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void testLlmConfiguration() {
+        if (testLlmButton != null) {
+            testLlmButton.setEnabled(false);
+            testLlmButton.setText("Testing...");
+        }
+
+        try {
+            AppConfig testConfig = buildTestConfigFromFields();
+            IAIProvider provider = AIProviderFactory.create(new StaticConfigService(testConfig));
+            if (!provider.isAvailable()) {
+                throw new IllegalStateException("LLM configuration is incomplete. Check API Key or authorization settings.");
+            }
+
+            String providerName = provider.getProviderName();
+            String prompt = "This is a connectivity test for AI Burp Copilot.\n"
+                    + "Reply with a short single-line JSON only.\n"
+                    + "{\"ok\":true,\"message\":\"pong\",\"provider\":\"" + providerName + "\"}";
+
+            PluginLogger.getInstance().info(
+                    PluginLogger.Category.LLM,
+                    "Settings",
+                    "Running LLM connectivity test with provider=" + providerName
+                            + ", model=" + testConfig.getLlm().getModel()
+                            + ", url=" + testConfig.getLlm().getApiUrl());
+
+            provider.classifyEndpoint("", prompt).whenComplete((response, throwable) ->
+                    SwingUtilities.invokeLater(() -> {
+                        if (testLlmButton != null) {
+                            testLlmButton.setEnabled(true);
+                            testLlmButton.setText("Test LLM");
+                        }
+                        if (throwable != null) {
+                            PluginLogger.getInstance().error(
+                                    PluginLogger.Category.LLM,
+                                    "Settings",
+                                    "LLM connectivity test failed: " + throwable.getMessage(),
+                                    throwable instanceof Exception ? (Exception) throwable : new RuntimeException(throwable));
+                            JOptionPane.showMessageDialog(this,
+                                    "LLM test failed:\n" + throwable.getMessage(),
+                                    "LLM Test Failed",
+                                    JOptionPane.ERROR_MESSAGE);
+                            return;
+                        }
+
+                        String normalized = response != null ? response.trim() : "";
+                        String pretty = prettyJsonOrRaw(normalized);
+                        PluginLogger.getInstance().info(
+                                PluginLogger.Category.LLM,
+                                "Settings",
+                                "LLM connectivity test succeeded: " + normalized);
+                        JOptionPane.showMessageDialog(this,
+                                "LLM test succeeded.\n\nProvider: " + providerName
+                                        + "\nModel: " + testConfig.getLlm().getModel()
+                                        + "\nAPI URL: " + testConfig.getLlm().getApiUrl()
+                                        + "\n\nResponse:\n" + pretty,
+                                "LLM Test Success",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    }));
+        } catch (Exception ex) {
+            if (testLlmButton != null) {
+                testLlmButton.setEnabled(true);
+                testLlmButton.setText("Test LLM");
+            }
+            JOptionPane.showMessageDialog(this,
+                    "Unable to run LLM test:\n" + ex.getMessage(),
+                    "LLM Test Failed",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private AppConfig buildTestConfigFromFields() {
+        AppConfig base = configService.getConfig();
+        AppConfig copy = JsonUtil.fromJsonSafe(JsonUtil.toJson(base), AppConfig.class);
+        if (copy == null) {
+            copy = new AppConfig();
+        }
+        copy.getLlm().setProvider(String.valueOf(providerCombo.getSelectedItem()).trim());
+        copy.getLlm().setModel(modelField.getText().trim());
+        copy.getLlm().setApiUrl(apiUrlField.getText().trim());
+        copy.getLlm().setApiKey(apiKeyField.getText().trim());
+        copy.getAi().setMaxTokens(parseIntOrDefault(maxTokensField.getText(), copy.getAi().getMaxTokens()));
+        copy.getAi().setTimeoutMs(parseIntOrDefault(timeoutField.getText(), copy.getAi().getTimeoutMs()));
+        return copy;
+    }
+
+    private int parseIntOrDefault(String value, int defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        return Integer.parseInt(value.trim());
+    }
+
+    private String prettyJsonOrRaw(String value) {
+        if (value == null || value.isBlank()) {
+            return "(empty response)";
+        }
+        Object parsed = JsonUtil.fromJsonSafe(value, Object.class);
+        if (parsed == null) {
+            return value;
+        }
+        return JsonUtil.toPrettyJson(parsed);
+    }
+
+    private static final class StaticConfigService implements IConfigService {
+        private final AppConfig config;
+
+        private StaticConfigService(AppConfig config) {
+            this.config = config;
+        }
+
+        @Override
+        public void reload() {
+        }
+
+        @Override
+        public Path getConfigFilePath() {
+            Path homeDir = ExternalResourcePaths.homeDirOrNull();
+            return homeDir != null ? homeDir.resolve("application.yml") : null;
+        }
+
+        @Override
+        public void save() {
+            throw new UnsupportedOperationException("Test config service does not save");
+        }
+
+        @Override
+        public AppConfig getConfig() {
+            return config;
+        }
+
+        @Override
+        public void updateConfig(AppConfig config) {
+            throw new UnsupportedOperationException("Test config service is read-only");
+        }
+
+        @Override
+        public void addChangeListener(ConfigChangeListener listener) {
         }
     }
 }
