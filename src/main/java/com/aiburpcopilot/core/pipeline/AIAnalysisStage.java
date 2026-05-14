@@ -3,6 +3,7 @@ package com.aiburpcopilot.core.pipeline;
 import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.cache.ICacheService;
 import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.context.AnalysisResult;
 import com.aiburpcopilot.core.context.EndpointActionClassifier;
 import com.aiburpcopilot.core.context.EndpointType;
@@ -18,32 +19,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
- * AI 攻击面分析 Pipeline Stage。
+ * AI 鏀诲嚮闈㈠垎鏋?Pipeline Stage銆?
  * <p>
- * 仅对 ENDPOINT 类型的请求执行。
- * 调用 AI 分析接口的攻击面、参数语义和高价值参数。
+ * 浠呭 ENDPOINT 绫诲瀷鐨勮姹傛墽琛屻€?
+ * 璋冪敤 AI 鍒嗘瀽鎺ュ彛鐨勬敾鍑婚潰銆佸弬鏁拌涔夊拰楂樹环鍊煎弬鏁般€?
  * <p>
- * AI 分析输入：HTTP 上下文摘要（不含完整请求/响应体）
- * AI 分析输出：JSON 格式的攻击面分析结果（不直接生成漏洞结论）
+ * AI 鍒嗘瀽杈撳叆锛欻TTP 涓婁笅鏂囨憳瑕侊紙涓嶅惈瀹屾暣璇锋眰/鍝嶅簲浣擄級
+ * AI 鍒嗘瀽杈撳嚭锛欽SON 鏍煎紡鐨勬敾鍑婚潰鍒嗘瀽缁撴灉锛堜笉鐩存帴鐢熸垚婕忔礊缁撹锛?
  */
 public class AIAnalysisStage implements IPipelineStage {
 
     private static final Logger log = LoggerFactory.getLogger(AIAnalysisStage.class);
     private static final String ANALYSIS_CACHE_PREFIX = "analysis:broad-attack-v3:";
     private final PluginLogger pluginLog = PluginLogger.getInstance();
-
-    // 速率限制（每秒最多 N 次 AI 调用，从配置读取）
-    private final Semaphore rateLimiter;
-    private static final ScheduledExecutorService rateResetScheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "ai-rate-reset");
-                t.setDaemon(true);
-                return t;
-            });
-
     // ========== Service Dependencies ==========
 
     private final IAIProvider aiProvider;
@@ -73,17 +65,6 @@ public class AIAnalysisStage implements IPipelineStage {
         this.capabilityFilter = capabilityCatalog != null
                 ? new AnalysisResultCapabilityFilter(capabilityCatalog)
                 : null;
-        int configRateLimit = configService.getConfig().getAi().getRateLimitPerSecond();
-        if (configRateLimit <= 0) configRateLimit = 5;
-        final int rateLimit = configRateLimit;
-        this.rateLimiter = new Semaphore(rateLimit);
-        // 每秒重置速率限制：drainPermits耗尽剩余许可后release新许可
-        rateResetScheduler.scheduleAtFixedRate(
-                () -> {
-                    rateLimiter.drainPermits();
-                    rateLimiter.release(rateLimit);
-                },
-                1, 1, TimeUnit.SECONDS);
     }
 
     @Override
@@ -105,7 +86,7 @@ public class AIAnalysisStage implements IPipelineStage {
                 return;
             }
 
-            // 检查缓存
+            // 妫€鏌ョ紦瀛?
             String cacheKey = ANALYSIS_CACHE_PREFIX + context.generateCacheKey();
             Optional<String> cached = cacheService.get(cacheKey);
             if (cached.isPresent()) {
@@ -123,10 +104,10 @@ public class AIAnalysisStage implements IPipelineStage {
                 }
             }
 
-            // 构建摘要并清洗（防 Prompt Injection）
+            // 鏋勫缓鎽樿骞舵竻娲楋紙闃?Prompt Injection锛?
             String aiSummary = SecurityUtil.sanitizeForPrompt(context.toAISummary());
 
-            // 加载 Prompt
+            // 鍔犺浇 Prompt
             Optional<String> systemPrompt = promptService.loadSystemPrompt(Constants.PROMPT_ENDPOINT_ANALYSIS);
             Optional<String> userPrompt = promptService.loadTemplate(Constants.PROMPT_ENDPOINT_ANALYSIS);
 
@@ -139,17 +120,15 @@ public class AIAnalysisStage implements IPipelineStage {
                 return;
             }
 
-            // 构造最终 Prompt 并限制长度
+            // 鏋勯€犳渶缁?Prompt 骞堕檺鍒堕暱搴?
             String fullPrompt = buildRuleBoundPrompt(userPrompt.get(), aiSummary, context);
             int maxPromptLen = configService.getConfig().getAi().getMaxPromptLength();
             if (maxPromptLen > 0) {
                 fullPrompt = SecurityUtil.truncatePrompt(fullPrompt, maxPromptLen);
             }
 
-            // 速率限制：阻塞等待直到获取许可（不丢弃分析请求）
-            rateLimiter.acquire();
 
-            // 调用 AI。Provider 本身返回异步 Future；Pipeline worker 在这里等待结果或超时。
+            // 璋冪敤 AI銆侾rovider 鏈韩杩斿洖寮傛 Future锛汸ipeline worker 鍦ㄨ繖閲岀瓑寰呯粨鏋滄垨瓒呮椂銆?
             pluginLog.info(PluginLogger.Category.LLM, "AI", "Calling AI for: " + context.getMethod() + " " + context.getPath()
                     + " [prompt=" + fullPrompt.length() + " chars]");
             CompletableFuture<String> future = aiProvider.analyzeAttackSurface(
@@ -160,7 +139,7 @@ public class AIAnalysisStage implements IPipelineStage {
             long waitTimeoutMs = effectiveAiWaitTimeoutMs();
             String aiResponse = future.get(waitTimeoutMs, TimeUnit.MILLISECONDS);
 
-            // 解析结果
+            // 瑙ｆ瀽缁撴灉
             AnalysisResult result = parseAIResponse(aiResponse);
             if (capabilityFilter != null) {
                 result = capabilityFilter.filter(result, context);
@@ -170,7 +149,7 @@ public class AIAnalysisStage implements IPipelineStage {
             result.setRawResponse(aiResponse);
             context.setAnalysisResult(result);
 
-            // 缓存结果
+            // 缂撳瓨缁撴灉
             cacheService.put(cacheKey, JsonUtil.toJson(result),
                     configService.getConfig().getStorage().getCacheTtlSeconds());
 
@@ -205,8 +184,8 @@ public class AIAnalysisStage implements IPipelineStage {
         if (context.getEndpointType() != EndpointType.ENDPOINT) {
             return false;
         }
-        // 无参数请求（无 Query String 且无请求体）跳过 AI 分析
-        // 除非用户手动 send 到插件，否则静默资源、HTML 页面等不消耗 AI 配额
+        // 鏃犲弬鏁拌姹傦紙鏃?Query String 涓旀棤璇锋眰浣擄級璺宠繃 AI 鍒嗘瀽
+        // 闄ら潪鐢ㄦ埛鎵嬪姩 send 鍒版彃浠讹紝鍚﹀垯闈欓粯璧勬簮銆丠TML 椤甸潰绛変笉娑堣€?AI 閰嶉
         boolean hasQuery = context.getQuery() != null && !context.getQuery().isEmpty();
         boolean hasBody = context.getRequestBody() != null && context.getRequestBody().length > 0;
         if (!hasQuery && !hasBody) {
@@ -217,26 +196,21 @@ public class AIAnalysisStage implements IPipelineStage {
     }
 
     private long effectiveAiWaitTimeoutMs() {
-        int configured = configService.getConfig().getAi().getTimeoutMs();
-        int readTimeout = configService.getConfig().getLlm().getReadTimeoutMs();
-        int connectTimeout = configService.getConfig().getLlm().getConnectTimeoutMs();
-        return Math.max(configured, (long) readTimeout + connectTimeout + 5000L);
+        return Timeouts.effectiveLlmWaitMs(configService);
     }
 
     public void shutdown() {
-        rateResetScheduler.shutdown();
-        log.info("AI rate scheduler shutdown");
     }
 
     // ---------- Private ----------
 
     /**
-     * 解析 AI 返回的 JSON 格式结果。
-     * 如果解析失败，返回包含原始文本的 AnalysisResult。
+     * 瑙ｆ瀽 AI 杩斿洖鐨?JSON 鏍煎紡缁撴灉銆?
+     * 濡傛灉瑙ｆ瀽澶辫触锛岃繑鍥炲寘鍚師濮嬫枃鏈殑 AnalysisResult銆?
      */
     private AnalysisResult parseAIResponse(String response) {
         try {
-            // 尝试提取 JSON 部分（AI 可能包含 Markdown 代码块）
+            // 灏濊瘯鎻愬彇 JSON 閮ㄥ垎锛圓I 鍙兘鍖呭惈 Markdown 浠ｇ爜鍧楋級
             String jsonStr = extractJsonFromResponse(response);
             if (jsonStr != null) {
                 AnalysisResult result = JsonUtil.fromJsonSafe(jsonStr, AnalysisResult.class);
@@ -248,7 +222,7 @@ public class AIAnalysisStage implements IPipelineStage {
             log.warn("Failed to parse AI response as JSON, using raw text", e);
         }
 
-        // 解析失败时，将原始文本作为 summary
+        // 瑙ｆ瀽澶辫触鏃讹紝灏嗗師濮嬫枃鏈綔涓?summary
         AnalysisResult fallback = new AnalysisResult();
         fallback.setSummary(response);
         return fallback;
@@ -258,7 +232,7 @@ public class AIAnalysisStage implements IPipelineStage {
         StringBuilder prompt = new StringBuilder();
         prompt.append(template);
         if (capabilityCatalog != null) {
-            prompt.append("\n\n[本地规则能力边界]\n")
+            prompt.append("\n\n[鏈湴瑙勫垯鑳藉姏杈圭晫]\n")
                     .append(capabilityCatalog.toPromptConstraint());
         }
         prompt.append("\n\n[AUTHORITATIVE PARAMETER CONTRACT]\n")
@@ -295,13 +269,13 @@ public class AIAnalysisStage implements IPipelineStage {
     }
 
     /**
-     * 从 AI 响应中提取 JSON 字符串。
-     * 处理 Markdown 代码块包裹的情况。
+     * 浠?AI 鍝嶅簲涓彁鍙?JSON 瀛楃涓层€?
+     * 澶勭悊 Markdown 浠ｇ爜鍧楀寘瑁圭殑鎯呭喌銆?
      */
     private String extractJsonFromResponse(String response) {
         if (response == null) return null;
 
-        // 尝试提取 ```json ... ``` 中的内容
+        // 灏濊瘯鎻愬彇 ```json ... ``` 涓殑鍐呭
         int jsonStart = response.indexOf("```json");
         if (jsonStart >= 0) {
             jsonStart += 7; // skip ```json
@@ -311,7 +285,7 @@ public class AIAnalysisStage implements IPipelineStage {
             }
         }
 
-        // 尝试直接解析（AI 直接返回 JSON）
+        // 灏濊瘯鐩存帴瑙ｆ瀽锛圓I 鐩存帴杩斿洖 JSON锛?
         String trimmed = response.trim();
         if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
             return trimmed;
@@ -320,3 +294,5 @@ public class AIAnalysisStage implements IPipelineStage {
         return null;
     }
 }
+
+

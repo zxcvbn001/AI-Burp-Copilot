@@ -27,6 +27,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 public abstract class OpenAICompatibleProvider implements IAIProvider {
@@ -34,6 +38,10 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
     private static final Logger log = LoggerFactory.getLogger(OpenAICompatibleProvider.class);
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
     private static final PluginLogger pluginLog = PluginLogger.getInstance();
+    private static final ScheduledExecutorService RATE_LIMIT_SCHEDULER = Executors.newSingleThreadScheduledExecutor(
+            new DaemonThreadFactory("ai-burp-copilot-llm-rate-limit"));
+    private static final Map<String, RateLimiterState> RATE_LIMITERS = new ConcurrentHashMap<>();
+    private static final Map<String, OkHttpClient> HTTP_CLIENT_CACHE = new ConcurrentHashMap<>();
 
     protected final IConfigService configService;
 
@@ -111,7 +119,8 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
             String requestBody = JsonUtil.toJson(baseBody);
 
             int maxRetries = Math.max(0, llmConfig.getMaxRetries());
-            executeWithRetry(llmConfig, requestBody, 0, maxRetries, future);
+            executeWithRetry(llmConfig, requestBody, 0, maxRetries, future,
+                    Math.max(0, aiConfig.getRateLimitPerMinute()));
         } catch (Exception e) {
             log.error("{} failed to build AI request: {}", getProviderName(), e.getMessage(), e);
             future.completeExceptionally(e);
@@ -124,7 +133,30 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                                   String requestBody,
                                   int attempt,
                                   int maxRetries,
-                                  CompletableFuture<String> future) {
+                                  CompletableFuture<String> future,
+                                  int rateLimitPerMinute) {
+        if (future.isDone()) {
+            return;
+        }
+
+        RateLimitReservation reservation = reserveRateLimit(llmConfig, rateLimitPerMinute);
+        if (reservation.delayMs() > 0) {
+            pluginLog.info(PluginLogger.Category.LLM, getProviderName(),
+                    "Rate limit queued request: wait=" + reservation.delayMs()
+                            + "ms, queuePosition=" + reservation.queuePosition()
+                            + ", limit=" + rateLimitPerMinute + "/min");
+        }
+        RATE_LIMIT_SCHEDULER.schedule(() -> dispatchRequest(llmConfig, requestBody, attempt, maxRetries, future, rateLimitPerMinute),
+                reservation.delayMs(),
+                TimeUnit.MILLISECONDS);
+    }
+
+    private void dispatchRequest(AppConfig.LLMConfig llmConfig,
+                                 String requestBody,
+                                 int attempt,
+                                 int maxRetries,
+                                 CompletableFuture<String> future,
+                                 int rateLimitPerMinute) {
         if (future.isDone()) {
             return;
         }
@@ -156,7 +188,7 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
             public void onFailure(Call call, IOException e) {
                 if (attempt < maxRetries) {
                     retryLater(llmConfig, requestBody, attempt, maxRetries, future,
-                            "network error: " + e.getMessage());
+                            "network error: " + e.getMessage(), rateLimitPerMinute);
                     return;
                 }
                 log.error("{} API call failed after {} attempts: {}",
@@ -176,7 +208,7 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                     if (!response.isSuccessful()) {
                         if (isRetryableStatus(response.code()) && attempt < maxRetries) {
                             retryLater(llmConfig, requestBody, attempt, maxRetries, future,
-                                    "HTTP " + response.code());
+                                    "HTTP " + response.code(), rateLimitPerMinute);
                             return;
                         }
                         log.warn("{} API returned error: {} - {}",
@@ -191,7 +223,7 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                 } catch (Exception e) {
                     if (attempt < maxRetries) {
                         retryLater(llmConfig, requestBody, attempt, maxRetries, future,
-                                "parse error: " + e.getMessage());
+                                "parse error: " + e.getMessage(), rateLimitPerMinute);
                         return;
                     }
                     log.error("{} failed to parse AI response: {}", getProviderName(), e.getMessage(), e);
@@ -239,7 +271,8 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                             int attempt,
                             int maxRetries,
                             CompletableFuture<String> future,
-                            String reason) {
+                            String reason,
+                            int rateLimitPerMinute) {
         long delayMs = Math.min(3000L, 500L * (attempt + 1));
         log.warn("{} API attempt {}/{} failed ({}), retrying in {}ms",
                 getProviderName(), attempt + 1, maxRetries + 1, reason, delayMs);
@@ -247,16 +280,19 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                 "API attempt " + (attempt + 1) + "/" + (maxRetries + 1)
                         + " failed (" + reason + "), retrying in " + delayMs + "ms");
         CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)
-                .execute(() -> executeWithRetry(llmConfig, requestBody, attempt + 1, maxRetries, future));
+                .execute(() -> executeWithRetry(llmConfig, requestBody, attempt + 1, maxRetries, future, rateLimitPerMinute));
     }
 
     private OkHttpClient newHttpClient(AppConfig.LLMConfig llmConfig) {
-        return new OkHttpClient.Builder()
+        String key = Math.max(1000, llmConfig.getConnectTimeoutMs())
+                + "|" + Math.max(1000, llmConfig.getReadTimeoutMs())
+                + "|" + Math.max(1000, llmConfig.getWriteTimeoutMs());
+        return HTTP_CLIENT_CACHE.computeIfAbsent(key, ignored -> new OkHttpClient.Builder()
                 .connectTimeout(Math.max(1000, llmConfig.getConnectTimeoutMs()), TimeUnit.MILLISECONDS)
                 .readTimeout(Math.max(1000, llmConfig.getReadTimeoutMs()), TimeUnit.MILLISECONDS)
                 .writeTimeout(Math.max(1000, llmConfig.getWriteTimeoutMs()), TimeUnit.MILLISECONDS)
                 .callTimeout(Math.max(1000, llmConfig.getReadTimeoutMs() + llmConfig.getConnectTimeoutMs()), TimeUnit.MILLISECONDS)
-                .build();
+                .build());
     }
 
     private String buildChatMessages(String systemPrompt, String userPrompt) {
@@ -384,5 +420,55 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                 + "URL: " + apiUrl + "\n"
                 + "HTTP Status: " + statusCode + "\n\n"
                 + responseBody;
+    }
+
+    private RateLimitReservation reserveRateLimit(AppConfig.LLMConfig llmConfig, int rateLimitPerMinute) {
+        if (rateLimitPerMinute <= 0) {
+            return new RateLimitReservation(0, 0);
+        }
+        String limiterKey = getProviderName() + "|" + effectiveApiUrl(llmConfig);
+        RateLimiterState limiter = RATE_LIMITERS.computeIfAbsent(limiterKey, ignored -> new RateLimiterState());
+        return limiter.reserve(rateLimitPerMinute);
+    }
+
+    private record RateLimitReservation(long delayMs, int queuePosition) {
+    }
+
+    private static final class RateLimiterState {
+        private long nextAllowedAtMs = 0L;
+        private int pending = 0;
+
+        synchronized RateLimitReservation reserve(int rateLimitPerMinute) {
+            long now = System.currentTimeMillis();
+            long intervalMs = Math.max(1L, (long) Math.ceil(60000.0d / Math.max(1, rateLimitPerMinute)));
+            long scheduledAt = Math.max(now, nextAllowedAtMs);
+            nextAllowedAtMs = scheduledAt + intervalMs;
+            pending++;
+            long delay = Math.max(0L, scheduledAt - now);
+            int queuePosition = pending;
+            RATE_LIMIT_SCHEDULER.schedule(this::markDispatched, delay, TimeUnit.MILLISECONDS);
+            return new RateLimitReservation(delay, queuePosition);
+        }
+
+        private synchronized void markDispatched() {
+            if (pending > 0) {
+                pending--;
+            }
+        }
+    }
+
+    private static final class DaemonThreadFactory implements ThreadFactory {
+        private final String name;
+
+        private DaemonThreadFactory(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, name);
+            thread.setDaemon(true);
+            return thread;
+        }
     }
 }

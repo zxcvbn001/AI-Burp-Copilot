@@ -227,6 +227,7 @@ public class AIBurpCopilotExtension implements BurpExtension {
                 influenceScorer, strategyApprovalEngine);
         workflowStepFactory.setPayloadRuleEngine(payloadEngine);
         workflowStepFactory.setAiProvider(aiProvider);
+        workflowStepFactory.setConfigService(configService);
         workflowStepFactory.setPolicyEngine(policyEngine);
         workflowStepFactory.setMaxPayloadLength(verificationGuard.getMaxPayloadLength());
         IWorkflowEngine workflowEngine = workflowStepFactory.createEngine();

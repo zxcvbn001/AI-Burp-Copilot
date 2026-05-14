@@ -44,6 +44,7 @@ public class SettingsPanel extends JPanel {
 
     private JTextField maxTokensField;
     private JTextField timeoutField;
+    private JTextField rateLimitField;
 
     private JTextField maxHistoryField;
     private JTextField cacheTtlField;
@@ -228,6 +229,13 @@ public class SettingsPanel extends JPanel {
         timeoutField = new JTextField(20);
         panel.add(timeoutField, gbc);
 
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("LLM Rate Limit (/min):"), gbc);
+        gbc.gridx = 1;
+        rateLimitField = new JTextField(20);
+        panel.add(rateLimitField, gbc);
+
         return panel;
     }
 
@@ -372,6 +380,7 @@ public class SettingsPanel extends JPanel {
 
         maxTokensField.setText(String.valueOf(config.getAi().getMaxTokens()));
         timeoutField.setText(String.valueOf(config.getAi().getTimeoutMs()));
+        rateLimitField.setText(String.valueOf(config.getAi().getRateLimitPerMinute()));
 
         maxHistoryField.setText(String.valueOf(config.getStorage().getMaxHistory()));
         cacheTtlField.setText(String.valueOf(config.getStorage().getCacheTtlSeconds()));
@@ -412,6 +421,7 @@ public class SettingsPanel extends JPanel {
 
             config.getAi().setMaxTokens(Integer.parseInt(maxTokensField.getText().trim()));
             config.getAi().setTimeoutMs(Integer.parseInt(timeoutField.getText().trim()));
+            config.getAi().setRateLimitPerMinute(Integer.parseInt(rateLimitField.getText().trim()));
 
             config.getStorage().setMaxHistory(Integer.parseInt(maxHistoryField.getText().trim()));
             config.getStorage().setCacheTtlSeconds(Integer.parseInt(cacheTtlField.getText().trim()));
@@ -626,6 +636,7 @@ public class SettingsPanel extends JPanel {
         copy.getLlm().setApiKey(apiKeyField.getText().trim());
         copy.getAi().setMaxTokens(parseIntOrDefault(maxTokensField.getText(), copy.getAi().getMaxTokens()));
         copy.getAi().setTimeoutMs(parseIntOrDefault(timeoutField.getText(), copy.getAi().getTimeoutMs()));
+        copy.getAi().setRateLimitPerMinute(parseIntOrDefault(rateLimitField.getText(), copy.getAi().getRateLimitPerMinute()));
         return copy;
     }
 

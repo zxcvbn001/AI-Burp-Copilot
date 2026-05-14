@@ -1,6 +1,8 @@
 package com.aiburpcopilot.core.verification.probe;
 
 import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.influence.IInfluenceDiffEngine;
 import com.aiburpcopilot.core.verification.model.DiffResult;
@@ -18,18 +20,22 @@ import java.util.concurrent.TimeUnit;
 public class ProbeOracleEngine {
 
     private static final Logger log = LoggerFactory.getLogger(ProbeOracleEngine.class);
-    private static final int LLM_DIFF_TIMEOUT_SECONDS = 20;
-
     private final IInfluenceDiffEngine diffEngine;
     private final IAIProvider aiProvider;
+    private final IConfigService configService;
 
     public ProbeOracleEngine(IInfluenceDiffEngine diffEngine) {
-        this(diffEngine, null);
+        this(diffEngine, null, null);
     }
 
     public ProbeOracleEngine(IInfluenceDiffEngine diffEngine, IAIProvider aiProvider) {
+        this(diffEngine, aiProvider, null);
+    }
+
+    public ProbeOracleEngine(IInfluenceDiffEngine diffEngine, IAIProvider aiProvider, IConfigService configService) {
         this.diffEngine = diffEngine;
         this.aiProvider = aiProvider;
+        this.configService = configService;
     }
 
     public OracleResult evaluate(ProbeDefinition probe,
@@ -599,7 +605,7 @@ public class ProbeOracleEngine {
             String response = aiProvider.analyzeDiff(buildDiffJudgePrompt(
                             probe, mode, diff, executions,
                             deterministicMatched, deterministicReasoning))
-                    .get(LLM_DIFF_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .get(Timeouts.effectiveProbeDiffReviewWaitMs(configService), TimeUnit.MILLISECONDS);
             LlmDiffDecision decision = parseLlmDecision(response);
             if (decision.available) {
                 return decision;

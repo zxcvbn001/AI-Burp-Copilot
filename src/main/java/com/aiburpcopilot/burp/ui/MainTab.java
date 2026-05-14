@@ -36,7 +36,7 @@ public class MainTab extends JPanel {
                 api, historyService, manualVerificationService);
         this.verificationPanel = new VerificationPanel(api, historyService);
         this.staticScanPanel = new StaticScanPanel(api, historyService);
-        this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(api, historyService, aiProvider);
+        this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(api, historyService, aiProvider, configService);
         this.logPanel = new LogPanel();
         this.settingsPanel = new SettingsPanel(configService, api, reloadRuntimeResources);
 

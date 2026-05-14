@@ -37,6 +37,8 @@ application-local.yml
 application-local.yaml
 application-secret.yml
 application-secret.yaml
+.codex-template.zip
+.codex-template-unzip/
 
 # Logs and runtime state
 logs/

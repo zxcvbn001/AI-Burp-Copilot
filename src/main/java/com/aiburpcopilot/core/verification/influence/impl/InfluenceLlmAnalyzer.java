@@ -1,6 +1,8 @@
 package com.aiburpcopilot.core.verification.influence.impl;
 
 import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.influence.IInfluenceLlmAnalyzer;
 import com.aiburpcopilot.core.verification.influence.InfluenceLlmDecision;
@@ -17,12 +19,16 @@ import java.util.concurrent.TimeUnit;
 public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
 
     private static final Logger log = LoggerFactory.getLogger(InfluenceLlmAnalyzer.class);
-    private static final int TIMEOUT_SECONDS = 45;
-
     private final IAIProvider aiProvider;
+    private final IConfigService configService;
 
     public InfluenceLlmAnalyzer(IAIProvider aiProvider) {
+        this(aiProvider, null);
+    }
+
+    public InfluenceLlmAnalyzer(IAIProvider aiProvider, IConfigService configService) {
         this.aiProvider = aiProvider;
+        this.configService = configService;
     }
 
     @Override
@@ -39,7 +45,7 @@ public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
             String response = aiProvider.analyzeDiff(buildPrompt(
                             attackType, parameterName, mutationValue,
                             profile, diffResult, deterministicScore))
-                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .get(Timeouts.effectiveInfluenceReviewWaitMs(configService), TimeUnit.MILLISECONDS);
             return parseDecision(response);
         } catch (Exception e) {
             log.warn("Influence LLM analysis unavailable for param='{}': {}",

@@ -1,6 +1,8 @@
 package com.aiburpcopilot.core.verification.review;
 
 import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.verification.model.DiffResult;
 import com.aiburpcopilot.core.verification.model.ReviewStatus;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
@@ -12,13 +14,18 @@ import java.util.concurrent.TimeUnit;
 
 public class FindingReviewService {
 
-    private static final int REVIEW_TIMEOUT_SECONDS = 90;
     private static final int MAX_TRANSCRIPT_LENGTH = 12000;
 
     private final IAIProvider aiProvider;
+    private final IConfigService configService;
 
     public FindingReviewService(IAIProvider aiProvider) {
+        this(aiProvider, null);
+    }
+
+    public FindingReviewService(IAIProvider aiProvider, IConfigService configService) {
         this.aiProvider = aiProvider;
+        this.configService = configService;
     }
 
     public void review(VerificationResult result) {
@@ -35,7 +42,7 @@ public class FindingReviewService {
 
         try {
             String raw = aiProvider.analyzeDiff(buildPrompt(result))
-                    .get(REVIEW_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .get(Timeouts.effectiveFindingReviewWaitMs(configService), TimeUnit.MILLISECONDS);
             applyLlmReview(result, raw);
         } catch (Exception e) {
             result.setReviewStatus(ReviewStatus.FAILED);

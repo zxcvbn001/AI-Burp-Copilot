@@ -4,6 +4,7 @@ import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.cache.ICacheService;
 import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.prompts.IPromptService;
 import com.aiburpcopilot.utils.Constants;
@@ -201,7 +202,7 @@ public class StaticResourceScanner implements IStaticScanner {
             // 调用 AI 复核
             CompletableFuture<String> future = aiProvider.reviewStaticResource(
                     snippet.toString(), promptOpt.get());
-            String review = future.get(20, TimeUnit.SECONDS);
+            String review = future.get(Timeouts.effectiveStaticReviewWaitMs(configService), TimeUnit.MILLISECONDS);
 
             // 缓存结果（1 hour TTL）
             cacheService.put(cacheKey, review, 3600);

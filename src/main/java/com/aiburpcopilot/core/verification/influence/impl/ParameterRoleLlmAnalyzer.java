@@ -1,6 +1,8 @@
 package com.aiburpcopilot.core.verification.influence.impl;
 
 import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterContext;
 import com.aiburpcopilot.core.verification.influence.IParameterRoleAnalyzer;
@@ -19,12 +21,16 @@ import java.util.concurrent.TimeUnit;
 public class ParameterRoleLlmAnalyzer implements IParameterRoleAnalyzer {
 
     private static final Logger log = LoggerFactory.getLogger(ParameterRoleLlmAnalyzer.class);
-    private static final int TIMEOUT_SECONDS = 30;
-
     private final IAIProvider aiProvider;
+    private final IConfigService configService;
 
     public ParameterRoleLlmAnalyzer(IAIProvider aiProvider) {
+        this(aiProvider, null);
+    }
+
+    public ParameterRoleLlmAnalyzer(IAIProvider aiProvider, IConfigService configService) {
         this.aiProvider = aiProvider;
+        this.configService = configService;
     }
 
     @Override
@@ -36,7 +42,7 @@ public class ParameterRoleLlmAnalyzer implements IParameterRoleAnalyzer {
         }
         try {
             String response = aiProvider.analyzeDiff(buildPrompt(context, candidate, profile))
-                    .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .get(Timeouts.effectiveParameterRoleWaitMs(configService), TimeUnit.MILLISECONDS);
             return parse(response);
         } catch (Exception e) {
             log.warn("Parameter role LLM analysis unavailable for param='{}': {}",

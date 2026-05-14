@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.verification.influence.impl;
 
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterContext;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.verification.execution.IRequestExecutionEngine;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.model.MutatedRequest;
@@ -33,6 +34,7 @@ public class ReplayEngine implements IReplayEngine {
     private final HttpClient httpClient;
     private final VerificationGuard guard;
     private final IRequestExecutionEngine executionEngine;
+    private final Duration requestTimeout;
     private long lastDurationMs;
     private byte[] lastRequestBytes;
     private byte[] lastResponseBytes;
@@ -48,8 +50,9 @@ public class ReplayEngine implements IReplayEngine {
     public ReplayEngine(VerificationGuard guard, IRequestExecutionEngine executionEngine) {
         this.guard = guard;
         this.executionEngine = executionEngine;
+        this.requestTimeout = Duration.ofMillis(Timeouts.effectiveVerificationRequestTimeoutMs(guard));
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(requestTimeout)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
@@ -184,7 +187,7 @@ public class ReplayEngine implements IReplayEngine {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(parsed.uri)
-                    .timeout(Duration.ofSeconds(10));
+                    .timeout(requestTimeout);
 
             for (Map.Entry<String, String> e : parsed.headers.entrySet()) {
                 String name = e.getKey();

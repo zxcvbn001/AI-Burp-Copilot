@@ -4,6 +4,7 @@ import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.cache.ICacheService;
 import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterType;
@@ -215,11 +216,7 @@ public class EndpointClassifier implements IEndpointClassifier {
 
             // 调用 AI
             CompletableFuture<String> future = aiProvider.classifyEndpoint(aiSummary, promptOpt.get());
-            long waitTimeoutMs = Math.max(
-                    configService.getConfig().getAi().getTimeoutMs(),
-                    (long) configService.getConfig().getLlm().getConnectTimeoutMs()
-                            + configService.getConfig().getLlm().getReadTimeoutMs()
-                            + 5000L);
+            long waitTimeoutMs = Timeouts.effectiveLlmWaitMs(configService);
             String result = future.get(waitTimeoutMs, TimeUnit.MILLISECONDS);
 
             // 缓存结果（30 min TTL）

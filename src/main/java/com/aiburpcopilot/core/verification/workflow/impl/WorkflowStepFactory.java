@@ -1,6 +1,7 @@
 package com.aiburpcopilot.core.verification.workflow.impl;
 
 import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.influence.IInfluenceDiffEngine;
 import com.aiburpcopilot.core.verification.influence.IInfluenceLlmAnalyzer;
@@ -46,6 +47,7 @@ public class WorkflowStepFactory {
     private IPayloadRuleEngine payloadRuleEngine;
     private IProbeRuleEngine probeRuleEngine;
     private IAIProvider aiProvider;
+    private IConfigService configService;
     private IPolicyEngine policyEngine;
     private double minInfluenceScore;
     private int maxPayloadLength = 128;
@@ -80,8 +82,16 @@ public class WorkflowStepFactory {
 
     public void setAiProvider(IAIProvider aiProvider) {
         this.aiProvider = aiProvider;
-        this.influenceLlmAnalyzer = new InfluenceLlmAnalyzer(aiProvider);
-        this.parameterRoleAnalyzer = new ParameterRoleLlmAnalyzer(aiProvider);
+        this.influenceLlmAnalyzer = new InfluenceLlmAnalyzer(aiProvider, configService);
+        this.parameterRoleAnalyzer = new ParameterRoleLlmAnalyzer(aiProvider, configService);
+    }
+
+    public void setConfigService(IConfigService configService) {
+        this.configService = configService;
+        if (aiProvider != null) {
+            this.influenceLlmAnalyzer = new InfluenceLlmAnalyzer(aiProvider, configService);
+            this.parameterRoleAnalyzer = new ParameterRoleLlmAnalyzer(aiProvider, configService);
+        }
     }
 
     public void setPolicyEngine(IPolicyEngine policyEngine) {
@@ -222,7 +232,7 @@ public class WorkflowStepFactory {
                 attackTypeName,
                 replayEngine,
                 probeRuleEngine,
-                new ProbeOracleEngine(diffEngine, aiProvider),
+                new ProbeOracleEngine(diffEngine, aiProvider, configService),
                 policyEngine,
                 maxPayloadLength);
     }

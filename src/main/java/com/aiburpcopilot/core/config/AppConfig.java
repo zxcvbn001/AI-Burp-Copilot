@@ -1,6 +1,7 @@
 package com.aiburpcopilot.core.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.ArrayList;
@@ -172,8 +173,9 @@ public class AppConfig {
         @JsonProperty("maxPromptLength")
         private int maxPromptLength = 8000;
 
-        @JsonProperty("rateLimitPerSecond")
-        private int rateLimitPerSecond = 5;
+        @JsonProperty("rateLimitPerMinute")
+        @JsonAlias("rateLimitPerSecond")
+        private int rateLimitPerMinute = 60;
 
         public int getMaxTokens() { return maxTokens; }
         public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
@@ -181,8 +183,8 @@ public class AppConfig {
         public void setTimeoutMs(int timeoutMs) { this.timeoutMs = timeoutMs; }
         public int getMaxPromptLength() { return maxPromptLength; }
         public void setMaxPromptLength(int maxPromptLength) { this.maxPromptLength = maxPromptLength; }
-        public int getRateLimitPerSecond() { return rateLimitPerSecond; }
-        public void setRateLimitPerSecond(int rateLimitPerSecond) { this.rateLimitPerSecond = rateLimitPerSecond; }
+        public int getRateLimitPerMinute() { return rateLimitPerMinute; }
+        public void setRateLimitPerMinute(int rateLimitPerMinute) { this.rateLimitPerMinute = rateLimitPerMinute; }
     }
 
     // ---------- Request Config ----------

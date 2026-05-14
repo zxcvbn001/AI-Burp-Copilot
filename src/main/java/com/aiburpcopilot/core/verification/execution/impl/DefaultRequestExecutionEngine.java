@@ -12,6 +12,7 @@ import com.aiburpcopilot.core.verification.model.VerificationResult;
 import com.aiburpcopilot.core.verification.mutation.impl.ParameterMutatorRegistry;
 import com.aiburpcopilot.core.verification.rate_limit.HostRateLimiter;
 import com.aiburpcopilot.core.verification.safety.VerificationGuard;
+import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.utils.PluginLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
     private final VerificationGuard guard;
     private final ResponseCapture responseCapture;
     private final ParameterMutatorRegistry mutatorRegistry;
+    private final Duration requestTimeout;
 
     private final HttpClient httpClient;
 
@@ -59,13 +61,14 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
         this.guard = guard;
         this.responseCapture = responseCapture;
         this.mutatorRegistry = mutatorRegistry;
-        this.httpClient = createHttpClient();
+        this.requestTimeout = Duration.ofMillis(Timeouts.effectiveVerificationRequestTimeoutMs(guard));
+        this.httpClient = createHttpClient(this.requestTimeout);
     }
 
     /**
      * 创建 HttpClient，信任所有证书（用于测试环境）。
      */
-    private static HttpClient createHttpClient() {
+    private static HttpClient createHttpClient(Duration requestTimeout) {
         try {
             TrustManager[] trustAll = new TrustManager[]{
                     new X509TrustManager() {
@@ -78,13 +81,13 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             sslContext.init(null, trustAll, new java.security.SecureRandom());
             return HttpClient.newBuilder()
                     .sslContext(sslContext)
-                    .connectTimeout(Duration.ofSeconds(5))
+                    .connectTimeout(requestTimeout)
                     .followRedirects(HttpClient.Redirect.NEVER)
                     .build();
         } catch (Exception e) {
             log.warn("Failed to create trust-all HttpClient, using default", e);
             return HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(5))
+                    .connectTimeout(requestTimeout)
                     .followRedirects(HttpClient.Redirect.NEVER)
                     .build();
         }
@@ -152,7 +155,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             // 2. 构建 Java HttpClient 请求
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(parsed.uri)
-                    .timeout(Duration.ofSeconds(10));
+                    .timeout(requestTimeout);
 
             // 设置 headers
             for (String[] header : parsed.headers) {
