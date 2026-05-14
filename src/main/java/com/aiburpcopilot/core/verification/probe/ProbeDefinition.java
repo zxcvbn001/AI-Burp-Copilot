@@ -21,8 +21,10 @@ public class ProbeDefinition {
     private int maxRequests = 1;
     private int maxPayloadLength = 128;
     private double evidenceWeight = 0.5;
+    private String strength = "MEDIUM";
     private List<String> applicableParamTypes = new ArrayList<>();
     private List<String> valueTypes = new ArrayList<>();
+    private List<String> httpMethods = new ArrayList<>();
     private boolean requiresLlmReview;
     private List<ProbePayload> payloads = new ArrayList<>();
     private List<ProbePayloadPair> payloadPairs = new ArrayList<>();
@@ -132,6 +134,16 @@ public class ProbeDefinition {
         this.evidenceWeight = Math.max(0.0, Math.min(1.0, evidenceWeight));
     }
 
+    public String getStrength() {
+        return strength;
+    }
+
+    public void setStrength(String strength) {
+        this.strength = strength != null && !strength.isBlank()
+                ? strength.trim().toUpperCase()
+                : "MEDIUM";
+    }
+
     public List<String> getApplicableParamTypes() {
         return applicableParamTypes;
     }
@@ -146,6 +158,14 @@ public class ProbeDefinition {
 
     public void setValueTypes(List<String> valueTypes) {
         this.valueTypes = normalizeUpperList(valueTypes);
+    }
+
+    public List<String> getHttpMethods() {
+        return httpMethods;
+    }
+
+    public void setHttpMethods(List<String> httpMethods) {
+        this.httpMethods = normalizeUpperList(httpMethods);
     }
 
     public boolean isRequiresLlmReview() {

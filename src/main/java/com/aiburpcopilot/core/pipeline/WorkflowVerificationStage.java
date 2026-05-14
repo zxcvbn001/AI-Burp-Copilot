@@ -198,7 +198,8 @@ public class WorkflowVerificationStage implements IPipelineStage {
 
     private String influenceCacheKey(CandidateParameter candidate) {
         return (candidate.getParameterType() != null ? candidate.getParameterType() : "UNKNOWN")
-                + "|" + (candidate.getParameterName() != null ? candidate.getParameterName() : "");
+                + "|" + (candidate.getParameterName() != null ? candidate.getParameterName() : "")
+                + "|" + (candidate.getAttackTypeName() != null ? candidate.getAttackTypeName() : "");
     }
 
     private boolean requiresInfluenceReplay(CandidateParameter candidate) {

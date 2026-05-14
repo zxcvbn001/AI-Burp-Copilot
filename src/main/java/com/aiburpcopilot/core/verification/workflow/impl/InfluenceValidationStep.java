@@ -35,6 +35,7 @@ public class InfluenceValidationStep implements VerificationStep {
     private static final int AI_ROLE_MAX_INFLUENCE_MUTATIONS = 2;
     private static final double SEMANTIC_PRIOR_APPROVE_THRESHOLD = 0.60;
     private static final double SEMANTIC_PRIOR_UNCERTAIN_THRESHOLD = 0.45;
+    private static final double AI_CANDIDATE_UNCERTAIN_THRESHOLD = 0.70;
 
     private final IReplayEngine replayEngine;
     private final IMinimalMutationEngine mutationEngine;
@@ -223,10 +224,12 @@ public class InfluenceValidationStep implements VerificationStep {
             double avgScore = mutationCount > 0 ? totalScore / mutationCount : 0.0;
             double effectiveMinScore = getEffectiveMinScore(context);
             double semanticPrior = semanticBusinessPrior(httpContext, candidate, profile, parameterRole);
+            double aiPrior = aiEndpointPrior(candidate, parameterRole);
+            double combinedPrior = combinePrior(semanticPrior, aiPrior);
 
             InfluenceResult influenceResult = new InfluenceResult();
             influenceResult.setParameterName(paramName);
-            influenceResult.setInfluenceScore(Math.max(avgScore, semanticPrior * 0.08));
+            influenceResult.setInfluenceScore(Math.max(avgScore, combinedPrior * 0.08));
             influenceResult.setReplaySuccess(true);
             influenceResult.setDiffResult(bestDiff);
             influenceResult.setParameterProfile(profile);
@@ -234,6 +237,8 @@ public class InfluenceValidationStep implements VerificationStep {
             influenceResult.getDetails().add("Tested " + mutationCount + " mutations");
             influenceResult.getDetails().add("Average influence score: " + String.format("%.3f", avgScore));
             influenceResult.getDetails().add("Business semantic prior: " + String.format("%.3f", semanticPrior));
+            influenceResult.getDetails().add("AI endpoint prior: " + String.format("%.3f", aiPrior));
+            influenceResult.getDetails().add("Combined prior: " + String.format("%.3f", combinedPrior));
             if (parameterRole.available()) {
                 influenceResult.getDetails().add("Parameter role: " + parameterRole.role()
                         + " | businessRelevant=" + parameterRole.likelyBusinessRelevant()
@@ -262,9 +267,10 @@ public class InfluenceValidationStep implements VerificationStep {
                         ? "Score " + String.format("%.3f", avgScore) + " >= threshold " + effectiveMinScore
                         : "Score " + String.format("%.3f", avgScore) + " < threshold " + effectiveMinScore);
             }
-            applySemanticApproval(influenceResult, semanticPrior, avgScore, mutationCount, parameterRole);
-            applyLlmApproval(influenceResult, bestLlmDecision, avgScore, effectiveMinScore);
-            assignInfluenceStatus(influenceResult, avgScore, semanticPrior, effectiveMinScore);
+            applyPriorApproval(influenceResult, combinedPrior, semanticPrior, aiPrior,
+                    avgScore, mutationCount, parameterRole, candidate);
+            applyLlmApproval(influenceResult, bestLlmDecision, avgScore, effectiveMinScore, combinedPrior);
+            assignInfluenceStatus(influenceResult, avgScore, combinedPrior, effectiveMinScore);
 
             context.setInfluenceResult(influenceResult);
 
@@ -293,7 +299,7 @@ public class InfluenceValidationStep implements VerificationStep {
                         "APPROVED: param='" + paramName
                                 + "' | status=" + influenceResult.getStatus()
                                 + "' | score=" + String.format("%.3f", avgScore)
-                                + " | semanticPrior=" + String.format("%.3f", semanticPrior)
+                                + " | combinedPrior=" + String.format("%.3f", combinedPrior)
                                 + " | mutations=" + mutationCount);
             } else {
                 stepResult.setSuccess(false);
@@ -305,7 +311,7 @@ public class InfluenceValidationStep implements VerificationStep {
                         "REJECTED: param='" + paramName
                                 + "' | status=" + influenceResult.getStatus()
                                 + "' | score=" + String.format("%.3f", avgScore)
-                                + " | semanticPrior=" + String.format("%.3f", semanticPrior)
+                                + " | combinedPrior=" + String.format("%.3f", combinedPrior)
                                 + " | reason=" + influenceResult.getApprovalReason());
             }
         } catch (Exception e) {
@@ -401,11 +407,14 @@ public class InfluenceValidationStep implements VerificationStep {
         }
     }
 
-    private void applySemanticApproval(InfluenceResult influenceResult,
-                                       double semanticPrior,
-                                       double avgScore,
-                                       int mutationCount,
-                                       ParameterRole parameterRole) {
+    private void applyPriorApproval(InfluenceResult influenceResult,
+                                    double combinedPrior,
+                                    double semanticPrior,
+                                    double aiPrior,
+                                    double avgScore,
+                                    int mutationCount,
+                                    ParameterRole parameterRole,
+                                    CandidateParameter candidate) {
         if (influenceResult == null || influenceResult.isApproved()) {
             return;
         }
@@ -415,13 +424,19 @@ public class InfluenceValidationStep implements VerificationStep {
         if (reason.contains("not mutable") || reason.contains("replay failed")) {
             return;
         }
-        if (semanticPrior >= SEMANTIC_PRIOR_APPROVE_THRESHOLD) {
+        if (combinedPrior >= SEMANTIC_PRIOR_APPROVE_THRESHOLD) {
             influenceResult.setApproved(true);
             influenceResult.setStatus(InfluenceStatus.UNCERTAIN);
-            influenceResult.setApprovalReason("参数具备强业务语义先验，diff 不明显时不提前剪枝："
-                    + "semanticPrior=" + String.format("%.2f", semanticPrior)
+            influenceResult.setApprovalReason("参数具备较强综合业务先验，diff 不明显时不提前剪枝："
+                    + "combinedPrior=" + String.format("%.2f", combinedPrior)
+                    + ", semanticPrior=" + String.format("%.2f", semanticPrior)
+                    + ", aiPrior=" + String.format("%.2f", aiPrior)
                     + ", score=" + String.format("%.3f", avgScore)
                     + ", mutations=" + mutationCount
+                    + (candidate != null
+                    ? ", aiCandidateConfidence=" + String.format("%.2f", candidate.getConfidence())
+                    + ", source=" + candidate.getSource()
+                    : "")
                     + (parameterRole != null && parameterRole.available()
                     ? ", role=" + parameterRole.role() + ", reason=" + parameterRole.reasoning()
                     : ""));
@@ -430,7 +445,7 @@ public class InfluenceValidationStep implements VerificationStep {
 
     private void assignInfluenceStatus(InfluenceResult influenceResult,
                                        double avgScore,
-                                       double semanticPrior,
+                                       double combinedPrior,
                                        double effectiveMinScore) {
         if (influenceResult == null) {
             return;
@@ -442,7 +457,7 @@ public class InfluenceValidationStep implements VerificationStep {
             influenceResult.setStatus(InfluenceStatus.INFLUENTIAL);
             return;
         }
-        if (influenceResult.isApproved() && semanticPrior >= SEMANTIC_PRIOR_UNCERTAIN_THRESHOLD) {
+        if (influenceResult.isApproved() && combinedPrior >= SEMANTIC_PRIOR_UNCERTAIN_THRESHOLD) {
             influenceResult.setStatus(InfluenceStatus.UNCERTAIN);
             return;
         }
@@ -460,7 +475,8 @@ public class InfluenceValidationStep implements VerificationStep {
     private void applyLlmApproval(InfluenceResult influenceResult,
                                   InfluenceLlmDecision decision,
                                   double avgScore,
-                                  double effectiveMinScore) {
+                                  double effectiveMinScore,
+                                  double combinedPrior) {
         if (!decision.available()) {
             return;
         }
@@ -475,12 +491,38 @@ public class InfluenceValidationStep implements VerificationStep {
         }
         boolean llmRejected = !decision.influential()
                 && decision.confidence() >= 0.75
-                && avgScore < effectiveMinScore;
+                && avgScore < effectiveMinScore
+                && combinedPrior < SEMANTIC_PRIOR_UNCERTAIN_THRESHOLD;
         if (llmRejected) {
             influenceResult.setApproved(false);
             influenceResult.setStatus(InfluenceStatus.NOT_INFLUENTIAL);
             influenceResult.setApprovalReason("LLM rejected as noise/unrelated diff: " + decision.reasoning());
         }
+    }
+
+    private double aiEndpointPrior(CandidateParameter candidate, ParameterRole parameterRole) {
+        double score = 0.0;
+        if (candidate != null) {
+            String source = candidate.getSource() != null ? candidate.getSource() : "";
+            if (source.contains("AI")) {
+                score = Math.max(score, candidate.getConfidence());
+            } else {
+                score = Math.max(score, candidate.getConfidence() * 0.55);
+            }
+        }
+        if (parameterRole != null && parameterRole.available() && parameterRole.likelyBusinessRelevant()) {
+            score = Math.max(score, parameterRole.confidence());
+        }
+        return Math.max(0.0, Math.min(1.0, score));
+    }
+
+    private double combinePrior(double semanticPrior, double aiPrior) {
+        double combined = 1.0 - ((1.0 - Math.max(0.0, semanticPrior))
+                * (1.0 - Math.max(0.0, aiPrior)));
+        if (aiPrior >= AI_CANDIDATE_UNCERTAIN_THRESHOLD) {
+            combined = Math.max(combined, aiPrior);
+        }
+        return Math.min(1.0, combined);
     }
 
     private double semanticBusinessPrior(HTTPContext httpContext,

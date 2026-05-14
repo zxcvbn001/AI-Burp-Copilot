@@ -371,8 +371,10 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
         probe.setMaxRequests(intValue(map.get("maxRequests"), 1));
         probe.setMaxPayloadLength(intValue(map.get("maxPayloadLength"), 128));
         probe.setEvidenceWeight(doubleValue(map.get("evidenceWeight"), 0.5));
+        probe.setStrength(stringValue(map.get("strength"), "MEDIUM"));
         probe.setApplicableParamTypes(stringList(map.get("applicableParamTypes")));
         probe.setValueTypes(stringList(map.get("valueTypes")));
+        probe.setHttpMethods(stringList(map.get("httpMethods")));
         probe.setRequiresLlmReview(booleanValue(map.get("requiresLlmReview"), false));
 
         Object rawPayloads = map.get("payloads");

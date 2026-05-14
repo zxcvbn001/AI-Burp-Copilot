@@ -920,6 +920,18 @@ public class Phase3VerificationTest {
                 .orElseThrow();
         assertEquals(List.of("NUMERIC"), idorProbe.getValueTypes());
         assertTrue(idorProbe.isRequiresLlmReview());
+
+        var sqliErrorProbe = ruleEngine.getProbes(AttackType.SQLI).stream()
+                .filter(probe -> "generic_quote_error_recovery".equals(probe.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("WEAK", sqliErrorProbe.getStrength());
+
+        var uploadProbe = ruleEngine.getProbes("FILE_UPLOAD").stream()
+                .filter(probe -> "upload_extension_marker_probe".equals(probe.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(uploadProbe.getHttpMethods().contains("POST"));
     }
 
     @Test

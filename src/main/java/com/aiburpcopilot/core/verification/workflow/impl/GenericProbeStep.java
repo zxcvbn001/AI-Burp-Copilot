@@ -190,7 +190,7 @@ public class GenericProbeStep implements VerificationStep {
                 double weighted = oracle.getConfidence() * probe.getEvidenceWeight();
                 combinedConfidence = combineConfidence(combinedConfidence, weighted);
                 oracle.getEvidences().forEach(result::addEvidence);
-                if (probe.isStopOnMatch()) {
+                if (probe.isStopOnMatch() && isStrongEnoughToStop(probe, oracle)) {
                     break;
                 }
             }
@@ -308,11 +308,33 @@ public class GenericProbeStep implements VerificationStep {
                 return false;
             }
         }
+        if (!probe.getHttpMethods().isEmpty()) {
+            String method = httpContext != null && httpContext.getMethod() != null
+                    ? httpContext.getMethod().toUpperCase()
+                    : "";
+            if (!probe.getHttpMethods().contains(method)) {
+                return false;
+            }
+        }
         if (!probe.getValueTypes().isEmpty()) {
             String valueType = profile != null && profile.getDetectedType() != null
                     ? profile.getDetectedType().toUpperCase()
                     : ParameterProfile.TYPE_UNKNOWN;
             return probe.getValueTypes().contains(valueType);
+        }
+        return true;
+    }
+
+    private boolean isStrongEnoughToStop(ProbeDefinition probe, OracleResult oracle) {
+        if (probe == null || oracle == null) {
+            return false;
+        }
+        String strength = probe.getStrength() != null ? probe.getStrength() : "MEDIUM";
+        if ("WEAK".equalsIgnoreCase(strength)) {
+            return false;
+        }
+        if ("MEDIUM".equalsIgnoreCase(strength)) {
+            return oracle.getConfidence() >= 0.75;
         }
         return true;
     }
