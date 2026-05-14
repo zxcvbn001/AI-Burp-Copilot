@@ -61,7 +61,7 @@ public class CandidateExtractor implements ICandidateExtractor {
                 .map(c -> c.getParameterName() + "|" + c.getAttackTypeName())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
-        List<VulnerabilityHint> hints = collectHints(result);
+        List<VulnerabilityHint> hints = collectHints(result.getPossibleVulnerabilities());
         if (result.getHighValueParams() != null && !hints.isEmpty()) {
             for (AnalysisResult.HighValueParam param : result.getHighValueParams()) {
                 String resolved = findMatchingParamName(context, param.getParamName());
@@ -103,7 +103,8 @@ public class CandidateExtractor implements ICandidateExtractor {
             }
         }
 
-        pluginLog.info("Candidate", "Extracted " + candidates.size() + " candidates from analysis");
+        pluginLog.info(PluginLogger.Category.LLM,
+                "Candidate", "Extracted " + candidates.size() + " candidates from analysis");
         return candidates;
     }
 
@@ -149,13 +150,8 @@ public class CandidateExtractor implements ICandidateExtractor {
         return hints;
     }
 
-    private List<VulnerabilityHint> collectHints(AnalysisResult result) {
-        if (result == null) {
-            return List.of();
-        }
-        List<VulnerabilityHint> hints = new ArrayList<>();
-        hints.addAll(parseVulnerabilityHints(result.getPossibleVulnerabilities()));
-        hints.addAll(parseVulnerabilityHints(result.getAttackSurface()));
+    private List<VulnerabilityHint> collectHints(List<String> possibleVulnerabilities) {
+        List<VulnerabilityHint> hints = new ArrayList<>(parseVulnerabilityHints(possibleVulnerabilities));
         Set<String> seen = new LinkedHashSet<>();
         return hints.stream()
                 .filter(hint -> seen.add(hint.attackTypeName()
@@ -205,6 +201,17 @@ public class CandidateExtractor implements ICandidateExtractor {
             return null;
         }
         String normalizedAttackType = resolveAttackTypeName(attackTypeName);
+        if ("AUTH".equalsIgnoreCase(normalizedAttackType)
+                || "JWT".equalsIgnoreCase(normalizedAttackType)
+                || "CORS".equalsIgnoreCase(normalizedAttackType)) {
+            for (ParameterContext parameter : context.getParameters()) {
+                if (parameter.getName() != null
+                        && !parameter.getName().isBlank()
+                        && looksLikeSecurityControlParameter(parameter.getName())) {
+                    return parameter.getName();
+                }
+            }
+        }
         if ("FILE_UPLOAD".equalsIgnoreCase(normalizedAttackType)) {
             for (ParameterContext parameter : context.getParameters()) {
                 if (parameter.getType() == com.aiburpcopilot.core.context.ParameterType.BODY
@@ -215,6 +222,16 @@ public class CandidateExtractor implements ICandidateExtractor {
             }
         }
         return null;
+    }
+
+    private boolean looksLikeSecurityControlParameter(String name) {
+        String lower = name.toLowerCase();
+        return lower.contains("auth")
+                || lower.contains("token")
+                || lower.contains("cookie")
+                || lower.contains("session")
+                || lower.contains("origin")
+                || lower.contains("jwt");
     }
 
     private String getParamType(HTTPContext context, String paramName) {

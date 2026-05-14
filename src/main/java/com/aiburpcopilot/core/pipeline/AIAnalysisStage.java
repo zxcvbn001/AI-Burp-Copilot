@@ -32,6 +32,7 @@ import java.util.concurrent.*;
 public class AIAnalysisStage implements IPipelineStage {
 
     private static final Logger log = LoggerFactory.getLogger(AIAnalysisStage.class);
+    private static final String ANALYSIS_CACHE_PREFIX = "analysis:broad-attack-v3:";
     private final PluginLogger pluginLog = PluginLogger.getInstance();
 
     // 速率限制（每秒最多 N 次 AI 调用，从配置读取）
@@ -97,7 +98,7 @@ public class AIAnalysisStage implements IPipelineStage {
         try {
             if (!aiProvider.isAvailable()) {
                 log.warn("AI provider not available, skipping analysis for: {}", context.getPath());
-                pluginLog.warn("AI", "Provider unavailable, skip: " + context.getPath());
+                pluginLog.warn(PluginLogger.Category.LLM, "AI", "Provider unavailable, skip: " + context.getPath());
                 AnalysisResult result = new AnalysisResult();
                 result.setErrorMessage("AI provider not configured");
                 context.setAnalysisResult(result);
@@ -105,11 +106,11 @@ public class AIAnalysisStage implements IPipelineStage {
             }
 
             // 检查缓存
-            String cacheKey = "analysis:" + context.generateCacheKey();
+            String cacheKey = ANALYSIS_CACHE_PREFIX + context.generateCacheKey();
             Optional<String> cached = cacheService.get(cacheKey);
             if (cached.isPresent()) {
                 log.debug("Cache hit for analysis: {}", context.getPath());
-                pluginLog.debug("AI", "Cache hit: " + context.getPath());
+                pluginLog.debug(PluginLogger.Category.LLM, "AI", "Cache hit: " + context.getPath());
                 AnalysisResult cachedResult = JsonUtil.fromJsonSafe(cached.get(), AnalysisResult.class);
                 if (cachedResult != null) {
                     if (capabilityFilter != null) {
@@ -131,7 +132,7 @@ public class AIAnalysisStage implements IPipelineStage {
 
             if (userPrompt.isEmpty()) {
                 log.warn("Analysis prompt not found: {}", Constants.PROMPT_ENDPOINT_ANALYSIS);
-                pluginLog.warn("AI", "Prompt not found: " + Constants.PROMPT_ENDPOINT_ANALYSIS);
+                pluginLog.warn(PluginLogger.Category.LLM, "AI", "Prompt not found: " + Constants.PROMPT_ENDPOINT_ANALYSIS);
                 AnalysisResult result = new AnalysisResult();
                 result.setErrorMessage("Prompt template not found");
                 context.setAnalysisResult(result);
@@ -139,7 +140,7 @@ public class AIAnalysisStage implements IPipelineStage {
             }
 
             // 构造最终 Prompt 并限制长度
-            String fullPrompt = buildRuleBoundPrompt(userPrompt.get(), aiSummary);
+            String fullPrompt = buildRuleBoundPrompt(userPrompt.get(), aiSummary, context);
             int maxPromptLen = configService.getConfig().getAi().getMaxPromptLength();
             if (maxPromptLen > 0) {
                 fullPrompt = SecurityUtil.truncatePrompt(fullPrompt, maxPromptLen);
@@ -149,7 +150,7 @@ public class AIAnalysisStage implements IPipelineStage {
             rateLimiter.acquire();
 
             // 调用 AI。Provider 本身返回异步 Future；Pipeline worker 在这里等待结果或超时。
-            pluginLog.info("AI", "Calling AI for: " + context.getMethod() + " " + context.getPath()
+            pluginLog.info(PluginLogger.Category.LLM, "AI", "Calling AI for: " + context.getMethod() + " " + context.getPath()
                     + " [prompt=" + fullPrompt.length() + " chars]");
             CompletableFuture<String> future = aiProvider.analyzeAttackSurface(
                     context,
@@ -175,12 +176,12 @@ public class AIAnalysisStage implements IPipelineStage {
 
             log.info("AI analysis completed in {}ms for: {}",
                     result.getAiCallDurationMs(), context.getPath());
-            pluginLog.info("AI", "Response received (" + result.getAiCallDurationMs() + "ms): "
+            pluginLog.info(PluginLogger.Category.LLM, "AI", "Response received (" + result.getAiCallDurationMs() + "ms): "
                     + context.getPath());
 
         } catch (java.util.concurrent.TimeoutException e) {
             log.error("AI analysis timeout for: {}", context.getPath());
-            pluginLog.error("AI", "TIMEOUT for: " + context.getPath()
+            pluginLog.error(PluginLogger.Category.LLM, "AI", "TIMEOUT for: " + context.getPath()
                     + " [timeout=" + effectiveAiWaitTimeoutMs() + "ms]");
             AnalysisResult result = new AnalysisResult();
             result.setErrorMessage("AI analysis timeout");
@@ -188,7 +189,7 @@ public class AIAnalysisStage implements IPipelineStage {
             context.setAnalysisResult(result);
         } catch (Exception e) {
             log.error("AI analysis failed for: {}", context.getPath(), e);
-            pluginLog.error("AI", "Failed for " + context.getPath() + ": " + e.getMessage());
+            pluginLog.error(PluginLogger.Category.LLM, "AI", "Failed for " + context.getPath() + ": " + e.getMessage());
             AnalysisResult result = new AnalysisResult();
             result.setErrorMessage("AI analysis failed: " + e.getMessage());
             result.setAiCallDurationMs(System.currentTimeMillis() - startTime);
@@ -253,15 +254,44 @@ public class AIAnalysisStage implements IPipelineStage {
         return fallback;
     }
 
-    private String buildRuleBoundPrompt(String template, String aiSummary) {
+    private String buildRuleBoundPrompt(String template, String aiSummary, HTTPContext context) {
         StringBuilder prompt = new StringBuilder();
         prompt.append(template);
         if (capabilityCatalog != null) {
             prompt.append("\n\n[本地规则能力边界]\n")
                     .append(capabilityCatalog.toPromptConstraint());
         }
+        prompt.append("\n\n[AUTHORITATIVE PARAMETER CONTRACT]\n")
+                .append(buildParameterContract(context));
         prompt.append("\n\n").append(aiSummary);
         return prompt.toString();
+    }
+
+    private String buildParameterContract(HTTPContext context) {
+        if (context == null || context.getParameters() == null || context.getParameters().isEmpty()) {
+            return "No request parameters are available. Return empty parameter-based findings.\n";
+        }
+        StringBuilder contract = new StringBuilder();
+        contract.append("AllowedParameterNames: [");
+        for (int index = 0; index < context.getParameters().size(); index++) {
+            if (index > 0) {
+                contract.append(", ");
+            }
+            contract.append(context.getParameters().get(index).getName());
+        }
+        contract.append("]\nParameterSamples(name=sampleValue): ");
+        for (var parameter : context.getParameters()) {
+            String value = parameter.getValue();
+            if (value != null && value.length() > 40) {
+                value = value.substring(0, 40) + "...";
+            }
+            contract.append(parameter.getName())
+                    .append("(").append(parameter.getType()).append(")=")
+                    .append(value != null ? SecurityUtil.sanitizeForPrompt(value) : "")
+                    .append("; ");
+        }
+        contract.append("\n");
+        return contract.toString();
     }
 
     /**

@@ -5,6 +5,7 @@ import com.aiburpcopilot.core.context.AnalysisResult;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterContext;
 import com.aiburpcopilot.core.context.ParameterType;
+import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.verification.model.*;
 import com.aiburpcopilot.core.verification.capability.AnalysisResultCapabilityFilter;
 import com.aiburpcopilot.core.verification.capability.RuleCapabilityCatalog;
@@ -16,6 +17,7 @@ import com.aiburpcopilot.core.verification.influence.impl.StrategyApprovalEngine
 import com.aiburpcopilot.core.verification.influence.impl.ReplayEngine;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.payload.impl.YamlPayloadRuleEngine;
+import com.aiburpcopilot.core.verification.finding.FindingAggregator;
 import com.aiburpcopilot.core.verification.technique.TechniqueRecommendation;
 import com.aiburpcopilot.core.verification.technique.VerificationTechnique;
 import com.aiburpcopilot.core.verification.workflow.WorkflowContext;
@@ -23,11 +25,24 @@ import com.aiburpcopilot.core.verification.workflow.impl.InfluenceValidationStep
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowRegistry;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowStepFactory;
 import com.aiburpcopilot.core.verification.candidate.impl.CandidateExtractor;
+import com.aiburpcopilot.core.verification.capability.AnalysisResultCapabilityFilter;
+import com.aiburpcopilot.core.verification.review.FindingReviewService;
+import com.aiburpcopilot.core.pipeline.AIAnalysisStage;
 import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
+import com.aiburpcopilot.scanner.endpoint.EndpointClassifier;
+import com.aiburpcopilot.core.cache.ICacheService;
+import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.prompts.IPromptService;
+import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.utils.HttpUtil;
 import org.junit.jupiter.api.*;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -702,6 +717,12 @@ public class Phase3VerificationTest {
         assertTrue(catalog.supportsTechnique(
                 AttackType.PATH_TRAVERSAL, VerificationTechnique.PATH_TRAVERSAL_PROBE));
         assertFalse(catalog.supportsTechnique(AttackType.XSS, VerificationTechnique.TIME_BASED));
+
+        String promptConstraint = catalog.toPromptConstraint();
+        assertTrue(promptConstraint.contains("AllowedAttackTypes"));
+        assertTrue(promptConstraint.contains("SQLI"));
+        assertFalse(promptConstraint.contains("BOOLEAN_BASED"));
+        assertFalse(promptConstraint.contains("generic_boolean_pair"));
     }
 
     @Test
@@ -911,7 +932,43 @@ public class Phase3VerificationTest {
     }
 
     @Test
-    @Order(42)
+    @Order(43)
+    @DisplayName("External payload rule reload updates probe filters and catalog capabilities")
+    void testExternalPayloadRuleReloadUpdatesRuntimeViews() throws Exception {
+        String previousHome = System.getProperty("aiburpcopilot.home");
+        Path tempHome = Files.createTempDirectory("aiburpcopilot-rule-reload");
+        try {
+            System.setProperty("aiburpcopilot.home", tempHome.toString());
+            YamlPayloadRuleEngine ruleEngine = new YamlPayloadRuleEngine();
+            RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(null, ruleEngine);
+
+            Path sqliRule = tempHome.resolve("rules").resolve("payloads").resolve("sqli.yaml");
+            String updated = Files.readString(sqliRule, StandardCharsets.UTF_8)
+                    .replace("valueTypes: [STRING, EMAIL, URL, UNKNOWN]",
+                            "valueTypes: [STRING, EMAIL, URL, UNKNOWN, NUMERIC]");
+            Files.writeString(sqliRule, updated, StandardCharsets.UTF_8);
+
+            ruleEngine.reload();
+
+            var reloadedProbe = ruleEngine.getProbes(AttackType.SQLI).stream()
+                    .filter(probe -> "generic_quote_error_recovery".equals(probe.getId()))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertTrue(reloadedProbe.getValueTypes().contains("NUMERIC"));
+            assertTrue(catalog.supportsAttackType(AttackType.SQLI));
+            assertTrue(catalog.supportsStrategy("SQLI", "ERROR_BASED"));
+        } finally {
+            if (previousHome == null) {
+                System.clearProperty("aiburpcopilot.home");
+            } else {
+                System.setProperty("aiburpcopilot.home", previousHome);
+            }
+        }
+    }
+
+    @Test
+    @Order(44)
     @DisplayName("File upload candidate falls back to multipart body field when AI omits parameter name")
     void testFileUploadCandidateFallsBackToMultipartBodyField() {
         HTTPContext context = new HTTPContext();
@@ -932,6 +989,181 @@ public class Phase3VerificationTest {
                         "FILE_UPLOAD".equals(candidate.getAttackTypeName())
                                 && "uploaded".equals(candidate.getParameterName())),
                 "FILE_UPLOAD should fall back to multipart body parameter when AI provides endpoint-level hint");
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Endpoint-level AUTH vulnerability hint should not be dropped")
+    void testEndpointLevelAuthHintShouldBePreserved() {
+        RuleCapabilityCatalog catalog = new RuleCapabilityCatalog(
+                null, new YamlPayloadRuleEngine());
+        AnalysisResult result = new AnalysisResult();
+        result.setPossibleVulnerabilities(List.of("AUTH绕过 -> 整个端点（缺少会话验证）"));
+
+        new AnalysisResultCapabilityFilter(catalog).filter(result, new HTTPContext());
+
+        assertEquals(List.of("AUTH"), result.getPossibleVulnerabilities());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Candidate extraction should not convert XSS surface text into SQLI candidate")
+    void testCandidateExtractionDoesNotUseAttackSurfaceAsVerificationHint() {
+        HTTPContext context = new HTTPContext();
+        context.setMethod("GET");
+        context.setUrl("http://example.test/xss_r/?name=aaa");
+        context.setPath("/xss_r/");
+        context.addParameter(new ParameterContext("name", "aaa", ParameterType.QUERY));
+
+        AnalysisResult result = new AnalysisResult();
+        result.setAttackSurface(List.of("XSS reflection and user controlled injection surface"));
+        result.setHighValueParams(List.of(
+                new AnalysisResult.HighValueParam("name", "reflected parameter", RiskLevel.HIGH)));
+        result.setPossibleVulnerabilities(List.of("XSS -> name"));
+        context.setAnalysisResult(result);
+
+        CandidateExtractor extractor = new CandidateExtractor(
+                new RuleCapabilityCatalog(null, new YamlPayloadRuleEngine()));
+        List<CandidateParameter> candidates = extractor.extract(context);
+
+        assertTrue(candidates.stream().anyMatch(candidate ->
+                "XSS".equals(candidate.getAttackTypeName())
+                        && "name".equals(candidate.getParameterName())));
+        assertFalse(candidates.stream().anyMatch(candidate ->
+                "SQLI".equals(candidate.getAttackTypeName())
+                        && "name".equals(candidate.getParameterName())));
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Finding aggregation ignores influence-only evidence")
+    void testFindingAggregationIgnoresInfluenceOnlyEvidence() {
+        WorkflowResult workflowResult = new WorkflowResult();
+        workflowResult.setAttackTypeName("SQLI");
+        workflowResult.setParameterName("id");
+
+        StepResult influenceStep = new StepResult();
+        influenceStep.setStepName("InfluenceValidation");
+        influenceStep.setPhase("Influence Gate");
+        influenceStep.setSuccess(true);
+        influenceStep.setConfidence(0.95);
+        influenceStep.addEvidence(Evidence.general("parameter has business meaning", "INFLUENCE_LLM", 0.95));
+        influenceStep.addEvidence(Evidence.general("parameter role looks important", "PARAMETER_ROLE", 0.90));
+        workflowResult.getStepResults().add(influenceStep);
+        workflowResult.collectEvidence();
+
+        assertNull(new FindingAggregator().aggregate(
+                "req-1", "http://example.test/item?id=1", workflowResult));
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Finding aggregation uses payload verification evidence only")
+    void testFindingAggregationUsesPayloadVerificationEvidenceOnly() {
+        WorkflowResult workflowResult = new WorkflowResult();
+        workflowResult.setAttackTypeName("XSS");
+        workflowResult.setParameterName("name");
+
+        StepResult influenceStep = new StepResult();
+        influenceStep.setStepName("InfluenceValidation");
+        influenceStep.setPhase("Influence Gate");
+        influenceStep.setSuccess(true);
+        influenceStep.setConfidence(0.95);
+        influenceStep.addEvidence(Evidence.general("parameter role looks important", "PARAMETER_ROLE", 0.90));
+        workflowResult.getStepResults().add(influenceStep);
+
+        StepResult payloadStep = new StepResult();
+        payloadStep.setStepName("XSSProbes");
+        payloadStep.setPhase("Payload Verification");
+        payloadStep.setSuccess(true);
+        payloadStep.setConfidence(0.80);
+        payloadStep.addEvidence(Evidence.general("marker reflected in response", "REFLECTION", 0.80));
+        workflowResult.getStepResults().add(payloadStep);
+        workflowResult.collectEvidence();
+
+        var finding = new FindingAggregator().aggregate(
+                "req-1", "http://example.test/xss?name=aaa", workflowResult);
+
+        assertNotNull(finding);
+        assertEquals("XSS", finding.getAttackTypeName());
+        assertEquals(1, finding.getEvidences().size());
+        assertEquals("REFLECTION", finding.getEvidences().get(0).getEvidenceType());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("AI analysis prompt includes authoritative parameter contract")
+    void testAiAnalysisPromptIncludesParameterContract() {
+        CapturingAiProvider aiProvider = new CapturingAiProvider(
+                "{\"success\":true,\"highValueParams\":[],\"possibleVulnerabilities\":[],\"recommendedTechniques\":[]}");
+        AIAnalysisStage stage = new AIAnalysisStage(
+                aiProvider,
+                new StubPromptService("Analyze endpoint."),
+                new NoopCacheService(),
+                new StubConfigService(),
+                new RuleCapabilityCatalog(null, new YamlPayloadRuleEngine()));
+
+        HTTPContext context = new HTTPContext();
+        context.setMethod("GET");
+        context.setEndpointType(com.aiburpcopilot.core.context.EndpointType.ENDPOINT);
+        context.setPath("/xss_r/");
+        context.setUrl("http://example.test/xss_r/?name=bbb");
+        context.setQuery("name=bbb");
+        context.addParameter(new ParameterContext("name", "bbb", ParameterType.QUERY));
+
+        stage.process(context);
+
+        assertTrue(aiProvider.lastUserPrompt.contains("[AUTHORITATIVE PARAMETER CONTRACT]"));
+        assertTrue(aiProvider.lastUserPrompt.contains("AllowedParameterNames: [name]"));
+        assertTrue(aiProvider.lastUserPrompt.contains("ParameterSamples(name=sampleValue): name(QUERY)=bbb"));
+        assertFalse(aiProvider.lastUserPrompt.contains("Never output a sample value as a parameter name"));
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Rejected LLM finding review should revoke confirmed vulnerability status")
+    void testRejectedReviewRevokesConfirmedFinding() {
+        VerificationResult result = new VerificationResult();
+        result.setAttackTypeName("SQLI");
+        result.setParameter("name");
+        result.setUrl("http://example.test/xss_r/?name=aaa");
+        result.setConfidence(0.95);
+        result.setRiskLevel(RiskLevel.CRITICAL);
+        result.setConfirmedVulnerability(true);
+        result.setReviewStatus(ReviewStatus.PENDING);
+
+        FindingReviewService service = new FindingReviewService(new FixedReviewAiProvider(
+                "{\"supported\":false,\"confidence\":0.0,"
+                        + "\"conclusion\":\"not SQLI\",\"reasoning\":\"evidence is reflected XSS\","
+                        + "\"supportingEvidence\":[],\"counterEvidence\":[\"no SQL evidence\"],"
+                        + "\"manualReviewPoints\":[]}"));
+        service.review(result);
+
+        assertEquals(ReviewStatus.REJECTED, result.getReviewStatus());
+        assertFalse(result.isConfirmedVulnerability());
+        assertEquals(0.0, result.getConfidence(), 0.01);
+        assertEquals(RiskLevel.INFO, result.getRiskLevel());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Dynamic GET page falls back to ENDPOINT when AI classification times out")
+    void testDynamicGetPageFallsBackToEndpointWhenAiClassificationTimeouts() {
+        EndpointClassifier classifier = new EndpointClassifier(
+                new TimeoutAiProvider(),
+                new StubPromptService(),
+                new NoopCacheService(),
+                new StubConfigService());
+
+        HTTPContext context = new HTTPContext();
+        context.setMethod("GET");
+        context.setPath("/DVWA/vulnerabilities/sqli_blind/index.php");
+        context.setUrl("http://example.test/DVWA/vulnerabilities/sqli_blind/index.php?id=1");
+        context.setQuery("id=1");
+
+        classifier.classify(context);
+
+        assertEquals(com.aiburpcopilot.core.context.EndpointType.ENDPOINT, context.getEndpointType());
     }
 
     @Test
@@ -1047,6 +1279,190 @@ public class Phase3VerificationTest {
         @Override
         public byte[] getLastResponseBytes() {
             return response;
+        }
+    }
+
+    private static class TimeoutAiProvider implements IAIProvider {
+        @Override
+        public String getProviderName() {
+            return "timeout-stub";
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public CompletableFuture<String> classifyEndpoint(String content, String promptTemplate) {
+            return CompletableFuture.failedFuture(new java.util.concurrent.TimeoutException("timeout"));
+        }
+
+        @Override
+        public CompletableFuture<String> analyzeAttackSurface(HTTPContext httpContext, String systemPrompt, String userPrompt) {
+            return CompletableFuture.completedFuture("{}");
+        }
+
+        @Override
+        public CompletableFuture<String> reviewStaticResource(String content, String reviewPrompt) {
+            return CompletableFuture.completedFuture("{}");
+        }
+
+        @Override
+        public CompletableFuture<String> analyzeDiff(String content) {
+            return CompletableFuture.completedFuture("{\"matched\":false,\"confidence\":0.0,\"reasoning\":\"stub\"}");
+        }
+    }
+
+    private static class FixedReviewAiProvider implements IAIProvider {
+        private final String reviewResponse;
+
+        private FixedReviewAiProvider(String reviewResponse) {
+            this.reviewResponse = reviewResponse;
+        }
+
+        @Override
+        public String getProviderName() {
+            return "fixed-review";
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public CompletableFuture<String> analyzeAttackSurface(HTTPContext context, String systemPrompt, String userPrompt) {
+            return CompletableFuture.completedFuture("{}");
+        }
+
+        @Override
+        public CompletableFuture<String> classifyEndpoint(String aiSummary, String classifierPrompt) {
+            return CompletableFuture.completedFuture("ENDPOINT");
+        }
+
+        @Override
+        public CompletableFuture<String> reviewStaticResource(String content, String reviewPrompt) {
+            return CompletableFuture.completedFuture("{}");
+        }
+
+        @Override
+        public CompletableFuture<String> analyzeDiff(String diffPrompt) {
+            return CompletableFuture.completedFuture(reviewResponse);
+        }
+    }
+
+    private static class StubPromptService implements IPromptService {
+        private final String template;
+
+        private StubPromptService() {
+            this("classify");
+        }
+
+        private StubPromptService(String template) {
+            this.template = template;
+        }
+
+        @Override
+        public Optional<String> loadTemplate(String promptName) {
+            return Optional.of(template);
+        }
+
+        @Override
+        public Optional<String> loadSystemPrompt(String promptName) {
+            return Optional.of("");
+        }
+
+        @Override
+        public Optional<String> loadAndFill(String templateName, java.util.Map<String, String> params) {
+            return loadTemplate(templateName);
+        }
+
+        @Override
+        public List<String> listTemplates() {
+            return List.of("endpoint-classifier-v1");
+        }
+
+        @Override
+        public void reload() {
+        }
+    }
+
+    private static class NoopCacheService implements ICacheService {
+        @Override public Optional<String> get(String key) { return Optional.empty(); }
+        @Override public void put(String key, String value) {}
+        @Override public void put(String key, String value, long ttlSeconds) {}
+        @Override public boolean contains(String key) { return false; }
+        @Override public void remove(String key) {}
+        @Override public void clear() {}
+        @Override public int size() { return 0; }
+    }
+
+    private static class CapturingAiProvider implements IAIProvider {
+        private final String response;
+        private String lastUserPrompt = "";
+
+        private CapturingAiProvider(String response) {
+            this.response = response;
+        }
+
+        @Override
+        public String getProviderName() {
+            return "capturing";
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public CompletableFuture<String> analyzeAttackSurface(HTTPContext context, String systemPrompt, String userPrompt) {
+            lastUserPrompt = userPrompt;
+            return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public CompletableFuture<String> classifyEndpoint(String aiSummary, String classifierPrompt) {
+            return CompletableFuture.completedFuture("ENDPOINT");
+        }
+
+        @Override
+        public CompletableFuture<String> reviewStaticResource(String content, String reviewPrompt) {
+            return CompletableFuture.completedFuture("{}");
+        }
+
+        @Override
+        public CompletableFuture<String> analyzeDiff(String diffPrompt) {
+            return CompletableFuture.completedFuture("{}");
+        }
+    }
+
+    private static class StubConfigService implements IConfigService {
+        private final com.aiburpcopilot.core.config.AppConfig config = new com.aiburpcopilot.core.config.AppConfig();
+
+        @Override
+        public com.aiburpcopilot.core.config.AppConfig getConfig() {
+            config.getAi().setTimeoutMs(100);
+            config.getLlm().setConnectTimeoutMs(10);
+            config.getLlm().setReadTimeoutMs(10);
+            return config;
+        }
+
+        @Override
+        public void updateConfig(com.aiburpcopilot.core.config.AppConfig config) {
+        }
+
+        @Override
+        public void reload() {
+        }
+
+        @Override
+        public void save() {
+        }
+
+        @Override
+        public void addChangeListener(IConfigService.ConfigChangeListener listener) {
         }
     }
 }

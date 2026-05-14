@@ -15,6 +15,7 @@ import java.util.Set;
 public class AnalysisResultCapabilityFilter {
 
     private final RuleCapabilityCatalog catalog;
+    private final Set<String> correctionWarnings = new LinkedHashSet<>();
 
     public AnalysisResultCapabilityFilter(RuleCapabilityCatalog catalog) {
         this.catalog = catalog;
@@ -47,7 +48,7 @@ public class AnalysisResultCapabilityFilter {
                     ? resolveParamName(context, highValueParam.getParamName())
                     : null;
             if (resolved == null) {
-                PluginLogger.getInstance().warn("AI",
+                PluginLogger.getInstance().warn(PluginLogger.Category.LLM, "AI",
                         "Dropped high value param not present in request: "
                                 + (highValueParam != null ? highValueParam.getParamName() : null));
                 continue;
@@ -68,20 +69,42 @@ public class AnalysisResultCapabilityFilter {
         for (String vulnerability : vulnerabilities) {
             String attackTypeName = parseAttackTypeName(vulnerability);
             if (attackTypeName == null || !catalog.supportsAttackType(attackTypeName)) {
-                PluginLogger.getInstance().warn("AI",
+                PluginLogger.getInstance().warn(PluginLogger.Category.LLM, "AI",
                         "Dropped unsupported vulnerability from AI output: " + vulnerability);
                 continue;
             }
             String parameter = extractParameterName(vulnerability);
+            if (isEndpointLevelHint(parameter)) {
+                filtered.add(attackTypeName);
+                continue;
+            }
             String resolved = resolveParamName(context, parameter);
             if (parameter != null && resolved == null) {
-                PluginLogger.getInstance().warn("AI",
+                PluginLogger.getInstance().warn(PluginLogger.Category.LLM, "AI",
                         "Dropped vulnerability with non-request parameter: " + vulnerability);
                 continue;
             }
             filtered.add(resolved == null ? attackTypeName : attackTypeName + " -> " + resolved);
         }
         return new ArrayList<>(filtered);
+    }
+
+    private boolean isEndpointLevelHint(String parameter) {
+        if (parameter == null || parameter.isBlank()) {
+            return false;
+        }
+        String normalized = cleanupParam(parameter);
+        if (normalized == null || normalized.isBlank()) {
+            return false;
+        }
+        String lower = normalized.toLowerCase();
+        return lower.contains("endpoint")
+                || lower.contains("entire")
+                || lower.contains("whole")
+                || lower.contains("global")
+                || lower.contains("端点")
+                || lower.contains("整体")
+                || lower.contains("全局");
     }
 
     private List<TechniqueRecommendation> filterRecommendations(
@@ -107,7 +130,7 @@ public class AnalysisResultCapabilityFilter {
                 recommendation.setAttackTypeName(attackTypeName);
                 filtered.add(recommendation);
             } else {
-                PluginLogger.getInstance().warn("AI",
+                PluginLogger.getInstance().warn(PluginLogger.Category.LLM, "AI",
                         "Dropped unsupported technique recommendation: " + recommendation);
             }
         }
@@ -160,9 +183,12 @@ public class AnalysisResultCapabilityFilter {
                 .filter(param -> param.getValue() != null && param.getValue().equals(cleaned))
                 .toList();
         if (valueMatches.size() == 1) {
-            PluginLogger.getInstance().warn("AI",
-                    "AI used parameter value as name, corrected '" + cleaned
-                            + "' to parameter '" + valueMatches.get(0).getName() + "'");
+            String correctionKey = cleaned + "->" + valueMatches.get(0).getName();
+            if (correctionWarnings.add(correctionKey)) {
+                PluginLogger.getInstance().warn(PluginLogger.Category.LLM, "AI",
+                        "AI used parameter value as name, corrected '" + cleaned
+                                + "' to parameter '" + valueMatches.get(0).getName() + "'");
+            }
             return valueMatches.get(0).getName();
         }
         return null;

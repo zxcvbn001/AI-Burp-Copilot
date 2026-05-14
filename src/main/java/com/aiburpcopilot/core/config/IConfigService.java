@@ -18,7 +18,8 @@ public interface IConfigService {
     }
 
     default java.nio.file.Path getConfigFilePath() {
-        return ExternalResourcePaths.configFile();
+        java.nio.file.Path homeDir = ExternalResourcePaths.homeDirOrNull();
+        return homeDir != null ? homeDir.resolve("application.yml") : null;
     }
 
     /**

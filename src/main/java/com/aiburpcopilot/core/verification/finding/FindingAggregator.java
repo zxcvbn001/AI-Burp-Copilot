@@ -5,9 +5,13 @@ import com.aiburpcopilot.core.verification.model.Evidence;
 import com.aiburpcopilot.core.verification.model.StepResult;
 import com.aiburpcopilot.core.verification.model.WorkflowResult;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class FindingAggregator {
 
     private static final double MIN_FINDING_CONFIDENCE = 0.55;
+    private static final String PAYLOAD_VERIFICATION_PHASE = "Payload Verification";
 
     public VulnerabilityFinding aggregate(String requestId, String url, WorkflowResult workflowResult) {
         if (workflowResult == null || workflowResult.getAttackTypeName() == null) {
@@ -17,21 +21,23 @@ public class FindingAggregator {
         double confidence = 0.0;
         int evidenceCount = 0;
         StepResult representative = null;
+        List<Evidence> vulnerabilityEvidence = new ArrayList<>();
 
         for (StepResult stepResult : workflowResult.getStepResults()) {
-            if (stepResult == null || !stepResult.isSuccess()) {
+            if (!isVulnerabilityProofStep(stepResult)) {
                 continue;
             }
             confidence = combine(confidence, stepResult.getConfidence());
             if (stepResult.getEvidences() != null) {
                 evidenceCount += stepResult.getEvidences().size();
+                vulnerabilityEvidence.addAll(stepResult.getEvidences());
             }
             if (isBetterRepresentative(stepResult, representative)) {
                 representative = stepResult;
             }
         }
 
-        if (confidence < MIN_FINDING_CONFIDENCE || representative == null) {
+        if (confidence < MIN_FINDING_CONFIDENCE || representative == null || vulnerabilityEvidence.isEmpty()) {
             return null;
         }
 
@@ -43,17 +49,29 @@ public class FindingAggregator {
         finding.setUrl(url);
         finding.setConfidence(confidence);
         finding.setRiskLevel(confidenceToRiskLevel(confidence));
-        finding.setEvidences(workflowResult.getEvidence());
-        finding.setReasoning(buildReasoning(workflowResult, confidence, evidenceCount));
+        finding.setEvidences(vulnerabilityEvidence);
+        finding.setReasoning(buildReasoning(workflowResult, vulnerabilityEvidence, confidence, evidenceCount));
         finding.setDiffResult(representative.getDiffResult());
         finding.setRequestBytes(representative.getRequestBytes());
         finding.setResponseBytes(representative.getResponseBytes());
         finding.setResponseTimeMs(representative.getDurationMs());
         finding.setExchangeTranscript(buildTranscript(workflowResult));
+        finding.setLlmReview(representative.getLlmReview());
         return finding;
     }
 
-    private String buildReasoning(WorkflowResult workflowResult, double confidence, int evidenceCount) {
+    private boolean isVulnerabilityProofStep(StepResult stepResult) {
+        return stepResult != null
+                && stepResult.isSuccess()
+                && PAYLOAD_VERIFICATION_PHASE.equalsIgnoreCase(stepResult.getPhase())
+                && stepResult.getEvidences() != null
+                && !stepResult.getEvidences().isEmpty();
+    }
+
+    private String buildReasoning(WorkflowResult workflowResult,
+                                  List<Evidence> vulnerabilityEvidence,
+                                  double confidence,
+                                  int evidenceCount) {
         StringBuilder builder = new StringBuilder();
         builder.append("漏洞类型聚合结论：")
                 .append(workflowResult.getAttackTypeName())
@@ -64,7 +82,7 @@ public class FindingAggregator {
                 .append("\n证据数量：")
                 .append(evidenceCount)
                 .append("\n证据来源：");
-        for (Evidence evidence : workflowResult.getEvidence()) {
+        for (Evidence evidence : vulnerabilityEvidence) {
             builder.append("\n- ")
                     .append(evidence.getEvidenceType())
                     .append(": ")

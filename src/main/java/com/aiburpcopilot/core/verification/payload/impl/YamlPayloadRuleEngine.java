@@ -18,7 +18,6 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -50,13 +49,6 @@ import java.util.Set;
 public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngine {
 
     private static final Logger log = LoggerFactory.getLogger(YamlPayloadRuleEngine.class);
-    private static final String PAYLOADS_DIR = "rules/payloads/";
-    private static final String[] PAYLOAD_FILES = {
-            "sqli.yaml", "idor.yaml", "ssrf.yaml", "auth.yaml",
-            "xss.yaml", "path_traversal.yaml", "open_redirect.yaml", "ssti.yaml",
-            "xxe.yaml", "jwt.yaml", "graphql.yaml", "cors.yaml",
-            "file_upload.yaml", "command_injection.yaml", "ldap_injection.yaml"
-    };
     private final Map<String, List<ProbeDefinition>> probeMap = new LinkedHashMap<>();
     private final Map<String, RuleWorkflowConfig> workflowConfigMap = new LinkedHashMap<>();
     private final Map<String, Set<String>> aliasMap = new LinkedHashMap<>();
@@ -218,9 +210,8 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
         aliasMap.clear();
         scanExternalPayloads();
         if (probeMap.isEmpty()) {
-            for (String fileName : PAYLOAD_FILES) {
-                loadPayloadFile(fileName);
-            }
+            throw new IllegalStateException("No payload rule files loaded from configured directory: "
+                    + ExternalResourcePaths.payloadRulesDir().toAbsolutePath());
         }
         log.info("Probe rules loaded: {} attack types, {} probes, {} payload entries",
                 probeMap.size(), countTotalProbes(), countTotalPayloads());
@@ -249,21 +240,6 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
             loadRoot(filePath.getFileName().toString(), root, true);
         } catch (Exception e) {
             log.error("Failed to load external probe rules: {}", filePath, e);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void loadPayloadFile(String fileName) {
-        String path = PAYLOADS_DIR + fileName;
-        try (InputStream in = getClass().getClassLoader().getResourceAsStream(path)) {
-            if (in == null) {
-                log.warn("Probe rule file not found: {}", path);
-                return;
-            }
-            Map<String, Object> root = yamlMapper.readValue(in, Map.class);
-            loadRoot(fileName, root, false);
-        } catch (Exception e) {
-            log.error("Failed to load probe rule file: {}", fileName, e);
         }
     }
 
@@ -352,8 +328,12 @@ public class YamlPayloadRuleEngine implements IPayloadRuleEngine, IProbeRuleEngi
         return value != null
                 && normalizedAlias != null
                 && (value.equals(normalizedAlias)
-                || value.contains(normalizedAlias)
-                || normalizedAlias.contains(value));
+                || (isTokenAlias(normalizedAlias)
+                && ("_" + value + "_").contains("_" + normalizedAlias + "_")));
+    }
+
+    private boolean isTokenAlias(String alias) {
+        return alias.length() >= 4 || alias.contains("_");
     }
 
     @SuppressWarnings("unchecked")

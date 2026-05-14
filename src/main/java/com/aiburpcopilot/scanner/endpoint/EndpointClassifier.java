@@ -63,6 +63,7 @@ public class EndpointClassifier implements IEndpointClassifier {
     private static final int SCORE_ENDPOINT_API_PATH = 2;
     private static final int SCORE_ENDPOINT_QUERY = 1;
     private static final int SCORE_ENDPOINT_BODY_PARAM = 1;
+    private static final int SCORE_DYNAMIC_PAGE_QUERY = 2;
 
     private static final int SCORE_STATIC_EXTENSION = -3;
     private static final int SCORE_STATIC_SKIP_KEYWORD = -3;
@@ -139,6 +140,13 @@ public class EndpointClassifier implements IEndpointClassifier {
         if (context.getQuery() != null && !context.getQuery().isEmpty()) {
             score += SCORE_ENDPOINT_QUERY;
             log.debug("Score {}: has query parameters", score);
+        }
+
+        if ("GET".equals(method)
+                && context.getQuery() != null && !context.getQuery().isEmpty()
+                && looksLikeDynamicPage(lowerPath)) {
+            score += SCORE_DYNAMIC_PAGE_QUERY;
+            log.debug("Score {}: GET dynamic page with query parameters", score);
         }
 
         // ========== 7. Body 参数评分 ==========
@@ -218,9 +226,12 @@ public class EndpointClassifier implements IEndpointClassifier {
             cacheService.put(cacheKey, result, 1800);
 
             return parseEndpointType(result.trim());
+        } catch (java.util.concurrent.TimeoutException e) {
+            log.warn("AI classification timed out for {} {}", context.getMethod(), context.getPath());
+            return fallbackForAiClassificationFailure(context, "timeout");
         } catch (Exception e) {
             log.warn("AI classification failed: {}", e.getMessage());
-            return EndpointType.UNKNOWN;
+            return fallbackForAiClassificationFailure(context, e.getClass().getSimpleName());
         }
     }
 
@@ -275,5 +286,32 @@ public class EndpointClassifier implements IEndpointClassifier {
         if (upper.contains("ENDPOINT")) return EndpointType.ENDPOINT;
         if (upper.contains("STATIC")) return EndpointType.STATIC_RESOURCE;
         return EndpointType.UNKNOWN;
+    }
+
+    private EndpointType fallbackForAiClassificationFailure(HTTPContext context, String reason) {
+        String path = context.getPath() != null ? context.getPath().toLowerCase() : "";
+        boolean hasQuery = context.getQuery() != null && !context.getQuery().isEmpty();
+        boolean hasBody = context.getRequestBody() != null && context.getRequestBody().length > 0;
+        if ((hasQuery || hasBody) && looksLikeDynamicPage(path)) {
+            log.info("Fallback endpoint classification applied for {} {} due to AI {}", 
+                    context.getMethod(), context.getPath(), reason);
+            return EndpointType.ENDPOINT;
+        }
+        return EndpointType.UNKNOWN;
+    }
+
+    private boolean looksLikeDynamicPage(String lowerPath) {
+        if (lowerPath == null || lowerPath.isBlank()) {
+            return false;
+        }
+        return lowerPath.endsWith(".php")
+                || lowerPath.endsWith(".jsp")
+                || lowerPath.endsWith(".asp")
+                || lowerPath.endsWith(".aspx")
+                || lowerPath.contains("/vulnerabilities/")
+                || lowerPath.contains("authbypass")
+                || lowerPath.contains("sqli")
+                || lowerPath.contains("xss")
+                || lowerPath.contains("upload");
     }
 }

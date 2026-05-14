@@ -56,6 +56,10 @@ final class UiUtil {
         tabbedPane.setFont(burpTableFont());
     }
 
+    static void applyBurpLabelFont(JComponent component) {
+        component.setFont(burpTableFont());
+    }
+
     static JTextArea createMessageArea() {
         JTextArea area = new JTextArea();
         area.setEditable(false);

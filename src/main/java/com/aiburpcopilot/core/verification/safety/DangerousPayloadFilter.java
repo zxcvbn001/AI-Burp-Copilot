@@ -81,7 +81,8 @@ public final class DangerousPayloadFilter {
         for (String payload : payloads) {
             if (isDangerous(payload)) {
                 log.warn("Dangerous payload blocked by safety filter: {}", truncate(payload));
-                pluginLog.warn("Safety", "Blocked dangerous payload: " + truncate(payload));
+                pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                        "Safety", "Blocked dangerous payload: " + truncate(payload));
             } else {
                 safe.add(payload);
             }

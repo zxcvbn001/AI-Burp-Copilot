@@ -205,7 +205,7 @@ public class GenericProbeStep implements VerificationStep {
                 + "，命中证据=" + matched
                 + "，置信度=" + String.format("%.2f", combinedConfidence));
 
-        PluginLogger.getInstance().info(name,
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, name,
                 "Completed: attackType=" + attackTypeName
                         + " param='" + candidate.getParameterName()
                         + "' requests=" + tested

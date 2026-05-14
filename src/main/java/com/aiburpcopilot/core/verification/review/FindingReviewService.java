@@ -72,6 +72,13 @@ public class FindingReviewService {
         boolean supported = asBoolean(map.get("supported"));
         double confidence = asDouble(map.get("confidence"), -1.0);
         result.setReviewStatus(supported ? ReviewStatus.PASSED : ReviewStatus.REJECTED);
+        if (!supported) {
+            result.setConfirmedVulnerability(false);
+            result.setConfidence(0.0);
+            result.setRiskLevel(com.aiburpcopilot.core.context.RiskLevel.INFO);
+        } else if (confidence >= 0.0) {
+            result.setConfidence(Math.max(result.getConfidence(), confidence));
+        }
         StringBuilder text = new StringBuilder();
         text.append("LLM 漏洞级二次研判：")
                 .append(supported ? "证据支持" : "证据不足");

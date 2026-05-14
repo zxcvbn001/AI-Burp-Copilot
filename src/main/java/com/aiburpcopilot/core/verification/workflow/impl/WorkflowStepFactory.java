@@ -104,7 +104,7 @@ public class WorkflowStepFactory {
             engine.registerStep(step.getName(), step);
         }
 
-        PluginLogger.getInstance().info("WorkflowStepFactory",
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowStepFactory",
                 "WorkflowEngine created: " + registry.getCount() + " workflows, "
                         + steps.size() + " steps registered");
         log.info("WorkflowEngine created with {} workflows and {} steps",
@@ -127,7 +127,7 @@ public class WorkflowStepFactory {
             }
         }
 
-        PluginLogger.getInstance().info("WorkflowStepFactory",
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowStepFactory",
                 "Created " + steps.size() + " VerificationStep instances");
         return steps;
     }

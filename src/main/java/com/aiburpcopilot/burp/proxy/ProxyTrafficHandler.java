@@ -51,14 +51,15 @@ public class ProxyTrafficHandler implements HttpHandler {
             HttpRequest httpRequest = response.initiatingRequest();
 
             if (isInternalVerificationTraffic(httpRequest)) {
-                pluginLog.debug("Proxy", "Skipped internal verification replay: "
+                pluginLog.debug(PluginLogger.Category.SYSTEM, "Proxy", "Skipped internal verification replay: "
                         + httpRequest.method() + " " + httpRequest.pathWithoutQuery());
                 return ResponseReceivedAction.continueWith(response);
             }
 
             String path = httpRequest.pathWithoutQuery();
             String method = httpRequest.method();
-            pluginLog.debug("Proxy", "Captured: " + method + " " + path + " [status=" + response.statusCode() + "]");
+            pluginLog.debug(PluginLogger.Category.SYSTEM, "Proxy",
+                    "Captured: " + method + " " + path + " [status=" + response.statusCode() + "]");
 
             // 构建 HTTPContext（HttpResponseReceived 本身 extends HttpResponse）
             HTTPContext context = buildContext(httpRequest, response);
@@ -68,7 +69,8 @@ public class ProxyTrafficHandler implements HttpHandler {
 
         } catch (Exception e) {
             log.warn("Failed to process HTTP traffic: {}", e.getMessage());
-            pluginLog.error("Proxy", "Failed to process traffic: " + e.getMessage(), e);
+            pluginLog.error(PluginLogger.Category.SYSTEM, "Proxy",
+                    "Failed to process traffic: " + e.getMessage(), e);
         }
 
         // Phase 1: 不修改响应

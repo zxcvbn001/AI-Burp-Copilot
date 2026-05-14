@@ -50,15 +50,24 @@ public class ProbeOracleEngine {
             case "EXPRESSION_EVALUATION" -> evaluateExpressionEvaluation(probe, baselineResponse, executions);
             case "BASELINE_DIFF" -> evaluateBaselineDiff(probe, baselineResponse, executions);
             case "BASELINE_SIMILAR" -> evaluateBaselineSimilar(probe, baselineResponse, executions);
-            case "HTML_REFLECTION", "REFLECTION" -> evaluateReflection(probe, executions);
-            default -> evaluateReflection(probe, executions);
+            case "HTML_REFLECTION", "REFLECTION" ->
+                    evaluateReflection(probe, baselineResponse, baselineDurationMs, executions);
+            default -> evaluateReflection(probe, baselineResponse, baselineDurationMs, executions);
         };
     }
 
-    private OracleResult evaluateReflection(ProbeDefinition probe, List<ProbeExecution> executions) {
+    private OracleResult evaluateReflection(ProbeDefinition probe,
+                                            byte[] baselineResponse,
+                                            long baselineDurationMs,
+                                            List<ProbeExecution> executions) {
         OracleResult result = new OracleResult();
         OracleDefinition oracle = probe.getOracle();
         for (ProbeExecution execution : executions) {
+            DiffResult diff = diff(baselineResponse, execution.getResponseBytes(),
+                    baselineDurationMs, execution.getDurationMs());
+            if (result.getDiffResult() == null) {
+                result.setDiffResult(diff);
+            }
             String responseText = text(execution.getResponseBytes());
             if (responseText.isEmpty()) {
                 continue;
@@ -94,18 +103,37 @@ public class ProbeOracleEngine {
                 }
                 result.setMatched(true);
                 result.setConfidence(Math.max(result.getConfidence(), confidence));
+                result.setDiffResult(diff);
                 result.setReasoning("响应中反射了探测标记：" + matchedMarkers);
                 Evidence evidence = Evidence.general(
                         "响应中反射了探测标记：" + matchedMarkers,
                         "REFLECTION",
                         confidence);
                 evidence.setMutatedRequest(execution.getRequestBytes());
+                evidence.setOriginalResponse(baselineResponse);
                 evidence.setMutatedResponse(execution.getResponseBytes());
                 result.addEvidence(evidence);
             }
         }
         if (result.getReasoning() == null) {
             result.setReasoning("未发现稳定反射证据");
+        }
+        if (probe.isRequiresLlmReview() && result.getDiffResult() != null) {
+            boolean localMatched = result.isMatched();
+            LlmDiffDecision llmDecision = judgeDiffWithLlm(
+                    probe, "HTML_REFLECTION", result.getDiffResult(), executions,
+                    localMatched, result.getReasoning());
+            result.setLlmReview(llmDecision.review);
+            result.setLlmAvailable(llmDecision.available);
+            if (llmDecision.available) {
+                result.setMatched(localMatched && llmDecision.matched);
+                result.setConfidence(result.isMatched()
+                        ? Math.min(result.getConfidence(), llmDecision.confidence)
+                        : 0.0);
+                result.setReasoning("LLM 反射差异研判"
+                        + (result.isMatched() ? "确认：" : "未确认：")
+                        + llmDecision.reasoning);
+            }
         }
         return result;
     }

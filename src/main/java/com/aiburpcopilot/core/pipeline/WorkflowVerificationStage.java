@@ -79,7 +79,7 @@ public class WorkflowVerificationStage implements IPipelineStage {
         }
         if (!guard.isVerificationEnabled()) {
             if (hasVerificationSignals(context)) {
-                pluginLog.warn("WorkflowVerification",
+                pluginLog.warn(PluginLogger.Category.VERIFICATION, "WorkflowVerification",
                         "Skip: verification.enabled=false, path=" + context.getPath());
             }
             return false;
@@ -88,14 +88,15 @@ public class WorkflowVerificationStage implements IPipelineStage {
             return false;
         }
         if (!guard.isHostAllowed(context.getUrl())) {
-            pluginLog.warn("WorkflowVerification", "Skip host not allowed: " + context.getUrl());
+            pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                    "WorkflowVerification", "Skip host not allowed: " + context.getUrl());
             return false;
         }
         if (context.getAnalysisResult() == null || !context.getAnalysisResult().isSuccess()) {
             return false;
         }
         if (!hasVerificationSignals(context)) {
-            pluginLog.debug("WorkflowVerification",
+            pluginLog.debug(PluginLogger.Category.VERIFICATION, "WorkflowVerification",
                     "Skip: no verification signals from AI analysis, path=" + context.getPath());
             return false;
         }
@@ -117,12 +118,13 @@ public class WorkflowVerificationStage implements IPipelineStage {
         long start = System.currentTimeMillis();
         List<CandidateParameter> candidates = candidateExtractor.extract(context);
         if (candidates.isEmpty()) {
-            pluginLog.debug("WorkflowVerification", "No candidates: " + context.getPath());
+            pluginLog.debug(PluginLogger.Category.VERIFICATION,
+                    "WorkflowVerification", "No candidates: " + context.getPath());
             return;
         }
 
         if (!guard.isInfluenceActionAllowed(context) && !guard.isVerificationActionAllowed(context)) {
-            pluginLog.warn("WorkflowVerification",
+            pluginLog.warn(PluginLogger.Category.VERIFICATION, "WorkflowVerification",
                     "Skip unsafe endpoint action after candidate extraction: "
                             + guard.describeActionPolicy(context, false));
             return;
@@ -135,12 +137,13 @@ public class WorkflowVerificationStage implements IPipelineStage {
         List<VerificationResult> verificationResults = new ArrayList<>();
         Map<String, InfluenceResult> influenceCache = new LinkedHashMap<>();
 
-        pluginLog.info("WorkflowVerification", "Start: " + context.getPath()
+        pluginLog.info(PluginLogger.Category.VERIFICATION, "WorkflowVerification", "Start: " + context.getPath()
                 + " candidates=" + candidates.size());
 
         for (CandidateParameter candidate : candidates) {
             if (processed >= maxParameters) {
-                pluginLog.warn("WorkflowVerification", "Parameter test limit reached: " + maxParameters);
+                pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                        "WorkflowVerification", "Parameter test limit reached: " + maxParameters);
                 break;
             }
             if (!guard.isHostAllowed(context.getUrl())) {
@@ -154,13 +157,13 @@ public class WorkflowVerificationStage implements IPipelineStage {
                 workflowContext.setPayloadVerificationAllowed(guard.isVerificationActionAllowed(context));
                 boolean requiresInfluenceReplay = requiresInfluenceReplay(candidate);
                 if (requiresInfluenceReplay && !guard.isInfluenceActionAllowed(context)) {
-                    pluginLog.warn("WorkflowVerification",
+                    pluginLog.warn(PluginLogger.Category.VERIFICATION, "WorkflowVerification",
                             "Skip influence replay by action policy: "
                                     + guard.describeActionPolicy(context, true));
                     continue;
                 }
                 if (!workflowContext.isPayloadVerificationAllowed()) {
-                    pluginLog.warn("WorkflowVerification",
+                    pluginLog.warn(PluginLogger.Category.VERIFICATION, "WorkflowVerification",
                             "Payload verification will be blocked by action policy: "
                                     + guard.describeActionPolicy(context, false));
                 }
@@ -168,7 +171,8 @@ public class WorkflowVerificationStage implements IPipelineStage {
                 InfluenceResult cachedInfluence = influenceCache.get(influenceCacheKey(candidate));
                 if (cachedInfluence != null) {
                     workflowContext.setInfluenceResult(cachedInfluence);
-                    pluginLog.debug("WorkflowVerification", "Reuse influence result: param="
+                    pluginLog.debug(PluginLogger.Category.VERIFICATION,
+                            "WorkflowVerification", "Reuse influence result: param="
                             + candidate.getParameterName()
                             + " approved=" + cachedInfluence.isApproved());
                 }
@@ -182,13 +186,13 @@ public class WorkflowVerificationStage implements IPipelineStage {
             } catch (Exception e) {
                 log.warn("Workflow verification failed for param={} type={}",
                         candidate.getParameterName(), candidate.getAttackTypeName(), e);
-                pluginLog.warn("WorkflowVerification", "Candidate failed: "
+                pluginLog.warn(PluginLogger.Category.VERIFICATION, "WorkflowVerification", "Candidate failed: "
                         + candidate.getParameterName() + " - " + e.getMessage());
             }
         }
 
         context.setVerificationResults(verificationResults);
-        pluginLog.info("WorkflowVerification", "Done: results=" + verificationResults.size()
+        pluginLog.info(PluginLogger.Category.VERIFICATION, "WorkflowVerification", "Done: results=" + verificationResults.size()
                 + " elapsed=" + (System.currentTimeMillis() - start) + "ms");
     }
 
@@ -260,7 +264,10 @@ public class WorkflowVerificationStage implements IPipelineStage {
         result.setResponseLength(finding.getResponseBytes() != null ? finding.getResponseBytes().length : 0);
         result.setExchangeTranscript(finding.getExchangeTranscript());
         result.setConfirmedVulnerability(true);
-        result.setReviewStatus(ReviewStatus.PENDING);
+        result.setLlmReview(finding.getLlmReview());
+        result.setReviewStatus((finding.getLlmReview() != null && !finding.getLlmReview().isBlank())
+                ? ReviewStatus.PASSED
+                : ReviewStatus.PENDING);
         return result;
     }
 

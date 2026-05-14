@@ -14,6 +14,7 @@ final class VerificationUiSupport {
 
     static final String PHASE_INFLUENCE = "Influence Gate";
     static final String PHASE_PAYLOAD = "Payload Verification";
+    static final String PHASE_FINDING = "Finding";
 
     private VerificationUiSupport() {
     }
@@ -43,12 +44,22 @@ final class VerificationUiSupport {
                 + "|" + nullToDash(result.getPayload());
     }
 
+    static String workflowKey(HistoryEntry entry, VerificationResult result) {
+        return nullToDash(entry.getRequestId())
+                + "|" + nullToDash(result.getAttackTypeName())
+                + "|" + nullToDash(result.getParameter());
+    }
+
     static boolean isInfluence(VerificationResult result) {
         return result != null && PHASE_INFLUENCE.equalsIgnoreCase(result.getPhase());
     }
 
     static boolean isPayloadVerification(VerificationResult result) {
         return result != null && !isInfluence(result);
+    }
+
+    static boolean isAggregatedFinding(VerificationResult result) {
+        return result != null && PHASE_FINDING.equalsIgnoreCase(result.getPhase());
     }
 
     static String formatDiffChinese(DiffResult diff, long responseTimeMs) {

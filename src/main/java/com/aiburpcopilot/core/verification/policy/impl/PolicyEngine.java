@@ -32,16 +32,17 @@ public class PolicyEngine implements IPolicyEngine {
     /** 策略配置文件路径 */
     private static final String CONFIG_FILE = "verification-policy.yaml";
 
-    private final Path configPath;
-
     private volatile VerificationPolicy policy;
 
     public PolicyEngine() {
         ExternalResourcePaths.initialize();
-        this.configPath = ExternalResourcePaths.homeDir().resolve(CONFIG_FILE);
         // 初始化时加载一次
         this.policy = createDefaultPolicy();
-        log.info("PolicyEngine initialized, config path: {}", configPath.toAbsolutePath());
+        log.info("PolicyEngine initialized, config path: {}", configPath().toAbsolutePath());
+    }
+
+    private Path configPath() {
+        return ExternalResourcePaths.homeDir().resolve(CONFIG_FILE);
     }
 
     @Override
@@ -210,6 +211,7 @@ public class PolicyEngine implements IPolicyEngine {
     @Override
     public synchronized void reload() {
         try {
+            Path configPath = configPath();
             Path parent = configPath.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
@@ -229,7 +231,7 @@ public class PolicyEngine implements IPolicyEngine {
                 this.policy = createDefaultPolicy();
             }
         } catch (IOException e) {
-            log.error("Failed to read policy config file: {}", configPath.toAbsolutePath(), e);
+            log.error("Failed to read policy config file: {}", configPath().toAbsolutePath(), e);
         }
     }
 

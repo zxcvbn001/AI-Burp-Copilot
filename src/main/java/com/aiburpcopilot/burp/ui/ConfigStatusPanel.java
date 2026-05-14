@@ -12,15 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 外部配置/资源文件状态面板。
- * <p>
- * 显示所有外部配置文件、规则、Prompt 的加载状态，
- * 支持查看详情和重新加载。
- */
 public class ConfigStatusPanel extends JPanel {
-
-    private static final Path CONFIG_DIR = ExternalResourcePaths.homeDir();
 
     private final JTable fileTable;
     private final DefaultTableModel tableModel;
@@ -31,18 +23,15 @@ public class ConfigStatusPanel extends JPanel {
     private Runnable onReload;
 
     public ConfigStatusPanel() {
-        ExternalResourcePaths.initialize();
         this.pluginLog = PluginLogger.getInstance();
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // 顶部：状态概览
         JPanel topPanel = new JPanel(new BorderLayout());
-        statusLabel = new JLabel("Checking external config directory...");
+        statusLabel = new JLabel("No config directory selected.");
         statusLabel.setFont(statusLabel.getFont().deriveFont(Font.BOLD));
         topPanel.add(statusLabel, BorderLayout.NORTH);
 
-        // 文件列表表格
         String[] columns = {"Resource", "Path", "Status", "Size"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
@@ -64,7 +53,6 @@ public class ConfigStatusPanel extends JPanel {
         tableScroll.setPreferredSize(new Dimension(800, 200));
         add(tableScroll, BorderLayout.CENTER);
 
-        // 详情区域
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBorder(new EmptyBorder(10, 0, 0, 0));
         bottomPanel.add(new JLabel("File Details:"), BorderLayout.NORTH);
@@ -75,9 +63,8 @@ public class ConfigStatusPanel extends JPanel {
         JScrollPane detailScroll = new JScrollPane(detailArea);
         bottomPanel.add(detailScroll, BorderLayout.CENTER);
 
-        // 按钮面板
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton reloadAllBtn = new JButton("Reload All Config Files");
+        JButton reloadAllBtn = new JButton("Reload Selected Directory");
         reloadAllBtn.addActionListener(e -> reloadAll());
         JButton refreshBtn = new JButton("Refresh Status");
         refreshBtn.addActionListener(e -> refreshFileList());
@@ -87,35 +74,33 @@ public class ConfigStatusPanel extends JPanel {
         bottomPanel.add(buttonPanel, BorderLayout.SOUTH);
         add(bottomPanel, BorderLayout.SOUTH);
 
-        // 初始加载
         refreshFileList();
     }
 
-    /**
-     * 设置重新加载回调。
-     */
     public void setOnReload(Runnable onReload) {
         this.onReload = onReload;
     }
 
-    /**
-     * 刷新文件列表。
-     */
     public void refreshFileList() {
         tableModel.setRowCount(0);
+        detailArea.setText("");
         List<Path> allFiles = new ArrayList<>();
 
-        Path configDir = CONFIG_DIR;
+        Path configDir = ExternalResourcePaths.homeDirOrNull();
+        if (configDir == null) {
+            statusLabel.setText("No config directory selected. Please load a config directory first.");
+            statusLabel.setForeground(Color.RED);
+            return;
+        }
         if (!Files.exists(configDir)) {
-            statusLabel.setText("External config directory not found: " + configDir);
+            statusLabel.setText("Configured directory not found: " + configDir);
             statusLabel.setForeground(Color.RED);
             return;
         }
 
-        statusLabel.setText("External config directory: " + configDir);
+        statusLabel.setText("Selected config directory: " + configDir);
         statusLabel.setForeground(new Color(0, 100, 0));
 
-        // 收集所有配置文件
         try {
             Files.walk(configDir, 3).forEach(path -> {
                 if (Files.isRegularFile(path)) {
@@ -123,7 +108,8 @@ public class ConfigStatusPanel extends JPanel {
                 }
             });
         } catch (Exception e) {
-            pluginLog.warn("Config", "Failed to walk config dir: " + e.getMessage());
+            pluginLog.warn(PluginLogger.Category.SYSTEM, "Config",
+                    "Failed to walk config dir: " + e.getMessage());
         }
 
         for (Path file : allFiles) {
@@ -133,13 +119,12 @@ public class ConfigStatusPanel extends JPanel {
             try {
                 long bytes = Files.size(file);
                 size = bytes < 1024 ? bytes + " B" : String.format("%.1f KB", bytes / 1024.0);
-                // Check if file is empty
                 if (bytes == 0) {
                     status = "EMPTY";
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
 
-            // 判断资源类型
             String resourceType = "Unknown";
             if (relativePath.endsWith("application.yml")) {
                 resourceType = "Application Config";
@@ -153,12 +138,7 @@ public class ConfigStatusPanel extends JPanel {
                 resourceType = "Rule: " + relativePath.substring("rules/".length());
             }
 
-            tableModel.addRow(new Object[]{
-                    resourceType,
-                    relativePath,
-                    status,
-                    size
-            });
+            tableModel.addRow(new Object[]{resourceType, relativePath, status, size});
         }
 
         if (allFiles.isEmpty()) {
@@ -171,44 +151,48 @@ public class ConfigStatusPanel extends JPanel {
         }
     }
 
-    /**
-     * 重新加载所有配置。
-     */
     private void reloadAll() {
-        int confirm = JOptionPane.showConfirmDialog(this,
-                "Reload all external config files, rules, and prompts?\n"
-                        + "Current settings will be replaced with file content.",
-                "Confirm Reload", JOptionPane.YES_NO_OPTION);
-        if (confirm != JOptionPane.YES_OPTION) return;
+        if (ExternalResourcePaths.homeDirOrNull() == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Please select a config directory first.",
+                    "No Config Directory",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
         if (onReload != null) {
             onReload.run();
         }
 
-        // 刷新文件列表
         refreshFileList();
-
-        pluginLog.info("Config", "All config files reloaded from: " + CONFIG_DIR);
+        pluginLog.info(PluginLogger.Category.SYSTEM, "Config",
+                "Reloaded config directory: " + ExternalResourcePaths.homeDir());
         JOptionPane.showMessageDialog(this,
-                "All config files reloaded successfully.\n"
-                        + String.valueOf(tableModel.getRowCount()) + " files detected.",
-                "Reload Complete", JOptionPane.INFORMATION_MESSAGE);
+                "Selected config directory reloaded.\n"
+                        + tableModel.getRowCount() + " files detected.",
+                "Reload Complete",
+                JOptionPane.INFORMATION_MESSAGE);
     }
 
-    /**
-     * 显示选中文件的详情。
-     */
     private void showDetailForRow(int row) {
         if (row < 0) {
             detailArea.setText("");
             return;
         }
 
+        Path configDir = ExternalResourcePaths.homeDirOrNull();
+        if (configDir == null) {
+            detailArea.setText("No config directory selected.");
+            return;
+        }
+
         Object pathObj = tableModel.getValueAt(row, 1);
-        if (pathObj == null) return;
+        if (pathObj == null) {
+            return;
+        }
 
         String relativePath = pathObj.toString();
-        Path fullPath = CONFIG_DIR.resolve(relativePath);
+        Path fullPath = configDir.resolve(relativePath);
 
         StringBuilder sb = new StringBuilder();
         sb.append("File: ").append(fullPath).append("\n");
@@ -218,15 +202,12 @@ public class ConfigStatusPanel extends JPanel {
         try {
             long bytes = Files.size(fullPath);
             sb.append("Size: ").append(bytes).append(" bytes\n\n");
-
-            // Preview first 2000 chars
             String content = Files.readString(fullPath);
             if (content.length() > 2000) {
                 content = content.substring(0, 2000) + "\n\n... (truncated, "
                         + (content.length() - 2000) + " more characters)";
             }
-            sb.append("Content Preview:\n");
-            sb.append("---\n");
+            sb.append("Content Preview:\n---\n");
             sb.append(content);
         } catch (Exception e) {
             sb.append("Error reading file: ").append(e.getMessage());

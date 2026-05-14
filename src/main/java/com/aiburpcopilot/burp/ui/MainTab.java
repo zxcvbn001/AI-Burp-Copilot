@@ -26,7 +26,8 @@ public class MainTab extends JPanel {
                    IHistoryService historyService,
                    IConfigService configService,
                    IAIProvider aiProvider,
-                   ManualVerificationService manualVerificationService) {
+                   ManualVerificationService manualVerificationService,
+                   Runnable reloadRuntimeResources) {
         setLayout(new BorderLayout());
 
         this.historyPanel = new HistoryPanel(historyService);
@@ -37,7 +38,7 @@ public class MainTab extends JPanel {
         this.staticScanPanel = new StaticScanPanel(api, historyService);
         this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(api, historyService, aiProvider);
         this.logPanel = new LogPanel();
-        this.settingsPanel = new SettingsPanel(configService, api);
+        this.settingsPanel = new SettingsPanel(configService, api, reloadRuntimeResources);
 
         JTabbedPane tabbedPane = new JTabbedPane();
         UiUtil.applyBurpFont(tabbedPane);
@@ -69,6 +70,10 @@ public class MainTab extends JPanel {
         });
 
         startFallbackRefresh();
+    }
+
+    public void refreshNow() {
+        refreshAllPanels();
     }
 
     private void refreshAllPanels() {

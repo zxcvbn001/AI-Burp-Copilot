@@ -3,28 +3,32 @@ package com.aiburpcopilot.burp.ui;
 import burp.api.montoya.MontoyaApi;
 import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.utils.PluginLogger;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-/**
- * 璁剧疆闈㈡澘銆? * <p>
- * 鎻愪緵鎻掍欢鎵€鏈夐厤缃」鐨?UI 缂栬緫鐣岄潰銆? * 淇敼鍚庝細鑷姩淇濆瓨鍒?YAML 閰嶇疆鏂囦欢骞剁珛鍗崇敓鏁堛€? */
 public class SettingsPanel extends JPanel {
 
     private final IConfigService configService;
     private final MontoyaApi api;
+    private final Runnable reloadRuntimeResources;
     private JTextField configPathField;
 
-    // LLM Settings
     private JTextField apiKeyField;
     private JTextField modelField;
     private JTextField apiUrlField;
     private JComboBox<String> providerCombo;
 
-    // Scan Settings
     private JTextField skipExtensionsField;
     private JTextField skipKeywordsField;
     private JTextField skipStatusCodesField;
@@ -32,32 +36,29 @@ public class SettingsPanel extends JPanel {
     private JTextField responseMaxSizeField;
     private JTextField staticScanMaxSizeField;
 
-    // AI Settings
     private JTextField maxTokensField;
     private JTextField timeoutField;
 
-    // Storage Settings
     private JTextField maxHistoryField;
     private JTextField cacheTtlField;
 
-    // Verification Settings
     private JCheckBox verificationEnabled;
     private JTextField verificationMaxRequestsField;
     private JTextField verificationTimeoutField;
     private JTextField verificationWhitelistField;
     private JTextField verificationMaxPayloadLengthField;
-    private java.util.Map<String, JCheckBox> allowedInfluenceActionChecks;
-    private java.util.Map<String, JCheckBox> allowedVerificationActionChecks;
+    private Map<String, JCheckBox> allowedInfluenceActionChecks;
+    private Map<String, JCheckBox> allowedVerificationActionChecks;
 
-    public SettingsPanel(IConfigService configService, MontoyaApi api) {
+    public SettingsPanel(IConfigService configService, MontoyaApi api, Runnable reloadRuntimeResources) {
         this.configService = configService;
         this.api = api;
+        this.reloadRuntimeResources = reloadRuntimeResources;
 
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        JPanel configPathPanel = createConfigPathPanel();
-        add(configPathPanel, BorderLayout.NORTH);
+        add(createConfigPathPanel(), BorderLayout.NORTH);
 
         JTabbedPane settingsTabs = new JTabbedPane();
         UiUtil.applyBurpFont(settingsTabs);
@@ -65,36 +66,35 @@ public class SettingsPanel extends JPanel {
         ConfigStatusPanel configStatusPanel = new ConfigStatusPanel();
         configStatusPanel.setOnReload(this::reloadSettingsFromDisk);
         settingsTabs.addTab("Config Files", configStatusPanel);
-
         add(settingsTabs, BorderLayout.CENTER);
 
-        // 搴曢儴鎸夐挳
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton saveBtn = new JButton("Save & Apply");
         saveBtn.addActionListener(e -> saveSettings());
-        JButton resetBtn = new JButton("Reset to Defaults");
+        JButton resetBtn = new JButton("Reset Current Config");
         resetBtn.addActionListener(e -> resetSettings());
         buttonPanel.add(saveBtn);
         buttonPanel.add(resetBtn);
-
         add(buttonPanel, BorderLayout.SOUTH);
 
-        loadSettings();
+        loadSettingsSafely();
     }
 
     private JPanel createConfigPathPanel() {
         JPanel panel = new JPanel(new BorderLayout(6, 0));
         panel.setBorder(new EmptyBorder(0, 0, 8, 0));
         configPathField = new JTextField(60);
-        JButton loadBtn = new JButton("Load Config Path");
-        loadBtn.addActionListener(e -> loadConfigFromPath());
-        panel.add(new JLabel("application.yml Path:"), BorderLayout.WEST);
+        Path currentPath = configService.getConfigFilePath();
+        configPathField.setText(currentPath != null && currentPath.getParent() != null
+                ? currentPath.getParent().toString()
+                : "");
+        JButton loadBtn = new JButton("Load Config Directory");
+        loadBtn.addActionListener(e -> loadConfigDirectory());
+        panel.add(new JLabel("Config Directory:"), BorderLayout.WEST);
         panel.add(configPathField, BorderLayout.CENTER);
         panel.add(loadBtn, BorderLayout.EAST);
         return panel;
     }
-
-    // ---------- Panels ----------
 
     private JPanel createBasicSettingsPanel() {
         JPanel content = new JPanel();
@@ -120,35 +120,30 @@ public class SettingsPanel extends JPanel {
 
     private JPanel createLLMPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.gridx = 0;
-        gbc.gridy = 0;
+        GridBagConstraints gbc = baseGbc();
 
-        // Provider
         panel.add(new JLabel("Provider:"), gbc);
         gbc.gridx = 1;
         providerCombo = new JComboBox<>(new String[]{"deepseek", "qwen", "openai"});
         providerCombo.setEditable(true);
         panel.add(providerCombo, gbc);
 
-        // Model
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Model:"), gbc);
         gbc.gridx = 1;
         modelField = new JTextField(30);
         panel.add(modelField, gbc);
 
-        // API URL
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("API URL:"), gbc);
         gbc.gridx = 1;
         apiUrlField = new JTextField(30);
         panel.add(apiUrlField, gbc);
 
-        // API Key
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("API Key:"), gbc);
         gbc.gridx = 1;
         apiKeyField = new JPasswordField(30);
@@ -159,49 +154,43 @@ public class SettingsPanel extends JPanel {
 
     private JPanel createScanPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.gridx = 0;
-        gbc.gridy = 0;
+        GridBagConstraints gbc = baseGbc();
 
-        // Skip Extensions
         panel.add(new JLabel("Skip Extensions (comma separated):"), gbc);
         gbc.gridx = 1;
         skipExtensionsField = new JTextField(30);
         panel.add(skipExtensionsField, gbc);
 
-        // Skip Keywords
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Skip Keywords (comma separated):"), gbc);
         gbc.gridx = 1;
         skipKeywordsField = new JTextField(30);
         panel.add(skipKeywordsField, gbc);
 
-        // Skip Status Codes
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Skip Status Codes (comma separated):"), gbc);
         gbc.gridx = 1;
         skipStatusCodesField = new JTextField(30);
-        skipStatusCodesField.setToolTipText("Example: 204, 304, 404");
         panel.add(skipStatusCodesField, gbc);
 
-        // Response Body Scan
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Response Body Scan:"), gbc);
         gbc.gridx = 1;
         responseScanEnabled = new JCheckBox("Enabled");
         panel.add(responseScanEnabled, gbc);
 
-        // Response Max Size
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Response Max Size (bytes):"), gbc);
         gbc.gridx = 1;
         responseMaxSizeField = new JTextField(20);
         panel.add(responseMaxSizeField, gbc);
 
-        // Static Scan Max Size
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Static Scan Max Size (bytes):"), gbc);
         gbc.gridx = 1;
         staticScanMaxSizeField = new JTextField(20);
@@ -212,18 +201,15 @@ public class SettingsPanel extends JPanel {
 
     private JPanel createAIPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.gridx = 0;
-        gbc.gridy = 0;
+        GridBagConstraints gbc = baseGbc();
 
         panel.add(new JLabel("Max Tokens:"), gbc);
         gbc.gridx = 1;
         maxTokensField = new JTextField(20);
         panel.add(maxTokensField, gbc);
 
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Timeout (ms):"), gbc);
         gbc.gridx = 1;
         timeoutField = new JTextField(20);
@@ -234,18 +220,15 @@ public class SettingsPanel extends JPanel {
 
     private JPanel createStoragePanel() {
         JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.gridx = 0;
-        gbc.gridy = 0;
+        GridBagConstraints gbc = baseGbc();
 
         panel.add(new JLabel("Max History Records:"), gbc);
         gbc.gridx = 1;
         maxHistoryField = new JTextField(20);
         panel.add(maxHistoryField, gbc);
 
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Cache TTL (seconds):"), gbc);
         gbc.gridx = 1;
         cacheTtlField = new JTextField(20);
@@ -257,79 +240,81 @@ public class SettingsPanel extends JPanel {
     private JPanel createVerificationPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(new EmptyBorder(5, 5, 5, 5));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.gridx = 0;
-        gbc.gridy = 0;
+        GridBagConstraints gbc = baseGbc();
 
-        // Enabled
         panel.add(new JLabel("Enable Verification:"), gbc);
         gbc.gridx = 1;
-        verificationEnabled = new JCheckBox("Enabled (off by default for safety)");
+        verificationEnabled = new JCheckBox("Enabled");
         panel.add(verificationEnabled, gbc);
 
-        // Max Requests Per Endpoint
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Max Requests Per Endpoint:"), gbc);
         gbc.gridx = 1;
         verificationMaxRequestsField = new JTextField(20);
-        verificationMaxRequestsField.setToolTipText("Maximum verification requests per endpoint (default: 5)");
         panel.add(verificationMaxRequestsField, gbc);
 
-        // Request Timeout
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Request Timeout (seconds):"), gbc);
         gbc.gridx = 1;
         verificationTimeoutField = new JTextField(20);
-        verificationTimeoutField.setToolTipText("Timeout for each verification request (default: 5)");
         panel.add(verificationTimeoutField, gbc);
 
-        // Max Payload Length
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Max Payload Length:"), gbc);
         gbc.gridx = 1;
         verificationMaxPayloadLengthField = new JTextField(20);
-        verificationMaxPayloadLengthField.setToolTipText("Maximum payload string length (default: 128)");
         panel.add(verificationMaxPayloadLengthField, gbc);
 
-        // Whitelist
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Host Whitelist (comma separated):"), gbc);
         gbc.gridx = 1;
         verificationWhitelistField = new JTextField(30);
-        verificationWhitelistField.setToolTipText("Only verify these hosts. Leave empty to allow all.");
         panel.add(verificationWhitelistField, gbc);
 
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Allowed Influence Actions:"), gbc);
         gbc.gridx = 1;
         allowedInfluenceActionChecks = createActionChecks();
         panel.add(createActionCheckPanel(allowedInfluenceActionChecks), gbc);
 
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("Allowed Verification Actions:"), gbc);
         gbc.gridx = 1;
         allowedVerificationActionChecks = createActionChecks();
         panel.add(createActionCheckPanel(allowedVerificationActionChecks), gbc);
 
-        // 鍗犱綅濉厖
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy++;
         gbc.weighty = 1.0;
         panel.add(new JLabel(), gbc);
 
         return panel;
     }
 
-    private java.util.Map<String, JCheckBox> createActionChecks() {
-        java.util.Map<String, JCheckBox> checks = new java.util.LinkedHashMap<>();
-        for (String action : java.util.List.of("READ", "CREATE", "UPDATE", "DELETE", "AUTH", "UNKNOWN", "ALL")) {
+    private GridBagConstraints baseGbc() {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        return gbc;
+    }
+
+    private Map<String, JCheckBox> createActionChecks() {
+        Map<String, JCheckBox> checks = new LinkedHashMap<>();
+        for (String action : List.of("READ", "CREATE", "UPDATE", "DELETE", "AUTH", "UNKNOWN", "ALL")) {
             checks.put(action, new JCheckBox(action));
         }
         return checks;
     }
 
-    private JPanel createActionCheckPanel(java.util.Map<String, JCheckBox> checks) {
+    private JPanel createActionCheckPanel(Map<String, JCheckBox> checks) {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         for (JCheckBox checkBox : checks.values()) {
             panel.add(checkBox);
@@ -337,12 +322,27 @@ public class SettingsPanel extends JPanel {
         return panel;
     }
 
-    // ---------- Operations ----------
+    private void loadSettingsSafely() {
+        try {
+            if (configService.getConfigFilePath() == null) {
+                return;
+            }
+            loadSettings();
+        } catch (Exception e) {
+            PluginLogger.getInstance().warn(
+                    PluginLogger.Category.SYSTEM,
+                    "Settings",
+                    "Config not loaded yet: " + e.getMessage());
+        }
+    }
 
     private void loadSettings() {
         AppConfig config = configService.getConfig();
         if (configPathField != null) {
-            configPathField.setText(String.valueOf(configService.getConfigFilePath()));
+            java.nio.file.Path configFile = configService.getConfigFilePath();
+            configPathField.setText(configFile != null && configFile.getParent() != null
+                    ? configFile.getParent().toString()
+                    : "");
         }
 
         providerCombo.setSelectedItem(config.getLlm().getProvider());
@@ -372,35 +372,26 @@ public class SettingsPanel extends JPanel {
         setActionChecks(allowedVerificationActionChecks, config.getVerification().getAllowedVerificationActions());
     }
 
-    private String joinList(java.util.List<String> values) {
+    private String joinList(List<String> values) {
         return values != null ? String.join(", ", values) : "";
     }
 
-    private String joinIntegerList(java.util.List<Integer> values) {
+    private String joinIntegerList(List<Integer> values) {
         return values != null
-                ? values.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(", "))
+                ? values.stream().map(String::valueOf).collect(Collectors.joining(", "))
                 : "";
     }
 
     private void saveSettings() {
         try {
             AppConfig config = configService.getConfig();
-
             config.getLlm().setProvider(String.valueOf(providerCombo.getSelectedItem()).trim());
             config.getLlm().setModel(modelField.getText().trim());
             config.getLlm().setApiUrl(apiUrlField.getText().trim());
             config.getLlm().setApiKey(apiKeyField.getText().trim());
 
-            config.getScan().setSkipExtensions(
-                    java.util.Arrays.stream(skipExtensionsField.getText().split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .toList());
-            config.getScan().setSkipKeywords(
-                    java.util.Arrays.stream(skipKeywordsField.getText().split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .toList());
+            config.getScan().setSkipExtensions(parseStringList(skipExtensionsField.getText()));
+            config.getScan().setSkipKeywords(parseStringList(skipKeywordsField.getText()));
             config.getScan().setSkipStatusCodes(parseIntegerList(skipStatusCodesField.getText()));
             config.getScan().getResponseBodyScan().setEnabled(responseScanEnabled.isSelected());
             config.getScan().getResponseBodyScan().setMaxSize(Integer.parseInt(responseMaxSizeField.getText().trim()));
@@ -415,108 +406,128 @@ public class SettingsPanel extends JPanel {
             config.getVerification().setEnabled(verificationEnabled.isSelected());
             config.getVerification().setMaxRequestsPerEndpoint(Integer.parseInt(verificationMaxRequestsField.getText().trim()));
             config.getVerification().setRequestTimeoutSeconds(Integer.parseInt(verificationTimeoutField.getText().trim()));
-            config.getVerification().setWhitelist(
-                    java.util.Arrays.stream(verificationWhitelistField.getText().split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .toList());
+            config.getVerification().setWhitelist(parseStringList(verificationWhitelistField.getText()));
             config.getVerification().setMaxPayloadLength(Integer.parseInt(verificationMaxPayloadLengthField.getText().trim()));
             config.getVerification().setAllowedInfluenceActions(selectedActions(allowedInfluenceActionChecks));
             config.getVerification().setAllowedVerificationActions(selectedActions(allowedVerificationActionChecks));
 
             configService.updateConfig(config);
             configService.save();
-
+            PluginLogger.getInstance().info(
+                    PluginLogger.Category.SYSTEM,
+                    "Settings",
+                    "Settings applied from configured directory: " + configService.getConfigFilePath());
             JOptionPane.showMessageDialog(this,
-                    "Settings saved successfully!", "Success",
+                    "Settings saved successfully!",
+                    "Success",
                     JOptionPane.INFORMATION_MESSAGE);
-        } catch (NumberFormatException e) {
+        } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
-                    "Invalid number format: " + e.getMessage(), "Error",
+                    "Failed to save settings: " + e.getMessage(),
+                    "Error",
                     JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void reloadSettingsFromDisk() {
         configService.reload();
+        if (reloadRuntimeResources != null) {
+            reloadRuntimeResources.run();
+        }
         loadSettings();
     }
 
-    private void loadConfigFromPath() {
+    private void loadConfigDirectory() {
         try {
             String path = configPathField.getText() != null ? configPathField.getText().trim() : "";
             if (path.isEmpty()) {
                 JOptionPane.showMessageDialog(this,
-                        "Please enter application.yml path.", "Error",
+                        "Please enter a config directory path.",
+                        "Error",
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
             configService.reloadFrom(Paths.get(path));
+            if (reloadRuntimeResources != null) {
+                reloadRuntimeResources.run();
+            }
             loadSettings();
             JOptionPane.showMessageDialog(this,
-                    "Loaded config from: " + configService.getConfigFilePath(),
-                    "Success", JOptionPane.INFORMATION_MESSAGE);
+                    "Loaded config directory: " + Paths.get(path).toAbsolutePath().normalize(),
+                    "Success",
+                    JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
-                    "Failed to load config: " + e.getMessage(), "Error",
+                    "Failed to load config directory: " + e.getMessage(),
+                    "Error",
                     JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private java.util.List<Integer> parseIntegerList(String raw) {
+    private List<Integer> parseIntegerList(String raw) {
         if (raw == null || raw.isBlank()) {
-            return java.util.List.of();
+            return List.of();
         }
-        return java.util.Arrays.stream(raw.split(","))
+        return Arrays.stream(raw.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .map(Integer::parseInt)
                 .toList();
     }
 
-    private void setActionChecks(java.util.Map<String, JCheckBox> checks, java.util.List<String> selected) {
+    private void setActionChecks(Map<String, JCheckBox> checks, List<String> selected) {
         if (checks == null) {
             return;
         }
-        java.util.Set<String> values = selected != null
-                ? selected.stream().map(value -> value.toUpperCase(java.util.Locale.ROOT)).collect(java.util.stream.Collectors.toSet())
-                : java.util.Set.of();
-        for (java.util.Map.Entry<String, JCheckBox> entry : checks.entrySet()) {
+        Set<String> values = selected != null
+                ? selected.stream().map(value -> value.toUpperCase(java.util.Locale.ROOT)).collect(Collectors.toSet())
+                : Set.of();
+        for (Map.Entry<String, JCheckBox> entry : checks.entrySet()) {
             entry.getValue().setSelected(values.contains(entry.getKey()));
         }
     }
 
-    private java.util.List<String> selectedActions(java.util.Map<String, JCheckBox> checks) {
+    private List<String> selectedActions(Map<String, JCheckBox> checks) {
         if (checks == null) {
-            return java.util.List.of();
+            return List.of();
         }
         return checks.entrySet().stream()
                 .filter(entry -> entry.getValue().isSelected())
-                .map(java.util.Map.Entry::getKey)
+                .map(Map.Entry::getKey)
                 .toList();
     }
 
-    private java.util.List<String> parseStringList(String raw) {
+    private List<String> parseStringList(String raw) {
         if (raw == null || raw.isBlank()) {
-            return java.util.List.of();
+            return List.of();
         }
-        return java.util.Arrays.stream(raw.split(","))
+        return Arrays.stream(raw.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
     }
 
     private void resetSettings() {
-        int confirm = JOptionPane.showConfirmDialog(this,
-                "Reset all settings to defaults?", "Confirm",
-                JOptionPane.YES_NO_OPTION);
-        if (confirm == JOptionPane.YES_OPTION) {
+        try {
+            int confirm = JOptionPane.showConfirmDialog(this,
+                    "Reset current application.yml content to defaults?",
+                    "Confirm",
+                    JOptionPane.YES_NO_OPTION);
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
             configService.updateConfig(new AppConfig());
             configService.save();
             loadSettings();
             JOptionPane.showMessageDialog(this,
-                    "Settings reset to defaults.", "Info",
+                    "Current config file reset to defaults.",
+                    "Info",
                     JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "Failed to reset config: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
 }

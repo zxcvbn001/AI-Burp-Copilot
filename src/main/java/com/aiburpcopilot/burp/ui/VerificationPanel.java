@@ -13,8 +13,10 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumnModel;
 import java.awt.*;
 import java.text.SimpleDateFormat;
+import java.util.LinkedHashMap;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 public class VerificationPanel extends JPanel {
 
@@ -25,6 +27,7 @@ public class VerificationPanel extends JPanel {
     private final VerificationTableModel tableModel;
     private final BurpMessageViewer.RequestView requestViewer;
     private final BurpMessageViewer.ResponseView responseViewer;
+    private final JTextArea exchangeArea;
     private final JTextArea diffArea;
     private final JTextArea reasoningArea;
     private final JTabbedPane detailTabs;
@@ -69,16 +72,16 @@ public class VerificationPanel extends JPanel {
                 100,  // Parameter
                 90,   // Phase
                 130,  // Strategy
-                90,   // Payload
                 70,   // Status
                 85,   // Risk
                 70,   // Evidence
                 75,   // Confidence
                 65);  // Confirmed
-        colModel.getColumn(9).setCellRenderer(new ConfidenceRenderer());
+        colModel.getColumn(8).setCellRenderer(new ConfidenceRenderer());
 
         requestViewer = new BurpMessageViewer.RequestView(api);
         responseViewer = new BurpMessageViewer.ResponseView(api);
+        exchangeArea = UiUtil.createMessageArea();
         diffArea = UiUtil.createMessageArea();
         reasoningArea = UiUtil.createMessageArea();
 
@@ -86,6 +89,7 @@ public class VerificationPanel extends JPanel {
         UiUtil.applyBurpFont(detailTabs);
         detailTabs.addTab("\u8bf7\u6c42", requestViewer);
         detailTabs.addTab("\u54cd\u5e94", responseViewer);
+        detailTabs.addTab("\u5b8c\u6574\u8fc7\u7a0b", UiUtil.searchableTextPanel(exchangeArea));
         detailTabs.addTab("\u5dee\u5f02\u6458\u8981", UiUtil.searchableTextPanel(diffArea));
         detailTabs.addTab("\u5224\u65ad\u4f9d\u636e", UiUtil.searchableTextPanel(reasoningArea));
 
@@ -111,10 +115,7 @@ public class VerificationPanel extends JPanel {
             String selectedKey = selectedKey();
             int selectedTab = detailTabs.getSelectedIndex();
             refreshing = true;
-            List<VerificationUiSupport.ResultRow> rows = VerificationUiSupport.collectRows(historyService)
-                    .stream()
-                    .filter(row -> VerificationUiSupport.isPayloadVerification(row.result()))
-                    .toList();
+            List<VerificationUiSupport.ResultRow> rows = collectWorkflowRows();
             tableModel.setRows(rows);
             statusLabel.setText("\u9a8c\u8bc1\u7ed3\u679c: " + rows.size());
             restoreSelection(selectedKey);
@@ -134,17 +135,19 @@ public class VerificationPanel extends JPanel {
             displayedKey = null;
             requestViewer.setBytes(null);
             responseViewer.setBytes(null);
+            exchangeArea.setText("");
             diffArea.setText("\u6682\u65e0\u5dee\u5f02\u5206\u6790\u3002\n\u53ef\u80fd\u662f\u8bf7\u6c42\u8d85\u65f6\u3001\u91cd\u653e\u5931\u8d25\uff0c\u6216\u6ca1\u6709\u6355\u83b7\u5230\u54cd\u5e94\u3002");
             reasoningArea.setText("");
             return;
         }
 
         VerificationResult result = row.result();
-        String currentKey = VerificationUiSupport.rowKey(row.entry(), result);
+        String currentKey = VerificationUiSupport.workflowKey(row.entry(), result);
         boolean sameRow = currentKey.equals(displayedKey);
         int[] positions = sameRow ? captureCaretPositions() : null;
         requestViewer.setBytes(result.getMutatedRequestBytes());
         responseViewer.setBytes(result.getMutatedResponseBytes());
+        updateExchangeTab(result);
         updateDiffTab(result);
         updateReasoningTab(result);
         displayedKey = currentKey;
@@ -152,7 +155,56 @@ public class VerificationPanel extends JPanel {
             restoreCaretPositions(positions);
         } else {
             diffArea.setCaretPosition(0);
+            exchangeArea.setCaretPosition(0);
             reasoningArea.setCaretPosition(0);
+        }
+    }
+
+    private List<VerificationUiSupport.ResultRow> collectWorkflowRows() {
+        Map<String, VerificationUiSupport.ResultRow> grouped = new LinkedHashMap<>();
+        for (VerificationUiSupport.ResultRow row : VerificationUiSupport.collectRows(historyService)) {
+            VerificationResult result = row.result();
+            if (VerificationUiSupport.isInfluence(result)) {
+                continue;
+            }
+            String key = VerificationUiSupport.workflowKey(row.entry(), result);
+            VerificationUiSupport.ResultRow previous = grouped.get(key);
+            if (previous == null || isBetterWorkflowRepresentative(result, previous.result())) {
+                grouped.put(key, row);
+            }
+        }
+        return List.copyOf(grouped.values());
+    }
+
+    private boolean isBetterWorkflowRepresentative(VerificationResult candidate, VerificationResult current) {
+        if (candidate == null) {
+            return false;
+        }
+        if (current == null) {
+            return true;
+        }
+        boolean candidateFinding = "Finding".equalsIgnoreCase(candidate.getPhase());
+        boolean currentFinding = "Finding".equalsIgnoreCase(current.getPhase());
+        if (candidateFinding != currentFinding) {
+            return candidateFinding;
+        }
+        boolean candidateHasTranscript = hasText(candidate.getExchangeTranscript());
+        boolean currentHasTranscript = hasText(current.getExchangeTranscript());
+        if (candidateHasTranscript != currentHasTranscript) {
+            return candidateHasTranscript;
+        }
+        return candidate.getConfidence() > current.getConfidence();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private void updateExchangeTab(VerificationResult result) {
+        if (hasText(result.getExchangeTranscript())) {
+            exchangeArea.setText(result.getExchangeTranscript());
+        } else {
+            exchangeArea.setText("\u8be5\u7ed3\u679c\u6ca1\u6709\u5b8c\u6574\u8fc7\u7a0b\u8bb0\u5f55\u3002");
         }
     }
 
@@ -199,7 +251,7 @@ public class VerificationPanel extends JPanel {
 
     private String selectedKey() {
         VerificationUiSupport.ResultRow row = tableModel.getRowAt(table.getSelectedRow());
-        return row != null ? VerificationUiSupport.rowKey(row.entry(), row.result()) : null;
+        return row != null ? VerificationUiSupport.workflowKey(row.entry(), row.result()) : null;
     }
 
     private void restoreSelection(String key) {
@@ -208,7 +260,7 @@ public class VerificationPanel extends JPanel {
         }
         for (int i = 0; i < tableModel.getRowCount(); i++) {
             VerificationUiSupport.ResultRow row = tableModel.getRowAt(i);
-            if (key.equals(VerificationUiSupport.rowKey(row.entry(), row.result()))) {
+            if (key.equals(VerificationUiSupport.workflowKey(row.entry(), row.result()))) {
                 table.setRowSelectionInterval(i, i);
                 return;
             }
@@ -218,7 +270,7 @@ public class VerificationPanel extends JPanel {
     private static class VerificationTableModel extends AbstractTableModel {
         private final String[] columns = {
                 "Time", "URI", "Attack", "Param", "Phase",
-                "Payload", "Len", "Time(ms)", "Sim", "Conf", "Risk"
+                "Len", "Time(ms)", "Sim", "Conf", "Risk"
         };
         private List<VerificationUiSupport.ResultRow> rows = List.of();
 
@@ -247,12 +299,11 @@ public class VerificationPanel extends JPanel {
                 case 3 -> result.getParameter() != null ? result.getParameter() : "-";
                 case 4 -> result.getPhase() != null ? result.getPhase()
                         : (result.getStrategyName() != null ? result.getStrategyName() : "N/A");
-                case 5 -> result.getPayload() != null ? truncate(result.getPayload(), 30) : "-";
-                case 6 -> result.getResponseLength() > 0 ? String.valueOf(result.getResponseLength()) : "-";
-                case 7 -> result.getResponseTimeMs() > 0 ? String.valueOf(result.getResponseTimeMs()) : "-";
-                case 8 -> result.getDiffResult() != null ? String.format("%.2f", result.getDiffResult().getSimilarity()) : "-";
-                case 9 -> String.format("%.2f", result.getConfidence());
-                case 10 -> result.getRiskLevel() != null ? result.getRiskLevel().name() : "N/A";
+                case 5 -> result.getResponseLength() > 0 ? String.valueOf(result.getResponseLength()) : "-";
+                case 6 -> result.getResponseTimeMs() > 0 ? String.valueOf(result.getResponseTimeMs()) : "-";
+                case 7 -> result.getDiffResult() != null ? String.format("%.2f", result.getDiffResult().getSimilarity()) : "-";
+                case 8 -> String.format("%.2f", result.getConfidence());
+                case 9 -> result.getRiskLevel() != null ? result.getRiskLevel().name() : "N/A";
                 default -> "";
             };
         }
@@ -267,17 +318,19 @@ public class VerificationPanel extends JPanel {
 
     private int[] captureCaretPositions() {
         return new int[]{
+                exchangeArea.getCaretPosition(),
                 diffArea.getCaretPosition(),
                 reasoningArea.getCaretPosition()
         };
     }
 
     private void restoreCaretPositions(int[] positions) {
-        if (positions == null || positions.length < 2) {
+        if (positions == null || positions.length < 3) {
             return;
         }
-        setCaretSafely(diffArea, positions[0]);
-        setCaretSafely(reasoningArea, positions[1]);
+        setCaretSafely(exchangeArea, positions[0]);
+        setCaretSafely(diffArea, positions[1]);
+        setCaretSafely(reasoningArea, positions[2]);
     }
 
     private void setCaretSafely(javax.swing.text.JTextComponent component, int position) {

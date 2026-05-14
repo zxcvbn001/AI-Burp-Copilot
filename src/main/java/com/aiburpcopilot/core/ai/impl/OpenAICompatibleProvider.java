@@ -6,6 +6,7 @@ import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.utils.JsonUtil;
+import com.aiburpcopilot.utils.PluginLogger;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.MediaType;
@@ -32,6 +33,7 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAICompatibleProvider.class);
     private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
+    private static final PluginLogger pluginLog = PluginLogger.getInstance();
 
     protected final IConfigService configService;
 
@@ -140,6 +142,14 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
 
         log.info("{} dispatching request: url={}, model={}, attempt={}/{}",
                 getProviderName(), apiUrl, model, attempt + 1, maxRetries + 1);
+        pluginLog.info(PluginLogger.Category.LLM, getProviderName(),
+                "Dispatching request: url=" + apiUrl
+                        + ", model=" + model
+                        + ", attempt=" + (attempt + 1) + "/" + (maxRetries + 1));
+        pluginLog.llmRequest(getProviderName(),
+                "Request attempt " + (attempt + 1) + "/" + (maxRetries + 1)
+                        + " -> " + apiUrl,
+                buildRequestLog(apiUrl, model, attempt, maxRetries, requestBody));
 
         newHttpClient(llmConfig).newCall(request).enqueue(new Callback() {
             @Override
@@ -151,6 +161,8 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                 }
                 log.error("{} API call failed after {} attempts: {}",
                         getProviderName(), attempt + 1, e.getMessage());
+                pluginLog.error(PluginLogger.Category.LLM, getProviderName(),
+                        "API call failed after " + (attempt + 1) + " attempts: " + e.getMessage());
                 future.completeExceptionally(e);
             }
 
@@ -158,6 +170,9 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
             public void onResponse(Call call, Response response) {
                 try (ResponseBody body = response.body()) {
                     String responseStr = body != null ? body.string() : "{}";
+                    pluginLog.llmResponse(getProviderName(),
+                            "Response HTTP " + response.code() + " from " + apiUrl,
+                            buildResponseLog(apiUrl, response.code(), responseStr));
                     if (!response.isSuccessful()) {
                         if (isRetryableStatus(response.code()) && attempt < maxRetries) {
                             retryLater(llmConfig, requestBody, attempt, maxRetries, future,
@@ -165,7 +180,9 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                             return;
                         }
                         log.warn("{} API returned error: {} - {}",
-                                getProviderName(), response.code(), summarize(responseStr, 500));
+                                getProviderName(), response.code(), responseStr);
+                        pluginLog.warn(PluginLogger.Category.LLM, getProviderName(),
+                                "API returned error: HTTP " + response.code() + " - " + responseStr);
                         future.complete("Error: HTTP " + response.code() + " - " + responseStr);
                         return;
                     }
@@ -178,6 +195,8 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
                         return;
                     }
                     log.error("{} failed to parse AI response: {}", getProviderName(), e.getMessage(), e);
+                    pluginLog.error(PluginLogger.Category.LLM, getProviderName(),
+                            "Failed to parse AI response: " + e.getMessage(), e);
                     future.completeExceptionally(e);
                 }
             }
@@ -224,6 +243,9 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
         long delayMs = Math.min(3000L, 500L * (attempt + 1));
         log.warn("{} API attempt {}/{} failed ({}), retrying in {}ms",
                 getProviderName(), attempt + 1, maxRetries + 1, reason, delayMs);
+        pluginLog.warn(PluginLogger.Category.LLM, getProviderName(),
+                "API attempt " + (attempt + 1) + "/" + (maxRetries + 1)
+                        + " failed (" + reason + "), retrying in " + delayMs + "ms");
         CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)
                 .execute(() -> executeWithRetry(llmConfig, requestBody, attempt + 1, maxRetries, future));
     }
@@ -331,18 +353,9 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
             log.warn("{} failed to load external prompt template {}: {}",
                     getProviderName(), externalPath, e.getMessage());
         }
-        String resourcePath = "prompts/" + templateName + ".txt";
-        try (InputStream input = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
-            if (input == null) {
-                log.warn("{} prompt template not found: {}", getProviderName(), resourcePath);
-                return Optional.empty();
-            }
-            return Optional.of(new String(input.readAllBytes(), StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            log.warn("{} failed to load prompt template {}: {}",
-                    getProviderName(), resourcePath, e.getMessage());
-            return Optional.empty();
-        }
+        log.warn("{} prompt template not found in configured directory: {}",
+                getProviderName(), externalPath);
+        return Optional.empty();
     }
 
     private boolean isRetryableStatus(int statusCode) {
@@ -354,13 +367,22 @@ public abstract class OpenAICompatibleProvider implements IAIProvider {
         return value != null ? value : "";
     }
 
-    private String summarize(String value, int maxLength) {
-        if (value == null) {
-            return "";
-        }
-        String normalized = value.replaceAll("\\s+", " ").trim();
-        return normalized.length() <= maxLength
-                ? normalized
-                : normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
+    private String buildRequestLog(String apiUrl,
+                                   String model,
+                                   int attempt,
+                                   int maxRetries,
+                                   String requestBody) {
+        return "Provider: " + getProviderName() + "\n"
+                + "URL: " + apiUrl + "\n"
+                + "Model: " + model + "\n"
+                + "Attempt: " + (attempt + 1) + "/" + (maxRetries + 1) + "\n\n"
+                + requestBody;
+    }
+
+    private String buildResponseLog(String apiUrl, int statusCode, String responseBody) {
+        return "Provider: " + getProviderName() + "\n"
+                + "URL: " + apiUrl + "\n"
+                + "HTTP Status: " + statusCode + "\n\n"
+                + responseBody;
     }
 }

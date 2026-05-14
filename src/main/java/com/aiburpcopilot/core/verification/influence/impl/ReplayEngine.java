@@ -92,7 +92,8 @@ public class ReplayEngine implements IReplayEngine {
             byte[] response = executeOrSend(parsed, context, paramName, newValue);
             lastResponseBytes = response;
             lastDurationMs = System.currentTimeMillis() - start;
-            pluginLog.info("Replay", "Replayed with mutation: param='" + paramName + "' -> '" + newValue + "' (" + lastDurationMs + "ms)");
+            pluginLog.info(PluginLogger.Category.VERIFICATION,
+                    "Replay", "Replayed with mutation: param='" + paramName + "' -> '" + newValue + "' (" + lastDurationMs + "ms)");
             return response;
         } catch (Exception e) {
             log.error("Replay with mutation failed: {}", e.getMessage());
@@ -119,7 +120,8 @@ public class ReplayEngine implements IReplayEngine {
             byte[] response = executeOrSend(parsed, context, paramName, finalValue);
             lastResponseBytes = response;
             lastDurationMs = System.currentTimeMillis() - start;
-            pluginLog.info("Replay", "Replayed with appended mutation: param='" + paramName
+            pluginLog.info(PluginLogger.Category.VERIFICATION, "Replay",
+                    "Replayed with appended mutation: param='" + paramName
                     + "' original='" + originalValue + "' suffix='" + payloadSuffix
                     + "' (" + lastDurationMs + "ms)");
             return response;
@@ -172,7 +174,8 @@ public class ReplayEngine implements IReplayEngine {
         }
         boolean allowed = guard.isHostAllowed(uri.toString());
         if (!allowed) {
-            pluginLog.warn("Replay", "Blocked by host policy: " + uri);
+            pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                    "Replay", "Blocked by host policy: " + uri);
         }
         return allowed;
     }

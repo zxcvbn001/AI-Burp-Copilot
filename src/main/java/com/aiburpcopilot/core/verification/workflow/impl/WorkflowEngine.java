@@ -80,7 +80,7 @@ public class WorkflowEngine implements IWorkflowEngine {
             String msg = "No workflow definition found for attackType="
                     + candidateAttackTypeName;
             log.warn("WorkflowEngine: {}", msg);
-            PluginLogger.getInstance().warn("WorkflowEngine", msg);
+            PluginLogger.getInstance().warn(PluginLogger.Category.VERIFICATION, "WorkflowEngine", msg);
             return buildErrorResult(result, msg);
         }
 
@@ -91,7 +91,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                 def.getName(), def.getAttackTypeName(),
                 context.getCandidate().getParameterName(), def.getStepNames().size());
 
-        PluginLogger.getInstance().info("WorkflowEngine",
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                 "Executing workflow: " + def.getName()
                         + " | param=" + context.getCandidate().getParameterName()
                         + " | steps=" + def.getStepNames());
@@ -108,7 +108,7 @@ public class WorkflowEngine implements IWorkflowEngine {
             if (!context.getInfluenceResult().isApproved()) {
                 String reason = context.getInfluenceResult().getApprovalReason();
                 log.info("WorkflowEngine: Influence not approved, stopping workflow: {}", reason);
-                PluginLogger.getInstance().info("WorkflowEngine", "Influence not approved: " + reason);
+                PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine", "Influence not approved: " + reason);
                 result.setCompleted(false);
                 result.setStopReason(reason);
                 result.setStoppedAtStep(0);
@@ -123,7 +123,7 @@ public class WorkflowEngine implements IWorkflowEngine {
             // 濡偓閺屻儲妲搁崥锕侇潶婢舵牠鍎撮崑婊勵剾
             if (context.isStopped()) {
                 log.info("WorkflowEngine: workflow stopped externally: {}", context.getStopReason());
-                PluginLogger.getInstance().info("WorkflowEngine",
+                PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                         "Workflow stopped: " + context.getStopReason());
                 result.setCompleted(false);
                 result.setStopReason(context.getStopReason());
@@ -137,7 +137,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                     && !InfluenceValidationStep.STEP_NAME.equals(stepName)) {
                 String msg = "Payload verification blocked by endpoint action policy";
                 log.info("WorkflowEngine: {}", msg);
-                PluginLogger.getInstance().warn("WorkflowEngine", msg);
+                PluginLogger.getInstance().warn(PluginLogger.Category.VERIFICATION, "WorkflowEngine", msg);
                 result.setCompleted(false);
                 result.setStopReason(msg);
                 result.setStoppedAtStep(i);
@@ -147,7 +147,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                     && context.getInfluenceResult() != null
                     && context.getInfluenceResult().isApproved()) {
                 log.info("WorkflowEngine: skipping InfluenceValidation because influence is already approved");
-                PluginLogger.getInstance().info("WorkflowEngine",
+                PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                         "Skipping InfluenceValidation: already approved");
                 executedSteps++;
                 continue;
@@ -158,7 +158,7 @@ public class WorkflowEngine implements IWorkflowEngine {
             if (step == null) {
                 String msg = "Step implementation not found: " + stepName;
                 log.warn("WorkflowEngine: {}", msg);
-                PluginLogger.getInstance().warn("WorkflowEngine", msg);
+                PluginLogger.getInstance().warn(PluginLogger.Category.VERIFICATION, "WorkflowEngine", msg);
 
                 StepResult missingStep = StepResult.hardFail(stepName, msg);
                 missingStep.setDurationMs(0);
@@ -182,7 +182,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                     if (!stepResult.isContinueWorkflow()) {
                         log.info("WorkflowEngine: step '{}' requested stop: {}",
                                 stepName, stepResult.getReasoning());
-                        PluginLogger.getInstance().info("WorkflowEngine",
+                        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                                 "Workflow stopped at step: " + stepName
                                         + " | reason=" + stepResult.getReasoning());
                         result.setCompleted(false);
@@ -193,7 +193,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                 }
             } catch (Exception e) {
                 log.error("WorkflowEngine: unhandled exception in step '{}'", stepName, e);
-                PluginLogger.getInstance().error("WorkflowEngine",
+                PluginLogger.getInstance().error(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                         "Step execution exception: " + stepName, e);
 
                 StepResult errorResult = new StepResult(false, 0.0, false,
@@ -236,7 +236,7 @@ public class WorkflowEngine implements IWorkflowEngine {
                 def.getName(), result.isCompleted(), result.getOverallConfidence(),
                 result.getDurationMs(), result.getEvidence().size());
 
-        PluginLogger.getInstance().info("WorkflowEngine",
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                 "Workflow result: " + def.getName()
                         + " | completed=" + result.isCompleted()
                         + " | confidence=" + String.format("%.2f", result.getOverallConfidence())
@@ -267,7 +267,7 @@ public class WorkflowEngine implements IWorkflowEngine {
             }
         } catch (Exception e) {
             log.error("WorkflowEngine: exception executing step '{}'", stepName, e);
-            PluginLogger.getInstance().error("WorkflowEngine",
+            PluginLogger.getInstance().error(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                     "Exception in step: " + stepName, e);
 
             result = new StepResult(false, 0.0, false, stepName,
@@ -302,7 +302,7 @@ public class WorkflowEngine implements IWorkflowEngine {
         if (context != null) {
             context.stop("Manually stopped by engine");
             log.info("WorkflowEngine: workflow context stopped");
-            PluginLogger.getInstance().info("WorkflowEngine", "Workflow context manually stopped");
+            PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine", "Workflow context manually stopped");
         }
     }
 
@@ -310,14 +310,14 @@ public class WorkflowEngine implements IWorkflowEngine {
     public void registerStep(String stepName, VerificationStep step) {
         if (stepName == null || stepName.isEmpty() || step == null) {
             log.warn("WorkflowEngine: refused to register step with null name or implementation");
-            PluginLogger.getInstance().warn("WorkflowEngine",
+            PluginLogger.getInstance().warn(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                     "Refused to register step: name=" + stepName + " impl=" + step);
             return;
         }
 
         VerificationStep previous = steps.put(stepName, step);
 
-        PluginLogger.getInstance().info("WorkflowEngine",
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                 "Registered step: " + stepName
                         + " | impl=" + step.getClass().getSimpleName()
                         + (previous != null ? " (replaced)" : "")

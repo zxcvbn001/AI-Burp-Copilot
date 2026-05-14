@@ -20,6 +20,8 @@ ai-burp-copilot/
 # Local scratch notes / process files
 notes/
 scratch/
+docs/leadership-report-outline.md
+docs/ai-workflow-flowchart.md
 
 # Local secrets and environment overrides
 .env

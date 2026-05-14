@@ -102,7 +102,8 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
         }
 
         if (guard != null && !guard.isHostAllowed(request.getUrl())) {
-            pluginLog.warn("Verification", "  BLOCKED by host policy: " + request.getUrl());
+            pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                    "Verification", "  BLOCKED by host policy: " + request.getUrl());
             return null;
         }
 
@@ -195,7 +196,8 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
         } catch (Exception e) {
             log.error("HTTP request failed for: {} — {}: {}",
                     request.getUrl(), e.getClass().getSimpleName(), e.getMessage());
-            pluginLog.warn("Verification", "Request failed: " + e.getClass().getSimpleName()
+            pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                    "Verification", "Request failed: " + e.getClass().getSimpleName()
                     + ": " + e.getMessage());
             return null;
         }
@@ -218,7 +220,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             }
 
             HttpService service = HttpService.httpService(targetUri.getHost(), port, secure);
-            pluginLog.debug("Verification", "Montoya target: "
+            pluginLog.debug(PluginLogger.Category.VERIFICATION, "Verification", "Montoya target: "
                     + (secure ? "https" : "http") + "://" + targetUri.getHost() + ":" + port
                     + " " + parsed.method + " " + targetUri.getRawPath());
             burp.api.montoya.http.message.requests.HttpRequest httpRequest =
@@ -242,13 +244,13 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
     public VerificationResult executeTask(AttackTask task) {
         try {
             // 1. 参数修改
-            pluginLog.info("Verification", "  Task: param='" + task.getParameterName()
+            pluginLog.info(PluginLogger.Category.VERIFICATION, "Verification", "  Task: param='" + task.getParameterName()
                     + "' payload='" + task.getPayload()
                     + "' type=" + task.getAttackType()
                     + " strategy=" + task.getStrategyType());
             var mutator = mutatorRegistry.findMutator(task.getBaseRequest(), task);
             if (mutator == null) {
-                pluginLog.warn("Verification", "  NO mutator for param='" + task.getParameterName()
+                pluginLog.warn(PluginLogger.Category.VERIFICATION, "Verification", "  NO mutator for param='" + task.getParameterName()
                         + "' type=" + task.getAttackType()
                         + " | params=" + task.getBaseRequest().getParameters().stream()
                         .map(p -> p.getType() + ":" + p.getName())
@@ -265,11 +267,12 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             }
 
             MutatedRequest mutatedRequest = mutator.mutate(task.getBaseRequest(), task);
-            pluginLog.info("Verification", "  Mutator: " + mutator.getClass().getSimpleName()
+            pluginLog.info(PluginLogger.Category.VERIFICATION, "Verification", "  Mutator: " + mutator.getClass().getSimpleName()
                     + " -> url=" + mutatedRequest.getUrl());
 
             if (guard != null && !guard.isHostAllowed(mutatedRequest.getUrl())) {
-                pluginLog.warn("Verification", "  BLOCKED by host policy: " + mutatedRequest.getUrl());
+                pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                        "Verification", "  BLOCKED by host policy: " + mutatedRequest.getUrl());
                 VerificationResult result = new VerificationResult();
                 result.setAttackType(task.getAttackType());
                 result.setParameter(task.getParameterName());
@@ -335,7 +338,8 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             return result;
         } catch (Exception e) {
             log.error("Task {} failed: {}", task.getTaskId(), e.getMessage(), e);
-            pluginLog.warn("Verification", "Task failed: " + e.getClass().getSimpleName()
+            pluginLog.warn(PluginLogger.Category.VERIFICATION,
+                    "Verification", "Task failed: " + e.getClass().getSimpleName()
                     + ": " + e.getMessage());
             VerificationResult result = new VerificationResult();
             result.setAttackType(task.getAttackType());

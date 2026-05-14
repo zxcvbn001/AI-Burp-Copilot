@@ -3,6 +3,7 @@ package com.aiburpcopilot.core.verification.capability;
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.model.StrategyType;
 import com.aiburpcopilot.core.verification.payload.IPayloadRuleEngine;
+import com.aiburpcopilot.core.verification.payload.RuleWorkflowConfig;
 import com.aiburpcopilot.core.verification.probe.ProbeDefinition;
 import com.aiburpcopilot.core.verification.technique.ITechniqueRegistry;
 import com.aiburpcopilot.core.verification.technique.TechniqueRule;
@@ -22,8 +23,6 @@ import java.util.Set;
 public class RuleCapabilityCatalog {
 
     private final IPayloadRuleEngine payloadRuleEngine;
-    private final Map<String, Set<String>> payloadStrategies;
-    private final Map<String, Set<String>> attackTypeAliases;
     private final Map<AttackType, Map<VerificationTechnique, StrategyType>> legacyTechniqueMap;
 
     public RuleCapabilityCatalog(Object pluginRegistry,
@@ -35,13 +34,19 @@ public class RuleCapabilityCatalog {
                                  IPayloadRuleEngine payloadRuleEngine,
                                  ITechniqueRegistry techniqueRegistry) {
         this.payloadRuleEngine = payloadRuleEngine;
-        this.payloadStrategies = payloadRuleEngine != null
+        this.legacyTechniqueMap = loadTechniqueMap(techniqueRegistry);
+    }
+
+    private Map<String, Set<String>> payloadStrategies() {
+        return payloadRuleEngine != null
                 ? payloadRuleEngine.getRuleCapabilityNames()
                 : Map.of();
-        this.attackTypeAliases = payloadRuleEngine != null
+    }
+
+    private Map<String, Set<String>> attackTypeAliases() {
+        return payloadRuleEngine != null
                 ? payloadRuleEngine.getAttackTypeAliases()
                 : Map.of();
-        this.legacyTechniqueMap = loadTechniqueMap(techniqueRegistry);
     }
 
     public boolean supportsAttackType(AttackType attackType) {
@@ -50,6 +55,7 @@ public class RuleCapabilityCatalog {
 
     public boolean supportsAttackType(String attackTypeName) {
         String key = resolveAttackTypeName(attackTypeName);
+        Map<String, Set<String>> payloadStrategies = payloadStrategies();
         return key != null
                 && payloadStrategies.containsKey(key)
                 && !payloadStrategies.get(key).isEmpty();
@@ -87,6 +93,7 @@ public class RuleCapabilityCatalog {
     public boolean supportsStrategy(String attackTypeName, String strategyName) {
         String key = resolveAttackTypeName(attackTypeName);
         String strategy = RuleKeyUtil.normalize(strategyName);
+        Map<String, Set<String>> payloadStrategies = payloadStrategies();
         return key != null
                 && strategy != null
                 && payloadStrategies.getOrDefault(key, Set.of()).contains(strategy);
@@ -101,7 +108,7 @@ public class RuleCapabilityCatalog {
     }
 
     public Set<String> getSupportedAttackTypeNames() {
-        return Collections.unmodifiableSet(new LinkedHashSet<>(payloadStrategies.keySet()));
+        return Collections.unmodifiableSet(new LinkedHashSet<>(payloadStrategies().keySet()));
     }
 
     public String resolveAttackTypeName(String value) {
@@ -109,6 +116,8 @@ public class RuleCapabilityCatalog {
         if (normalized == null) {
             return null;
         }
+        Map<String, Set<String>> payloadStrategies = payloadStrategies();
+        Map<String, Set<String>> attackTypeAliases = attackTypeAliases();
         if (payloadStrategies.containsKey(normalized)) {
             return normalized;
         }
@@ -141,9 +150,19 @@ public class RuleCapabilityCatalog {
         if (normalizedAlias == null) {
             return false;
         }
-        return value.equals(normalizedAlias)
-                || value.contains(normalizedAlias)
-                || normalizedAlias.contains(value);
+        if (value.equals(normalizedAlias)) {
+            return true;
+        }
+        return isTokenAlias(normalizedAlias)
+                && containsToken(value, normalizedAlias);
+    }
+
+    private boolean isTokenAlias(String alias) {
+        return alias.length() >= 4 || alias.contains("_");
+    }
+
+    private boolean containsToken(String value, String alias) {
+        return ("_" + value + "_").contains("_" + alias + "_");
     }
 
     public Map<VerificationTechnique, StrategyType> getSupportedTechniques(AttackType attackType) {
@@ -153,7 +172,7 @@ public class RuleCapabilityCatalog {
         Map<VerificationTechnique, StrategyType> result = new LinkedHashMap<>();
         Map<VerificationTechnique, StrategyType> techniques =
                 legacyTechniqueMap.getOrDefault(attackType, Map.of());
-        Set<String> strategies = payloadStrategies.getOrDefault(attackType.name(), Set.of());
+        Set<String> strategies = payloadStrategies().getOrDefault(attackType.name(), Set.of());
         for (Map.Entry<VerificationTechnique, StrategyType> entry : techniques.entrySet()) {
             if (strategies.contains(entry.getValue().name())) {
                 result.put(entry.getKey(), entry.getValue());
@@ -164,43 +183,29 @@ public class RuleCapabilityCatalog {
 
     public String toPromptConstraint() {
         StringBuilder sb = new StringBuilder();
-        sb.append("Capabilities format: attackType -> techniques | probes. Only use listed attackType values.\n");
+        sb.append("AllowedAttackTypes: ");
+        sb.append(String.join(", ", getSupportedAttackTypeNames()));
+        sb.append("\nUse only these broad attackType keys. Do not output subtypes or technique names.\n");
         for (String attackTypeName : getSupportedAttackTypeNames()) {
-            sb.append("- ").append(attackTypeName)
-                    .append(" -> ")
-                    .append(String.join(",", techniqueNames(attackTypeName)))
-                    .append(" | ")
-                    .append(summarizeProbes(attackTypeName))
-                    .append("\n");
+            RuleWorkflowConfig workflowConfig = payloadRuleEngine != null
+                    ? payloadRuleEngine.getWorkflowConfig(attackTypeName)
+                    : null;
+            String description = workflowConfig != null ? workflowConfig.getDescription() : null;
+            if (description != null && !description.isBlank()) {
+                sb.append("- ").append(attackTypeName).append(": ")
+                        .append(compact(description, 90))
+                        .append("\n");
+            }
         }
         return sb.toString();
     }
 
-    private Set<String> techniqueNames(String attackTypeName) {
-        Set<String> names = new LinkedHashSet<>();
-        if (payloadRuleEngine != null) {
-            for (ProbeDefinition probe : payloadRuleEngine.getEnabledProbes(attackTypeName)) {
-                String technique = RuleKeyUtil.normalize(probe.getTechnique());
-                if (technique != null) {
-                    names.add(technique);
-                }
-            }
+    private String compact(String value, int maxLength) {
+        String compacted = value.replaceAll("\\s+", " ").trim();
+        if (compacted.length() <= maxLength) {
+            return compacted;
         }
-        if (names.isEmpty()) {
-            names.addAll(payloadStrategies.getOrDefault(attackTypeName, Set.of()));
-        }
-        return names;
-    }
-
-    private String summarizeProbes(String attackTypeName) {
-        if (payloadRuleEngine == null) {
-            return "No probe metadata available";
-        }
-        var probes = payloadRuleEngine.getEnabledProbes(attackTypeName);
-        if (probes.isEmpty()) {
-            return "No enabled probes";
-        }
-        return String.join(",", probes.stream().limit(3).map(ProbeDefinition::getId).toList());
+        return compacted.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private Map<AttackType, Map<VerificationTechnique, StrategyType>> loadTechniqueMap(

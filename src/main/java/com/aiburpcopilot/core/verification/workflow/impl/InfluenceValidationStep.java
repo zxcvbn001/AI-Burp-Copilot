@@ -98,7 +98,7 @@ public class InfluenceValidationStep implements VerificationStep {
         HTTPContext httpContext = context.getHttpContext();
         String paramName = candidate.getParameterName();
 
-        PluginLogger.getInstance().info(STEP_NAME,
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, STEP_NAME,
                 "Validating influence for param='" + paramName + "' | attackType=" + candidate.getAttackType());
 
         IReplayEngine effectiveReplay = getReplayEngine(context);
@@ -289,7 +289,7 @@ public class InfluenceValidationStep implements VerificationStep {
                 stepResult.setContinueWorkflow(true);
                 stepResult.setReasoning("Influence status=" + influenceResult.getStatus()
                         + " | " + influenceResult.getApprovalReason());
-                PluginLogger.getInstance().info(STEP_NAME,
+                PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, STEP_NAME,
                         "APPROVED: param='" + paramName
                                 + "' | status=" + influenceResult.getStatus()
                                 + "' | score=" + String.format("%.3f", avgScore)
@@ -301,7 +301,7 @@ public class InfluenceValidationStep implements VerificationStep {
                 stepResult.setContinueWorkflow(false);
                 stepResult.setReasoning("Influence status=" + influenceResult.getStatus()
                         + " | not approved: " + influenceResult.getApprovalReason());
-                PluginLogger.getInstance().info(STEP_NAME,
+                PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, STEP_NAME,
                         "REJECTED: param='" + paramName
                                 + "' | status=" + influenceResult.getStatus()
                                 + "' | score=" + String.format("%.3f", avgScore)
@@ -310,7 +310,7 @@ public class InfluenceValidationStep implements VerificationStep {
             }
         } catch (Exception e) {
             log.error("InfluenceValidationStep: unhandled exception for param='{}'", paramName, e);
-            PluginLogger.getInstance().error(STEP_NAME,
+            PluginLogger.getInstance().error(PluginLogger.Category.VERIFICATION, STEP_NAME,
                     "Exception during influence validation for '" + paramName + "'", e);
 
             stepResult.setSuccess(false);

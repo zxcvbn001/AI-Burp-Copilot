@@ -28,7 +28,8 @@ public class EndpointDedupStage implements IPipelineStage {
         }
         if (!seen.add(key)) {
             context.setAnalysisStatus(AnalysisStatus.SKIPPED);
-            PluginLogger.getInstance().debug("Dedup", "Skip repeated endpoint: " + key);
+            PluginLogger.getInstance().debug(PluginLogger.Category.SYSTEM,
+                    "Dedup", "Skip repeated endpoint: " + key);
         }
     }
 

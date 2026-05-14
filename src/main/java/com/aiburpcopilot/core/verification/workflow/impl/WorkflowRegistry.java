@@ -29,12 +29,13 @@ public class WorkflowRegistry implements IWorkflowRegistry {
         String key = workflow != null ? RuleKeyUtil.normalize(workflow.getAttackTypeName()) : null;
         if (workflow == null || key == null) {
             log.warn("WorkflowRegistry refused to register null workflow or null attackTypeName");
-            PluginLogger.getInstance().warn("WorkflowRegistry", "Refused to register null workflow");
+            PluginLogger.getInstance().warn(PluginLogger.Category.VERIFICATION,
+                    "WorkflowRegistry", "Refused to register null workflow");
             return;
         }
 
         WorkflowDefinition previous = registry.put(key, workflow);
-        PluginLogger.getInstance().info("WorkflowRegistry",
+        PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowRegistry",
                 "Registered workflow: " + workflow.getName()
                         + " for " + key
                         + " | steps=" + (workflow.getStepNames() != null ? workflow.getStepNames().size() : 0)

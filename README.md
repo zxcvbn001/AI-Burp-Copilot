@@ -221,7 +221,7 @@ ai-burp-copilot
 ai-burp-copilot/application.yml
 ```
 
-插件启动时会优先加载外部目录。若没有找到，会从 JAR 内置资源复制一份默认配置和规则。也可以在设置页手动填写 `application.yml` 路径并加载。
+插件只从用户指定的外部配置目录加载 `application.yml`、`prompts/` 和 `rules/`。JAR 中不再内置默认配置、Prompt 或规则；首次使用时需要在设置页选择包含这些文件的配置目录。
 
 ### 配置路径优先级
 
@@ -238,7 +238,7 @@ ai-burp-copilot-v2-jar-with-dependencies.jar
 ai-burp-copilot/
 ```
 
-如果 Burp 把插件复制到了临时目录导致配置加载异常，请在“设置 -> application.yml Path”中手动选择实际配置文件。
+如果配置加载异常，请在“设置 -> Config Directory”中选择实际配置目录。
 
 ### `llm`
 
@@ -382,7 +382,7 @@ verification:
 ai-burp-copilot/rules/payloads/*.yaml
 ```
 
-修改规则后建议先使用“参数分析”手动标记目标参数并触发后续验证，或在受控测试环境中开启自动验证。内置规则位于 `src/main/resources/rules/payloads/`，外置规则会覆盖同 `attackType` 的内置规则。
+修改规则后建议先使用“参数分析”手动标记目标参数并触发后续验证，或在受控测试环境中开启自动验证。运行时规则只从已选择配置目录下的 `rules/payloads/` 加载。
 
 ### Prompt
 
@@ -563,7 +563,7 @@ verification:
 Loaded application.yml from: ...\Temp\burp...\ai-burp-copilot\application.yml
 ```
 
-请在设置页手动填写真实 `application.yml` 路径，或设置环境变量：
+请在设置页手动选择真实配置目录，或设置环境变量：
 
 ```powershell
 $env:AI_BURP_COPILOT_HOME='D:\tools\ai-burp-copilot'

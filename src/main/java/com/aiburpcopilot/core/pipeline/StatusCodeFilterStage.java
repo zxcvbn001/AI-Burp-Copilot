@@ -35,7 +35,7 @@ public class StatusCodeFilterStage implements IPipelineStage {
         context.setAnalysisStatus(AnalysisStatus.SKIPPED);
         context.setStaticScanResult("扫描已跳过：HTTP 状态码 " + context.getStatusCode()
                 + " 命中状态码黑名单 " + skipCodes);
-        PluginLogger.getInstance().debug("StatusFilter",
+        PluginLogger.getInstance().debug(PluginLogger.Category.SYSTEM, "StatusFilter",
                 "Skipped by status code: " + context.getStatusCode() + " " + context.getPath());
     }
 }

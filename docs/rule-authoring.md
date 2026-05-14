@@ -23,25 +23,19 @@ AI Burp Copilot 的验证规则不是“攻击脚本”，而是“最小化证�
 
 不要为了某个漏洞去修改 Replay、Diff、Execution Engine 这类 HTTP 核心能力，也不要再为每个漏洞类型编写固定 Java 插件。
 
-## 2. 文件位置与加载优先级
+## 2. 文件位置与加载方式
 
-内置规则：
-
-```text
-src/main/resources/rules/payloads/*.yaml
-```
-
-运行时外置规则：
+运行时规则：
 
 ```text
 ai-burp-copilot/rules/payloads/*.yaml
 ```
 
-插件启动时会优先扫描外置目录。只要外置目录存在规则文件，同一个 `attackType` 会以外置文件为准。也就是说：
+插件只从用户在设置页选择的配置目录加载规则。JAR 中不再内置默认规则，也不会从 `src/main/resources` 复制规则文件。也就是说：
 
-- 想改自己本机运行效果：改 `ai-burp-copilot/rules/payloads/*.yaml`。
-- 想改项目默认规则并提交 GitHub：改 `src/main/resources/rules/payloads/*.yaml`。
-- 发布新版本前，建议把两边规则同步，避免本地测试和打包默认行为不一致。
+- 想改本机运行效果：改当前配置目录下的 `rules/payloads/*.yaml`。
+- 想随项目公开维护规则：改仓库根目录下可分发的外置规则目录，例如 `ai-burp-copilot/rules/payloads/*.yaml`。
+- 发布新版本前，确认 README 指向的外置规则包和实际运行目录一致。
 
 ## 3. 顶层结构
 
@@ -117,7 +111,7 @@ probes:
 
 最终聚合的漏洞大类。
 
-默认内置规则键：
+当前外置规则库中常见规则键：
 
 - `SQLI`
 - `XSS`

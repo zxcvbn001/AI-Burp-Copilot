@@ -62,7 +62,7 @@ public class AnalysisPipeline implements IPipeline {
             return;
         }
 
-        pluginLog.debug("Pipeline", "Submit: " + context.getMethod() + " " + context.getPath());
+        pluginLog.debug(PluginLogger.Category.SYSTEM, "Pipeline", "Submit: " + context.getMethod() + " " + context.getPath());
         executor.submit(() -> processContext(context));
     }
 
@@ -70,7 +70,7 @@ public class AnalysisPipeline implements IPipeline {
     public void registerStage(IPipelineStage stage) {
         stages.add(stage);
         log.info("Pipeline stage registered: {}", stage.getName());
-        pluginLog.info("Pipeline", "Stage registered: " + stage.getName());
+        pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "Stage registered: " + stage.getName());
     }
 
     @Override
@@ -107,37 +107,37 @@ public class AnalysisPipeline implements IPipeline {
      */
     private void processContext(HTTPContext context) {
         context.setAnalysisStatus(AnalysisStatus.ANALYZING);
-        pluginLog.info("Pipeline", "Start: " + context.getMethod() + " " + context.getPath()
+        pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "Start: " + context.getMethod() + " " + context.getPath()
                 + " [" + context.getParameters().size() + " params]");
 
         for (IPipelineStage stage : stages) {
             try {
                 if (stage.shouldProcess(context)) {
                     long start = System.currentTimeMillis();
-                    pluginLog.debug("Pipeline", "Stage '" + stage.getName() + "' starting...");
+                    pluginLog.debug(PluginLogger.Category.SYSTEM, "Pipeline", "Stage '" + stage.getName() + "' starting...");
                     stage.process(context);
                     long elapsed = System.currentTimeMillis() - start;
                     log.debug("Stage '{}' completed in {}ms for: {}",
                             stage.getName(), elapsed, context.getPath());
-                    pluginLog.info("Pipeline", "Stage '" + stage.getName()
+                    pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "Stage '" + stage.getName()
                             + "' done (" + elapsed + "ms)");
                 } else {
                     log.debug("Stage '{}' skipped for: {}", stage.getName(), context.getPath());
-                    pluginLog.debug("Pipeline", "Stage '" + stage.getName() + "' skipped");
+                    pluginLog.debug(PluginLogger.Category.SYSTEM, "Pipeline", "Stage '" + stage.getName() + "' skipped");
                 }
             } catch (Exception e) {
                 log.error("Pipeline stage '{}' failed for: {}",
                         stage.getName(), context.getPath(), e);
-                pluginLog.error("Pipeline", "Stage '" + stage.getName()
+                pluginLog.error(PluginLogger.Category.SYSTEM, "Pipeline", "Stage '" + stage.getName()
                         + "' FAILED: " + e.getMessage(), e);
             }
         }
 
         String resultInfo = buildResultInfo(context);
-        pluginLog.info("Pipeline", "Done: " + context.getMethod() + " " + context.getPath()
+        pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "Done: " + context.getMethod() + " " + context.getPath()
                 + " -> " + context.getEndpointType() + " [" + context.getRiskLevel() + "]");
         if (resultInfo != null) {
-            pluginLog.info("Pipeline", "  " + resultInfo);
+            pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "  " + resultInfo);
         }
         log.debug("Pipeline completed for: {} {}", context.getMethod(), context.getPath());
     }
