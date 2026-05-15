@@ -21,6 +21,10 @@ ai-burp-copilot/
 notes/
 scratch/
 tmp/
+notes/internal-package/output/
+notes/internal-package/*.zip
+notes/internal-package/*.7z
+notes/internal-package/*.rar
 
 # Local report templates / generated report assets
 报告模板.docx
