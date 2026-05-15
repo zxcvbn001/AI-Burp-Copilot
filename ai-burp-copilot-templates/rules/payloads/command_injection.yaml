@@ -1,0 +1,130 @@
+attackType: COMMAND_INJECTION
+aliases: [OS_COMMAND_INJECTION, RCE, 命令注入, 命令执行]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: command_injection_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 10
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.82
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: ";echo AI_BURP_COPILOT_CMD;"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.74
+
+  - id: command_injection_pipe_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 20
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "|echo AI_BURP_COPILOT_CMD|"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.72
+
+  - id: command_injection_and_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 30
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "&&echo AI_BURP_COPILOT_CMD&&"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.72
+
+  - id: command_injection_single_and_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 40
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.78
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "&echo AI_BURP_COPILOT_CMD&"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.70
+
+  - id: command_injection_or_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 50
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.78
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "||echo AI_BURP_COPILOT_CMD||"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.70
+
+  - id: command_injection_subshell_echo_marker
+    technique: COMMAND_ECHO
+    strategy: COMMAND_ECHO
+    priority: 60
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.82
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloads:
+      - value: "$(printf AI_BURP_COPILOT_CMD)"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "AI_BURP_COPILOT_CMD"
+      minConfidence: 0.74

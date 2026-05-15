@@ -54,6 +54,8 @@ jobs:
           echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_ENV"
 
       - name: Test
+        env:
+          AI_BURP_COPILOT_HOME: ${{ github.workspace }}/ai-burp-copilot-templates
         run: mvn --batch-mode --no-transfer-progress -Dmaven.compiler.useModulePath=false verify
 
       - name: Prepare release asset

@@ -1,0 +1,65 @@
+# SSRF 最小化验证规则。
+# 默认只使用 loopback URL 做低风险候选验证；强烈建议后续接入带外回连证据。
+attackType: SSRF
+aliases: [SERVER_SIDE_REQUEST_FORGERY, 服务端请求伪造]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: ssrf_loopback_response_diff
+    technique: LOCALHOST_PROBE
+    strategy: LOCALHOST_PROBE
+    priority: 10
+    stopOnMatch: false
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.70
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [URL, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "http://127.0.0.1/"
+        role: TRIGGER
+      - value: "http://localhost/"
+        role: TRIGGER
+    oracle:
+      type: BASELINE_DIFF
+      maxSimilarityTrueFalse: 0.86
+      minConfidence: 0.58
+
+  - id: ssrf_loopback_https_diff
+    technique: LOCALHOST_PROBE
+    strategy: LOCALHOST_PROBE
+    priority: 20
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.74
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [URL, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "https://127.0.0.1/"
+        role: TRIGGER
+    oracle:
+      type: BASELINE_DIFF
+      maxSimilarityTrueFalse: 0.86
+      minConfidence: 0.60
+
+  - id: ssrf_ipv6_loopback_response_diff
+    technique: LOCALHOST_PROBE
+    strategy: LOCALHOST_PROBE
+    priority: 30
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.72
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [URL, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "http://[::1]/"
+        role: TRIGGER
+    oracle:
+      type: BASELINE_DIFF
+      maxSimilarityTrueFalse: 0.86
+      minConfidence: 0.60

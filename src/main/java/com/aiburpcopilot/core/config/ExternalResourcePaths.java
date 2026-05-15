@@ -3,6 +3,8 @@ package com.aiburpcopilot.core.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.aiburpcopilot.utils.Constants;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -34,6 +36,26 @@ public final class ExternalResourcePaths {
         if (manualHomeDir != null) {
             return manualHomeDir;
         }
+        Path systemPropertyPath = configuredPath(System.getProperty("aiburpcopilot.home"));
+        if (systemPropertyPath != null) {
+            manualHomeDir = systemPropertyPath;
+            return systemPropertyPath;
+        }
+        Path envPath = configuredPath(System.getenv("AI_BURP_COPILOT_HOME"));
+        if (envPath != null) {
+            manualHomeDir = envPath;
+            return envPath;
+        }
+        Path cwdPath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_DIR_NAME).toString());
+        if (cwdPath != null) {
+            manualHomeDir = cwdPath;
+            return cwdPath;
+        }
+        Path templatePath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_TEMPLATE_DIR_NAME).toString());
+        if (templatePath != null) {
+            manualHomeDir = templatePath;
+            return templatePath;
+        }
         String stored = ConfigDirectoryStore.load();
         if (stored == null || stored.isBlank()) {
             return null;
@@ -41,6 +63,33 @@ public final class ExternalResourcePaths {
         Path path = Paths.get(stored.trim()).toAbsolutePath().normalize();
         manualHomeDir = path;
         return path;
+    }
+
+    private static Path configuredPath(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return null;
+        }
+        try {
+            Path path = Paths.get(rawPath.trim()).toAbsolutePath().normalize();
+            if (!Files.exists(path) || !Files.isDirectory(path)) {
+                return null;
+            }
+            Path configFile = path.resolve(Constants.CONFIG_FILE_NAME);
+            Path promptsDir = path.resolve("prompts");
+            Path rulesDir = path.resolve("rules");
+            if (!Files.exists(configFile) || !Files.isRegularFile(configFile)) {
+                return null;
+            }
+            if (!Files.exists(promptsDir) || !Files.isDirectory(promptsDir)) {
+                return null;
+            }
+            if (!Files.exists(rulesDir) || !Files.isDirectory(rulesDir)) {
+                return null;
+            }
+            return path;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public static synchronized void setManualHomeDir(Path homeDir) {

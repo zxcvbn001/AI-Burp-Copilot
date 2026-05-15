@@ -1,0 +1,77 @@
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  apiKey: YOUR_API_KEY_HERE
+  apiUrl: https://api.openai.com/v1/chat/completions
+  temperature: 0.3
+  connectTimeoutMs: 30000
+  readTimeoutMs: 120000
+  writeTimeoutMs: 120000
+  maxRetries: 2
+  sendModel: true
+  sendTemperature: true
+  sendMaxTokens: true
+  authorizationEnabled: true
+  authHeaderName: Authorization
+  authHeaderPrefix: Bearer
+  extraHeaders: {}
+scan:
+  skipExtensions:
+    - png
+    - jpg
+    - jpeg
+    - gif
+    - css
+    - woff
+    - woff2
+    - ttf
+    - eot
+    - ico
+    - mp4
+    - webm
+  skipKeywords:
+    - logout
+    - heartbeat
+    - health
+    - favicon
+  skipStatusCodes:
+    - 204
+    - 304
+  responseBodyScan:
+    enabled: true
+    maxSize: 204800
+  staticScanMaxSize: 204800
+ai:
+  maxTokens: 20480
+  timeoutMs: 60000
+  maxPromptLength: 8000
+  rateLimitPerMinute: 10
+request:
+  concurrency: 5
+  maxQueueSize: 1000
+storage:
+  maxHistory: 10000
+  cacheTtlSeconds: 3600
+  maxCacheEntries: 5000
+verification:
+  enabled: true
+  maxRequestsPerEndpoint: 5
+  requestTimeoutSeconds: 10
+  whitelist: []
+  maxPayloadLength: 128
+  allowedInfluenceActions:
+    - READ
+    - CREATE
+    - UPDATE
+    - DELETE
+    - AUTH
+    - UNKNOWN
+    - ALL
+  allowedVerificationActions:
+    - READ
+    - CREATE
+    - UPDATE
+    - DELETE
+    - AUTH
+    - UNKNOWN
+    - ALL

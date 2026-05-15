@@ -1,0 +1,101 @@
+attackType: GRAPHQL
+aliases: [GRAPHQL_INTROSPECTION, GRAPHQL注入, GraphQL探测]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: graphql_typename_probe
+    technique: GRAPHQL_INTROSPECTION
+    strategy: GRAPHQL_INTROSPECTION
+    strength: WEAK
+    priority: 10
+    httpMethods: [GET, POST]
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.72
+    applicableParamTypes: [BODY, QUERY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "{__typename}"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "__typename"
+        - "data"
+      minConfidence: 0.58
+
+  - id: graphql_schema_introspection_probe
+    technique: GRAPHQL_INTROSPECTION
+    strategy: GRAPHQL_INTROSPECTION
+    strength: STRONG
+    priority: 20
+    httpMethods: [GET, POST]
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 160
+    evidenceWeight: 0.82
+    applicableParamTypes: [BODY, QUERY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "{__schema{queryType{name}}}"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "__schema"
+        - "queryType"
+      minConfidence: 0.66
+
+  - id: graphql_query_keyword_probe
+    technique: GRAPHQL_INTROSPECTION
+    strategy: GRAPHQL_INTROSPECTION
+    strength: MEDIUM
+    priority: 30
+    httpMethods: [GET, POST]
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 128
+    evidenceWeight: 0.70
+    applicableParamTypes: [BODY, QUERY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "query{__typename}"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "__typename"
+        - "data"
+      minConfidence: 0.60
+
+  - id: graphql_schema_types_probe
+    technique: GRAPHQL_INTROSPECTION
+    strategy: GRAPHQL_INTROSPECTION
+    strength: STRONG
+    priority: 40
+    httpMethods: [GET, POST]
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 192
+    evidenceWeight: 0.80
+    applicableParamTypes: [BODY, QUERY]
+    valueTypes: [STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "{__schema{types{name}}}"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: KEYWORD
+      keywords:
+        - "__schema"
+        - "types"
+      minConfidence: 0.66
+

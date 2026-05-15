@@ -1,0 +1,93 @@
+attackType: AUTH
+aliases: [AUTH_BYPASS, AUTHORIZATION, AUTHENTICATION, ACCESS_CONTROL, UNAUTHORIZED_ACCESS, 认证绕过, 鉴权绕过, 授权绕过, 访问控制]
+goal: CONFIRM_ATTACK_TYPE
+workflow:
+  name: AUTH Verification
+  description: Header/Cookie authorization checks can run without parameter influence gate.
+  includeInfluenceStep: false
+  requiresInfluenceApproval: false
+
+probes:
+  - id: auth_remove_token
+    technique: REMOVE_TOKEN
+    strategy: REMOVE_TOKEN
+    enabledByDefault: true
+    priority: 10
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.70
+    applicableParamTypes: [HEADER, COOKIE]
+    valueTypes: [JWT, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: ""
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: BASELINE_SIMILAR
+      minSimilarityTrueBaseline: 0.90
+      minConfidence: 0.62
+
+  - id: auth_empty_bearer_token
+    technique: REMOVE_TOKEN
+    strategy: REMOVE_TOKEN
+    enabledByDefault: true
+    priority: 15
+    stopOnMatch: false
+    maxRequests: 1
+    maxPayloadLength: 32
+    evidenceWeight: 0.66
+    applicableParamTypes: [HEADER, COOKIE]
+    valueTypes: [JWT, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "Bearer "
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: BASELINE_SIMILAR
+      minSimilarityTrueBaseline: 0.90
+      minConfidence: 0.60
+
+  - id: auth_invalid_role_token
+    technique: ROLE_SWITCH
+    strategy: ROLE_SWITCH
+    enabledByDefault: true
+    priority: 20
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.65
+    applicableParamTypes: [HEADER, COOKIE]
+    valueTypes: [JWT, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "Bearer invalid-role-token"
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: BASELINE_SIMILAR
+      minSimilarityTrueBaseline: 0.90
+      minConfidence: 0.58
+
+  - id: auth_invalid_scheme_token
+    technique: ROLE_SWITCH
+    strategy: ROLE_SWITCH
+    enabledByDefault: true
+    priority: 30
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 96
+    evidenceWeight: 0.64
+    applicableParamTypes: [HEADER, COOKIE]
+    valueTypes: [JWT, STRING, UNKNOWN]
+    requiresLlmReview: true
+    payloads:
+      - value: "Basic YWktYnVycC1jb3BpbG90OnRlc3Q="
+        role: TRIGGER
+        mutation: REPLACE
+    oracle:
+      type: BASELINE_SIMILAR
+      minSimilarityTrueBaseline: 0.90
+      minConfidence: 0.58

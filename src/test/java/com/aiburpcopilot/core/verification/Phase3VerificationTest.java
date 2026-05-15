@@ -73,23 +73,12 @@ public class Phase3VerificationTest {
         ExternalResourcePaths.setManualHomeDir(testHomeDir);
         Files.createDirectories(testHomeDir.resolve("prompts"));
         Files.createDirectories(testHomeDir.resolve("rules").resolve("payloads"));
-        copyDirectory(Path.of("ai-burp-copilot").resolve("prompts"), testHomeDir.resolve("prompts"));
-        copyDirectory(Path.of("ai-burp-copilot").resolve("rules"), testHomeDir.resolve("rules"));
-        Files.writeString(testHomeDir.resolve("application.yml"), """
-                llm:
-                  provider: deepseek
-                  model: deepseek-chat
-                  apiKey: test-key
-                  apiUrl: https://example.invalid/v1/chat/completions
-                ai:
-                  maxTokens: 1024
-                  timeoutMs: 30000
-                  maxPromptLength: 8000
-                verification:
-                  enabled: true
-                  allowedInfluenceActions: [READ, CREATE, UPDATE, DELETE, AUTH, UNKNOWN, ALL]
-                  allowedVerificationActions: [READ, CREATE, UPDATE, DELETE, AUTH, UNKNOWN, ALL]
-                """, StandardCharsets.UTF_8);
+        Path templateDir = Path.of("ai-burp-copilot-templates");
+        copyDirectory(templateDir.resolve("prompts"), testHomeDir.resolve("prompts"));
+        copyDirectory(templateDir.resolve("rules"), testHomeDir.resolve("rules"));
+        Files.copy(templateDir.resolve("application.yml"),
+                testHomeDir.resolve("application.yml"),
+                StandardCopyOption.REPLACE_EXISTING);
     }
 
     private static void copyDirectory(Path source, Path target) throws Exception {

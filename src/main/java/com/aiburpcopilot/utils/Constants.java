@@ -20,6 +20,7 @@ public final class Constants {
 
     public static final String CONFIG_FILE_NAME = "application.yml";
     public static final String CONFIG_DIR_NAME = "ai-burp-copilot";
+    public static final String CONFIG_TEMPLATE_DIR_NAME = "ai-burp-copilot-templates";
 
     // ========== Prompt 模板名称 ==========
 

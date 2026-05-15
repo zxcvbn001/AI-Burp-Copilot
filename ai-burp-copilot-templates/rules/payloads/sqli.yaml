@@ -1,0 +1,153 @@
+attackType: SQLI
+aliases: [SQL, SQL_INJECTION, SQL注入, 注入]
+goal: CONFIRM_ATTACK_TYPE
+
+probes:
+  - id: generic_quote_error_recovery
+    technique: ERROR_BASED
+    strategy: ERROR_BASED
+    strength: WEAK
+    priority: 1
+    stopOnMatch: false
+    maxRequests: 2
+    maxPayloadLength: 16
+    evidenceWeight: 0.88
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN, NUMERIC]
+    payloads:
+      - value: "'"
+        role: TRIGGER
+        mutation: APPEND
+      - value: "''"
+        role: RECOVERY
+        mutation: APPEND
+    oracle:
+      type: ERROR_KEYWORD_OR_RECOVERY
+      errorKeywords:
+        - "sql syntax"
+        - "database error"
+        - "mysql"
+        - "postgresql"
+        - "sqlite"
+        - "oracle"
+        - "sql server"
+        - "sqlstate"
+        - "odbc"
+        - "jdbc"
+        - "unclosed quotation mark"
+        - "quoted string not properly terminated"
+      minConfidence: 0.78
+
+  - id: generic_boolean_pair_string
+    technique: BOOLEAN_BASED
+    strategy: BOOLEAN_BASED_MINIMAL
+    strength: STRONG
+    priority: 2
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.82
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN, NUMERIC]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: "' AND 1=1--"
+        falseValue: "' AND 1=2--"
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.90
+      maxSimilarityTrueFalse: 0.80
+      minConfidence: 0.78
+
+  - id: generic_boolean_pair_integer
+    technique: BOOLEAN_BASED
+    strategy: BOOLEAN_BASED_MINIMAL
+    strength: STRONG
+    priority: 3
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [NUMERIC]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: " AND 1=1"
+        falseValue: " AND 1=2"
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.90
+      maxSimilarityTrueFalse: 0.80
+      minConfidence: 0.78
+
+  - id: generic_boolean_pair_double_quote
+    technique: BOOLEAN_BASED
+    strategy: BOOLEAN_BASED_MINIMAL
+    strength: STRONG
+    priority: 4
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: "\" AND 1=1--"
+        falseValue: "\" AND 1=2--"
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.90
+      maxSimilarityTrueFalse: 0.80
+      minConfidence: 0.78
+
+  - id: generic_boolean_pair_parenthesis
+    technique: BOOLEAN_BASED
+    strategy: BOOLEAN_BASED_MINIMAL
+    strength: STRONG
+    priority: 5
+    stopOnMatch: true
+    maxRequests: 2
+    maxPayloadLength: 64
+    evidenceWeight: 0.80
+    applicableParamTypes: [QUERY, BODY, PATH]
+    valueTypes: [STRING, EMAIL, URL, UNKNOWN]
+    requiresLlmReview: true
+    payloadPairs:
+      - trueValue: "') AND 1=1--"
+        falseValue: "') AND 1=2--"
+        trueMutation: APPEND
+        falseMutation: APPEND
+    oracle:
+      type: PAIR_DIFF
+      minSimilarityTrueBaseline: 0.90
+      maxSimilarityTrueFalse: 0.80
+      minConfidence: 0.78
+
+  - id: mysql_time_delay
+    technique: TIME_BASED
+    strategy: TIME_BASED
+    strength: STRONG
+    enabledByDefault: true
+    priority: 90
+    stopOnMatch: true
+    maxRequests: 1
+    maxPayloadLength: 64
+    evidenceWeight: 0.92
+    applicableParamTypes: [QUERY, BODY]
+    valueTypes: [STRING, NUMERIC, UNKNOWN]
+    payloads:
+      - value: "' AND SLEEP(3)--"
+        role: TRIGGER
+        mutation: APPEND
+    oracle:
+      type: TIME_DELAY
+      minDelayMs: 2500
+      baselineMultiplier: 2.5
+      minConfidence: 0.86

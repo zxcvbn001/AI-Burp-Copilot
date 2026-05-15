@@ -1,5 +1,7 @@
 # AI Burp Copilot v2
 
+[中文说明](README.zh-CN.md)
+
 AI Burp Copilot v2 is an AI-assisted security analysis extension for Burp Suite.
 
 It is designed to help testers analyze real HTTP traffic, verify suspected issues with rule-driven probes, and review evidence with LLM-assisted reasoning.  
@@ -136,7 +138,16 @@ ai-burp-copilot/
 └─ 报告模板.docx
 ```
 
-After loading the extension, select this directory in the plugin settings.
+For GitHub builds and public testing, the repository also includes a sanitized template directory:
+
+```text
+ai-burp-copilot-templates/
+├─ application.yml
+├─ prompts/
+└─ rules/
+```
+
+After loading the extension, select the appropriate directory in the plugin settings.
 
 ---
 
