@@ -23,6 +23,14 @@ scratch/
 docs/leadership-report-outline.md
 docs/ai-workflow-flowchart.md
 
+# Local report templates / generated report assets
+报告模板.docx
+*报告模板*.docx
+*报告模板*.dotx
+*报告模板*.dotm
+.tmp-report-template*
+.codex-report-template*
+
 # Local secrets and environment overrides
 .env
 .env.*
