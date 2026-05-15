@@ -155,9 +155,7 @@ ai-burp-copilot-templates/
 
 公开文档入口：
 
-- `docs/rule-authoring.md`
-- `docs/workflow-overview.md`
-- `docs/ai-workflow-flowchart.md`
+- `docs/user-guide.md`
 
 ---
 

@@ -59,6 +59,7 @@ public class Phase3VerificationTest {
 
     private static Path originalHomeDir;
     private static Path testHomeDir;
+    private static boolean createdTempHomeDir;
 
     @BeforeAll
     static void setupExternalConfigDir() throws Exception {
@@ -69,11 +70,18 @@ public class Phase3VerificationTest {
             return;
         }
 
+        Path templateDir = resolveTemplateDir();
+        if (templateDir != null) {
+            testHomeDir = templateDir;
+            ExternalResourcePaths.setManualHomeDir(templateDir);
+            return;
+        }
+
         testHomeDir = Files.createTempDirectory("aiburpcopilot-test-home");
+        createdTempHomeDir = true;
         ExternalResourcePaths.setManualHomeDir(testHomeDir);
         Files.createDirectories(testHomeDir.resolve("prompts"));
         Files.createDirectories(testHomeDir.resolve("rules").resolve("payloads"));
-        Path templateDir = Path.of("ai-burp-copilot-templates");
         copyDirectory(templateDir.resolve("prompts"), testHomeDir.resolve("prompts"));
         copyDirectory(templateDir.resolve("rules"), testHomeDir.resolve("rules"));
         Files.copy(templateDir.resolve("application.yml"),
@@ -102,7 +110,7 @@ public class Phase3VerificationTest {
     @AfterAll
     static void cleanupExternalConfigDir() throws Exception {
         ExternalResourcePaths.setManualHomeDir(originalHomeDir);
-        if (originalHomeDir == null && testHomeDir != null && Files.exists(testHomeDir)) {
+        if (originalHomeDir == null && createdTempHomeDir && testHomeDir != null && Files.exists(testHomeDir)) {
             try (var walk = Files.walk(testHomeDir)) {
                 walk.sorted((a, b) -> b.getNameCount() - a.getNameCount())
                         .forEach(path -> {
@@ -112,6 +120,61 @@ public class Phase3VerificationTest {
                             }
                         });
             }
+        }
+    }
+
+    private static Path resolveTemplateDir() {
+        Path fromProperty = pathIfValid(System.getProperty("aiburpcopilot.testTemplateDir"));
+        if (fromProperty != null) {
+            return fromProperty;
+        }
+
+        Path fromHomeProperty = pathIfValid(System.getProperty("aiburpcopilot.home"));
+        if (fromHomeProperty != null) {
+            return fromHomeProperty;
+        }
+
+        Path fromEnv = pathIfValid(System.getenv("AI_BURP_COPILOT_HOME"));
+        if (fromEnv != null) {
+            return fromEnv;
+        }
+
+        Path fromUserDir = pathIfValid(Path.of("").toAbsolutePath().normalize()
+                .resolve("ai-burp-copilot-templates").toString());
+        if (fromUserDir != null) {
+            return fromUserDir;
+        }
+
+        throw new IllegalStateException("Unable to locate ai-burp-copilot-templates for tests");
+    }
+
+    private static Path pathIfValid(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return null;
+        }
+        try {
+            Path dir = Path.of(rawPath).toAbsolutePath().normalize();
+            if (!Files.isDirectory(dir)) {
+                return null;
+            }
+            if (!Files.isRegularFile(dir.resolve("application.yml"))) {
+                return null;
+            }
+            if (!Files.isDirectory(dir.resolve("prompts"))) {
+                return null;
+            }
+            Path payloadDir = dir.resolve("rules").resolve("payloads");
+            if (!Files.isDirectory(payloadDir)) {
+                return null;
+            }
+            try (var files = Files.list(payloadDir)) {
+                if (files.findAny().isEmpty()) {
+                    return null;
+                }
+            }
+            return dir;
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

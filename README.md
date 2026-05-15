@@ -155,9 +155,7 @@ After loading the extension, select the appropriate directory in the plugin sett
 
 Public project docs:
 
-- `docs/rule-authoring.md`
-- `docs/workflow-overview.md`
-- `docs/ai-workflow-flowchart.md`
+- `docs/user-guide.md`
 
 ---
 
