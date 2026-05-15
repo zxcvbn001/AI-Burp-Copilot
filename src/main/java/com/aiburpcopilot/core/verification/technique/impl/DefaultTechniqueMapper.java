@@ -52,14 +52,24 @@ public class DefaultTechniqueMapper implements ITechniqueMapper {
                 continue;
             }
 
-            String dedupKey = rec.getParameterName() + "|" + rec.getAttackType().name()
+            String attackTypeName = rec.getAttackTypeName();
+            if (attackTypeName == null || rec.getTechnique() == null) {
+                log.debug("Skipping TechniqueRecommendation without enum-mappable type/technique: {}", rec);
+                continue;
+            }
+
+            String dedupKey = rec.getParameterName() + "|" + attackTypeName
                     + "|" + rec.getTechnique().name();
             if (seen.contains(dedupKey)) continue;
             seen.add(dedupKey);
 
+            if (rec.getAttackType() == null) {
+                log.debug("Skipping TechniqueRecommendation without AttackType enum mapping: {}", rec);
+                continue;
+            }
             Optional<TechniqueRule> rule = registry.findRule(rec.getAttackType(), rec.getTechnique());
             if (rule.isEmpty()) {
-                log.debug("No TechniqueRule for {}/{}", rec.getAttackType(), rec.getTechnique());
+                log.debug("No TechniqueRule for {}/{}", attackTypeName, rec.getTechniqueName());
                 continue;
             }
 

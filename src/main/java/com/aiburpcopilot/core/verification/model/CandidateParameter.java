@@ -6,6 +6,7 @@ import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Candidate 参数模型。
@@ -23,6 +24,7 @@ public class CandidateParameter {
 
     /** 参数类型（QUERY/BODY/HEADER/COOKIE/PATH） */
     private String parameterType;
+    private String candidateId;
 
     /** 攻击类型 */
     private AttackType attackType;
@@ -41,6 +43,7 @@ public class CandidateParameter {
     private List<VerificationTechnique> recommendedTechniques;
 
     public CandidateParameter() {
+        this.candidateId = UUID.randomUUID().toString();
         this.recommendedTechniques = new ArrayList<>();
         this.confidence = 0.5;
     }
@@ -64,6 +67,14 @@ public class CandidateParameter {
 
     public String getParameterType() { return parameterType; }
     public void setParameterType(String parameterType) { this.parameterType = parameterType; }
+
+    public String getCandidateId() {
+        if (candidateId == null || candidateId.isBlank()) {
+            candidateId = UUID.randomUUID().toString();
+        }
+        return candidateId;
+    }
+    public void setCandidateId(String candidateId) { this.candidateId = candidateId; }
 
     public AttackType getAttackType() { return attackType; }
     public void setAttackType(AttackType attackType) {
@@ -101,6 +112,7 @@ public class CandidateParameter {
         return "CandidateParameter{" +
                 "parameterName='" + parameterName + '\'' +
                 ", parameterType='" + parameterType + '\'' +
+                ", candidateId='" + getCandidateId() + '\'' +
                 ", attackType=" + attackType +
                 ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", confidence=" + confidence +

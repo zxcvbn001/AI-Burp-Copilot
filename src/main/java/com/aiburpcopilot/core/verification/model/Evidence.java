@@ -13,6 +13,7 @@ public class Evidence {
 
     /** 原始请求字节（快照） */
     private byte[] request;
+    private byte[] baselineRequest;
 
     /** 变异后请求字节（快照） */
     private byte[] mutatedRequest;
@@ -25,6 +26,8 @@ public class Evidence {
 
     /** Diff 差异描述 */
     private String diffDescription;
+    private String evidenceKey;
+    private String baselineSummary;
 
     /** 证据置信度 */
     private double confidence;
@@ -121,6 +124,9 @@ public class Evidence {
     public byte[] getRequest() { return request; }
     public void setRequest(byte[] request) { this.request = request; }
 
+    public byte[] getBaselineRequest() { return baselineRequest; }
+    public void setBaselineRequest(byte[] baselineRequest) { this.baselineRequest = baselineRequest; }
+
     public byte[] getMutatedRequest() { return mutatedRequest; }
     public void setMutatedRequest(byte[] mutatedRequest) { this.mutatedRequest = mutatedRequest; }
 
@@ -132,6 +138,12 @@ public class Evidence {
 
     public String getDiffDescription() { return diffDescription; }
     public void setDiffDescription(String diffDescription) { this.diffDescription = diffDescription; }
+
+    public String getEvidenceKey() { return evidenceKey; }
+    public void setEvidenceKey(String evidenceKey) { this.evidenceKey = evidenceKey; }
+
+    public String getBaselineSummary() { return baselineSummary; }
+    public void setBaselineSummary(String baselineSummary) { this.baselineSummary = baselineSummary; }
 
     public double getConfidence() { return confidence; }
     public void setConfidence(double confidence) { this.confidence = Math.max(0.0, Math.min(1.0, confidence)); }

@@ -43,7 +43,7 @@ public class EndpointAnalysisPanel extends JPanel {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         UiUtil.applyBurpFont(table);
 
-        UiUtil.setScaledColumnWidths(table, 85, 75, 340, 620);
+        UiUtil.setScaledColumnWidths(table, 85, 75, 360, 100);
 
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

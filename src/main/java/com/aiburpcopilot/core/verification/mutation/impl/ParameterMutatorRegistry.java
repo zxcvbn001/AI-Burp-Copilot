@@ -46,7 +46,7 @@ public class ParameterMutatorRegistry {
         }
         log.warn("MutatorRegistry: NO mutator found for param='{}' attackType={} "
                         + "| query='{}' | contentType='{}' | bodyLen={} | paramCount={}",
-                targetParam, task.getAttackType(),
+                targetParam, task.getAttackTypeName(),
                 context.getQuery() != null ? context.getQuery() : "null",
                 context.getContentType() != null ? context.getContentType() : "null",
                 context.getRequestBody() != null ? context.getRequestBody().length : 0,

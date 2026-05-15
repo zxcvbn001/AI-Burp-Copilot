@@ -19,6 +19,7 @@ public class MainTab extends JPanel {
     private final VerificationPanel verificationPanel;
     private final StaticScanPanel staticScanPanel;
     private final ConfirmedVulnerabilityPanel confirmedVulnerabilityPanel;
+    private final ReportExportPanel reportExportPanel;
     private final LogPanel logPanel;
     private final SettingsPanel settingsPanel;
 
@@ -36,7 +37,9 @@ public class MainTab extends JPanel {
                 api, historyService, manualVerificationService);
         this.verificationPanel = new VerificationPanel(api, historyService);
         this.staticScanPanel = new StaticScanPanel(api, historyService);
-        this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(api, historyService, aiProvider, configService);
+        this.reportExportPanel = new ReportExportPanel();
+        this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(
+                api, historyService, aiProvider, configService, reportExportPanel);
         this.logPanel = new LogPanel();
         this.settingsPanel = new SettingsPanel(configService, api, reloadRuntimeResources);
 
@@ -48,6 +51,7 @@ public class MainTab extends JPanel {
         tabbedPane.addTab("\u6f0f\u6d1e\u9a8c\u8bc1\u8fc7\u7a0b", verificationPanel);
         tabbedPane.addTab("\u9759\u6001\u6587\u4ef6\u5206\u6790", staticScanPanel);
         tabbedPane.addTab("\u6709\u6548\u6f0f\u6d1e", confirmedVulnerabilityPanel);
+        tabbedPane.addTab("\u62a5\u544a\u5bfc\u51fa", reportExportPanel);
         tabbedPane.addTab("\u65e5\u5fd7", logPanel);
         tabbedPane.addTab("\u8bbe\u7f6e", settingsPanel);
         add(tabbedPane, BorderLayout.CENTER);

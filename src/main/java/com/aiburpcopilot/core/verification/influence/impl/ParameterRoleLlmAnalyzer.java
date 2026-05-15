@@ -67,7 +67,7 @@ public class ParameterRoleLlmAnalyzer implements IParameterRoleAnalyzer {
                 + "name: " + parameterName + "\n"
                 + "sampleValue: " + summarize(originalValue, 120) + "\n"
                 + "detectedType: " + (profile != null ? profile.getDetectedType() : "UNKNOWN") + "\n"
-                + "candidateAttackType: " + (candidate != null ? candidate.getAttackType() : "UNKNOWN") + "\n";
+                + "candidateAttackType: " + (candidate != null ? candidate.getAttackTypeName() : "UNKNOWN") + "\n";
     }
 
     private String summarizeHttp(HTTPContext context) {

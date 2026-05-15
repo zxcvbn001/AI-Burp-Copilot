@@ -9,6 +9,8 @@ import java.util.List;
 public class OracleResult {
 
     private boolean matched;
+    private boolean localMatched;
+    private Boolean llmMatched;
     private double confidence;
     private String reasoning;
     private String llmReview;
@@ -22,6 +24,22 @@ public class OracleResult {
 
     public void setMatched(boolean matched) {
         this.matched = matched;
+    }
+
+    public boolean isLocalMatched() {
+        return localMatched;
+    }
+
+    public void setLocalMatched(boolean localMatched) {
+        this.localMatched = localMatched;
+    }
+
+    public Boolean getLlmMatched() {
+        return llmMatched;
+    }
+
+    public void setLlmMatched(Boolean llmMatched) {
+        this.llmMatched = llmMatched;
     }
 
     public double getConfidence() {

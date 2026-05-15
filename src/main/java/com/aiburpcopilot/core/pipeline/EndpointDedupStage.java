@@ -43,6 +43,7 @@ public class EndpointDedupStage implements IPipelineStage {
             return null;
         }
         String origin = origin(context.getUrl());
+        String templatedPath = uriTemplate(context.getPath());
         String params = context.getParameters() == null ? "" : context.getParameters().stream()
                 .map(ParameterContext::getName)
                 .filter(Objects::nonNull)
@@ -50,8 +51,18 @@ public class EndpointDedupStage implements IPipelineStage {
                 .collect(Collectors.joining(","));
         return nullToEmpty(context.getMethod())
                 + "|" + origin
-                + "|" + nullToEmpty(context.getPath())
+                + "|" + templatedPath
                 + "|" + params;
+    }
+
+    private static String uriTemplate(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        return path
+                .replaceAll("/\\d+(?=/|$)", "/{int}")
+                .replaceAll("/[0-9a-fA-F]{8,}(?=/|$)", "/{hex}")
+                .replaceAll("/[0-9a-fA-F\\-]{16,}(?=/|$)", "/{id}");
     }
 
     private static String origin(String url) {

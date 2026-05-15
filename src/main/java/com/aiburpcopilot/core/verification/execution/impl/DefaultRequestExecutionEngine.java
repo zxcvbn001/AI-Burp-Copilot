@@ -249,17 +249,18 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             // 1. 参数修改
             pluginLog.info(PluginLogger.Category.VERIFICATION, "Verification", "  Task: param='" + task.getParameterName()
                     + "' payload='" + task.getPayload()
-                    + "' type=" + task.getAttackType()
+                    + "' type=" + task.getAttackTypeName()
                     + " strategy=" + task.getStrategyType());
             var mutator = mutatorRegistry.findMutator(task.getBaseRequest(), task);
             if (mutator == null) {
                 pluginLog.warn(PluginLogger.Category.VERIFICATION, "Verification", "  NO mutator for param='" + task.getParameterName()
-                        + "' type=" + task.getAttackType()
+                        + "' type=" + task.getAttackTypeName()
                         + " | params=" + task.getBaseRequest().getParameters().stream()
                         .map(p -> p.getType() + ":" + p.getName())
                         .toList());
                 VerificationResult result = new VerificationResult();
                 result.setAttackType(task.getAttackType());
+                result.setAttackTypeName(task.getAttackTypeName());
                 result.setParameter(task.getParameterName());
                 result.setPayload(task.getPayload());
                 result.setStrategyType(task.getStrategyType());
@@ -278,6 +279,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
                         "Verification", "  BLOCKED by host policy: " + mutatedRequest.getUrl());
                 VerificationResult result = new VerificationResult();
                 result.setAttackType(task.getAttackType());
+                result.setAttackTypeName(task.getAttackTypeName());
                 result.setParameter(task.getParameterName());
                 result.setPayload(task.getPayload());
                 result.setStrategyType(task.getStrategyType());
@@ -309,6 +311,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             // 6. 构建基础结果
             VerificationResult result = new VerificationResult();
             result.setAttackType(task.getAttackType());
+            result.setAttackTypeName(task.getAttackTypeName());
             result.setParameter(task.getParameterName());
             result.setPayload(task.getPayload());
             result.setStrategyType(task.getStrategyType());
@@ -327,13 +330,14 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             }
 
             log.debug("Task {} completed in {}ms ({})",
-                    task.getTaskId(), elapsed, task.getAttackType());
+                    task.getTaskId(), elapsed, task.getAttackTypeName());
             return result;
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             VerificationResult result = new VerificationResult();
             result.setAttackType(task.getAttackType());
+            result.setAttackTypeName(task.getAttackTypeName());
             result.setParameter(task.getParameterName());
             result.setPayload(task.getPayload());
             result.setUrl(task.getBaseRequest().getUrl());
@@ -346,6 +350,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
                     + ": " + e.getMessage());
             VerificationResult result = new VerificationResult();
             result.setAttackType(task.getAttackType());
+            result.setAttackTypeName(task.getAttackTypeName());
             result.setParameter(task.getParameterName());
             result.setPayload(task.getPayload());
             result.setStrategyType(task.getStrategyType());

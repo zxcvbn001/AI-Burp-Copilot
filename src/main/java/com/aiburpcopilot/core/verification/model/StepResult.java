@@ -43,11 +43,19 @@ public class StepResult {
     private int responseLength;
     private byte[] requestBytes;
     private byte[] responseBytes;
+    private byte[] baselineRequestBytes;
+    private byte[] baselineResponseBytes;
     private String exchangeTranscript;
     private String llmReview;
+    private boolean localMatched;
+    private Boolean llmMatched;
+    private String decision;
+    private String dedupKey;
+    private List<ExchangeRecord> exchangeRecords;
 
     public StepResult() {
         this.evidences = new ArrayList<>();
+        this.exchangeRecords = new ArrayList<>();
         this.continueWorkflow = true;
     }
 
@@ -149,11 +157,41 @@ public class StepResult {
     public byte[] getResponseBytes() { return responseBytes; }
     public void setResponseBytes(byte[] responseBytes) { this.responseBytes = responseBytes; }
 
+    public byte[] getBaselineRequestBytes() { return baselineRequestBytes; }
+    public void setBaselineRequestBytes(byte[] baselineRequestBytes) { this.baselineRequestBytes = baselineRequestBytes; }
+
+    public byte[] getBaselineResponseBytes() { return baselineResponseBytes; }
+    public void setBaselineResponseBytes(byte[] baselineResponseBytes) { this.baselineResponseBytes = baselineResponseBytes; }
+
     public String getExchangeTranscript() { return exchangeTranscript; }
     public void setExchangeTranscript(String exchangeTranscript) { this.exchangeTranscript = exchangeTranscript; }
 
     public String getLlmReview() { return llmReview; }
     public void setLlmReview(String llmReview) { this.llmReview = llmReview; }
+
+    public boolean isLocalMatched() { return localMatched; }
+    public void setLocalMatched(boolean localMatched) { this.localMatched = localMatched; }
+
+    public Boolean getLlmMatched() { return llmMatched; }
+    public void setLlmMatched(Boolean llmMatched) { this.llmMatched = llmMatched; }
+
+    public String getDecision() { return decision; }
+    public void setDecision(String decision) { this.decision = decision; }
+
+    public String getDedupKey() { return dedupKey; }
+    public void setDedupKey(String dedupKey) { this.dedupKey = dedupKey; }
+
+    public List<ExchangeRecord> getExchangeRecords() { return exchangeRecords; }
+    public void setExchangeRecords(List<ExchangeRecord> exchangeRecords) {
+        this.exchangeRecords = exchangeRecords != null ? exchangeRecords : new ArrayList<>();
+    }
+
+    public StepResult addExchangeRecord(ExchangeRecord exchangeRecord) {
+        if (exchangeRecord != null) {
+            this.exchangeRecords.add(exchangeRecord);
+        }
+        return this;
+    }
 
     @Override
     public String toString() {
@@ -161,6 +199,9 @@ public class StepResult {
                 "step='" + stepName + '\'' +
                 ", success=" + success +
                 ", confidence=" + confidence +
+                ", localMatched=" + localMatched +
+                ", llmMatched=" + llmMatched +
+                ", decision='" + decision + '\'' +
                 ", continueWorkflow=" + continueWorkflow +
                 ", evidences=" + evidences.size() +
                 '}';

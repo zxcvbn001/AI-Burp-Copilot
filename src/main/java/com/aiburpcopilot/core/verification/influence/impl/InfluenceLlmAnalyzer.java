@@ -3,11 +3,11 @@ package com.aiburpcopilot.core.verification.influence.impl;
 import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.config.Timeouts;
-import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.verification.influence.IInfluenceLlmAnalyzer;
 import com.aiburpcopilot.core.verification.influence.InfluenceLlmDecision;
 import com.aiburpcopilot.core.verification.model.DiffResult;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 import com.aiburpcopilot.utils.JsonUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
     }
 
     @Override
-    public InfluenceLlmDecision analyze(AttackType attackType,
+    public InfluenceLlmDecision analyze(String attackTypeName,
                                         String parameterName,
                                         String mutationValue,
                                         ParameterProfile profile,
@@ -43,7 +43,7 @@ public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
         }
         try {
             String response = aiProvider.analyzeDiff(buildPrompt(
-                            attackType, parameterName, mutationValue,
+                            attackTypeName, parameterName, mutationValue,
                             profile, diffResult, deterministicScore))
                     .get(Timeouts.effectiveInfluenceReviewWaitMs(configService), TimeUnit.MILLISECONDS);
             return parseDecision(response);
@@ -54,7 +54,7 @@ public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
         }
     }
 
-    private String buildPrompt(AttackType attackType,
+    private String buildPrompt(String attackTypeName,
                                String parameterName,
                                String mutationValue,
                                ParameterProfile profile,
@@ -65,9 +65,9 @@ public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
                 + "如果差异只是时间戳、随机数、token、traceId、广告、统计字段、缓存噪声或无关模板变化，应判定 influential=false。\n"
                 + "如果差异体现业务状态、权限结果、数据集合、错误状态、结构字段、查询结果、页面关键内容变化，应判定 influential=true。\n"
                 + "返回严格 JSON：{\"influential\":true/false,\"confidence\":0.0-1.0,\"reasoning\":\"中文简短理由\"}\n\n"
-                + "attackType: " + attackType + "\n"
-                + "parameterName: " + parameterName + "\n"
-                + "parameterType: " + (profile != null ? profile.getDetectedType() : "UNKNOWN") + "\n"
+                + "attackType: " + value(RuleKeyUtil.normalize(attackTypeName)) + "\n"
+                + "parameterName: " + value(parameterName) + "\n"
+                + "parameterType: " + (profile != null ? value(profile.getDetectedType()) : "UNKNOWN") + "\n"
                 + "mutationValue: " + summarize(mutationValue, 120) + "\n"
                 + "deterministicScore: " + String.format("%.3f", deterministicScore) + "\n"
                 + "similarity: " + String.format("%.3f", diff.getSimilarity()) + "\n"
@@ -143,5 +143,9 @@ public class InfluenceLlmAnalyzer implements IInfluenceLlmAnalyzer {
         return normalized.length() <= maxLength
                 ? normalized
                 : normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private String value(Object value) {
+        return value == null ? "UNKNOWN" : String.valueOf(value);
     }
 }

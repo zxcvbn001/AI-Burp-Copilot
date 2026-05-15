@@ -20,8 +20,7 @@ ai-burp-copilot/
 # Local scratch notes / process files
 notes/
 scratch/
-docs/leadership-report-outline.md
-docs/ai-workflow-flowchart.md
+tmp/
 
 # Local report templates / generated report assets
 报告模板.docx
@@ -30,6 +29,8 @@ docs/ai-workflow-flowchart.md
 *报告模板*.dotm
 .tmp-report-template*
 .codex-report-template*
+~$*.docx
+~$*.xlsx
 
 # Local secrets and environment overrides
 .env
@@ -47,6 +48,8 @@ application-secret.yml
 application-secret.yaml
 .codex-template.zip
 .codex-template-unzip/
+.tmp*/
+.codex-*/
 
 # Logs and runtime state
 logs/

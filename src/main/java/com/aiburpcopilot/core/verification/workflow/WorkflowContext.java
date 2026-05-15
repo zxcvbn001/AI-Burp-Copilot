@@ -20,6 +20,7 @@ public class WorkflowContext {
 
     /** 候选参数 */
     private final CandidateParameter candidate;
+    private final String traceId;
 
     /** 参数特征 */
     private ParameterProfile parameterProfile;
@@ -41,7 +42,8 @@ public class WorkflowContext {
     /** 当前执行的工作流定义 */
     private WorkflowDefinition workflowDefinition;
 
-    /** 原始响应（基线） */
+    /** 原始请求/响应（基线） */
+    private byte[] baselineRequest;
     private byte[] baselineResponse;
 
     /** 当前步骤索引 */
@@ -68,6 +70,9 @@ public class WorkflowContext {
     public WorkflowContext(HTTPContext httpContext, CandidateParameter candidate) {
         this.httpContext = httpContext;
         this.candidate = candidate;
+        this.traceId = buildTraceId(httpContext, candidate);
+        this.baselineRequest = httpContext != null ? httpContext.getRawRequest() : null;
+        this.baselineResponse = httpContext != null ? httpContext.getRawResponse() : null;
         this.startTime = System.currentTimeMillis();
     }
 
@@ -97,6 +102,7 @@ public class WorkflowContext {
 
     public HTTPContext getHttpContext() { return httpContext; }
     public CandidateParameter getCandidate() { return candidate; }
+    public String getTraceId() { return traceId; }
 
     public ParameterProfile getParameterProfile() { return parameterProfile; }
     public void setParameterProfile(ParameterProfile parameterProfile) { this.parameterProfile = parameterProfile; }
@@ -120,6 +126,9 @@ public class WorkflowContext {
     public WorkflowDefinition getWorkflowDefinition() { return workflowDefinition; }
     public void setWorkflowDefinition(WorkflowDefinition workflowDefinition) { this.workflowDefinition = workflowDefinition; }
 
+    public byte[] getBaselineRequest() { return baselineRequest; }
+    public void setBaselineRequest(byte[] baselineRequest) { this.baselineRequest = baselineRequest; }
+
     public byte[] getBaselineResponse() { return baselineResponse; }
     public void setBaselineResponse(byte[] baselineResponse) { this.baselineResponse = baselineResponse; }
 
@@ -139,4 +148,17 @@ public class WorkflowContext {
     public void setLastStepResult(StepResult lastStepResult) { this.lastStepResult = lastStepResult; }
 
     public long getStartTime() { return startTime; }
+
+    private String buildTraceId(HTTPContext httpContext, CandidateParameter candidate) {
+        String requestId = httpContext != null && httpContext.getRequestId() != null
+                ? httpContext.getRequestId()
+                : "no-request";
+        String attackTypeName = candidate != null && candidate.getAttackTypeName() != null
+                ? candidate.getAttackTypeName()
+                : "UNKNOWN";
+        String parameterName = candidate != null && candidate.getParameterName() != null
+                ? candidate.getParameterName()
+                : "endpoint";
+        return requestId + "|" + attackTypeName + "|" + parameterName;
+    }
 }

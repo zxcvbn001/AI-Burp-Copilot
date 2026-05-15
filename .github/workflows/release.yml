@@ -54,7 +54,7 @@ jobs:
           echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_ENV"
 
       - name: Test
-        run: mvn --batch-mode --no-transfer-progress verify
+        run: mvn --batch-mode --no-transfer-progress -Dmaven.compiler.useModulePath=false verify
 
       - name: Prepare release asset
         shell: bash

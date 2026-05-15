@@ -2,39 +2,19 @@ package com.aiburpcopilot.core.verification.model;
 
 import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.context.HTTPContext;
+import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
 import java.util.UUID;
 
-/**
- * 攻击验证任务。
- * <p>
- * 封装一次安全验证请求的完整信息：
- * 原始 HTTP 上下文、攻击类型、目标参数、
- * 测试策略以及具体 payload。
- * <p>
- * Legacy task model used by mutators and the execution engine compatibility API.
- */
 public class AttackTask {
 
-    /** 任务唯一标识 */
     private UUID taskId;
-
-    /** 原始 HTTP 请求上下文（包含完整请求/响应信息） */
     private HTTPContext baseRequest;
-
-    /** 攻击类型 */
     private AttackType attackType;
-
-    /** 目标参数名 */
+    private String attackTypeName;
     private String parameterName;
-
-    /** 测试策略类型 */
     private StrategyType strategyType;
-
-    /** 具体 payload */
     private String payload;
-
-    /** 任务创建时间 */
     private long createdAt;
 
     public AttackTask() {
@@ -47,13 +27,11 @@ public class AttackTask {
                       String payload) {
         this();
         this.baseRequest = baseRequest;
-        this.attackType = attackType;
+        setAttackType(attackType);
         this.parameterName = parameterName;
         this.strategyType = strategyType;
         this.payload = payload;
     }
-
-    // ---------- Getters & Setters ----------
 
     public UUID getTaskId() { return taskId; }
     public void setTaskId(UUID taskId) { this.taskId = taskId; }
@@ -62,7 +40,21 @@ public class AttackTask {
     public void setBaseRequest(HTTPContext baseRequest) { this.baseRequest = baseRequest; }
 
     public AttackType getAttackType() { return attackType; }
-    public void setAttackType(AttackType attackType) { this.attackType = attackType; }
+    public void setAttackType(AttackType attackType) {
+        this.attackType = attackType;
+        if (attackType != null) {
+            this.attackTypeName = attackType.name();
+        }
+    }
+
+    public String getAttackTypeName() {
+        return attackTypeName != null ? attackTypeName : RuleKeyUtil.attackTypeName(attackType);
+    }
+
+    public void setAttackTypeName(String attackTypeName) {
+        this.attackTypeName = RuleKeyUtil.normalize(attackTypeName);
+        this.attackType = RuleKeyUtil.toAttackType(this.attackTypeName).orElse(null);
+    }
 
     public String getParameterName() { return parameterName; }
     public void setParameterName(String parameterName) { this.parameterName = parameterName; }
@@ -81,6 +73,7 @@ public class AttackTask {
         return "AttackTask{" +
                 "taskId=" + taskId +
                 ", attackType=" + attackType +
+                ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", parameter='" + parameterName + '\'' +
                 ", strategyType=" + strategyType +
                 ", payload='" + payload + '\'' +

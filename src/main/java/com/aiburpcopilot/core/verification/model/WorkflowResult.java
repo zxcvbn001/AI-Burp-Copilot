@@ -19,6 +19,13 @@ public class WorkflowResult {
 
     /** 参数名 */
     private String parameterName;
+    private String candidateId;
+    private String traceId;
+    private String requestId;
+    private String url;
+    private String candidateSource;
+    private String candidateReasoning;
+    private double candidateConfidence;
 
     /** 工作流是否完整执行成功 */
     private boolean completed;
@@ -43,19 +50,37 @@ public class WorkflowResult {
 
     /** 停止步骤索引 */
     private int stoppedAtStep;
+    private boolean findingGenerated;
+    private double findingConfidenceRaw;
+    private double findingThreshold;
+    private String findingDecisionReason;
+    private boolean localMatched;
+    private Boolean llmMatched;
+    private String finalDecision;
+    private String rejectReason;
+    private byte[] baselineRequestBytes;
+    private byte[] baselineResponseBytes;
+    private String dedupKey;
+    private List<ExchangeRecord> exchangeRecords;
 
     public WorkflowResult() {
         this.stepResults = new ArrayList<>();
         this.evidence = new ArrayList<>();
+        this.exchangeRecords = new ArrayList<>();
     }
 
     /**
      * 从步骤结果收集所有证据。
      */
     public void collectEvidence() {
+        evidence.clear();
+        exchangeRecords.clear();
         for (StepResult sr : stepResults) {
             if (sr.getEvidences() != null) {
                 evidence.addAll(sr.getEvidences());
+            }
+            if (sr.getExchangeRecords() != null) {
+                exchangeRecords.addAll(sr.getExchangeRecords());
             }
         }
     }
@@ -81,6 +106,29 @@ public class WorkflowResult {
 
     public String getParameterName() { return parameterName; }
     public void setParameterName(String parameterName) { this.parameterName = parameterName; }
+
+    public String getCandidateId() { return candidateId; }
+    public void setCandidateId(String candidateId) { this.candidateId = candidateId; }
+
+    public String getTraceId() { return traceId; }
+    public void setTraceId(String traceId) { this.traceId = traceId; }
+
+    public String getRequestId() { return requestId; }
+    public void setRequestId(String requestId) { this.requestId = requestId; }
+
+    public String getUrl() { return url; }
+    public void setUrl(String url) { this.url = url; }
+
+    public String getCandidateSource() { return candidateSource; }
+    public void setCandidateSource(String candidateSource) { this.candidateSource = candidateSource; }
+
+    public String getCandidateReasoning() { return candidateReasoning; }
+    public void setCandidateReasoning(String candidateReasoning) { this.candidateReasoning = candidateReasoning; }
+
+    public double getCandidateConfidence() { return candidateConfidence; }
+    public void setCandidateConfidence(double candidateConfidence) {
+        this.candidateConfidence = Math.max(0.0, Math.min(1.0, candidateConfidence));
+    }
 
     public boolean isCompleted() { return completed; }
     public void setCompleted(boolean completed) { this.completed = completed; }
@@ -112,14 +160,59 @@ public class WorkflowResult {
     public int getStoppedAtStep() { return stoppedAtStep; }
     public void setStoppedAtStep(int stoppedAtStep) { this.stoppedAtStep = stoppedAtStep; }
 
+    public boolean isFindingGenerated() { return findingGenerated; }
+    public void setFindingGenerated(boolean findingGenerated) { this.findingGenerated = findingGenerated; }
+
+    public double getFindingConfidenceRaw() { return findingConfidenceRaw; }
+    public void setFindingConfidenceRaw(double findingConfidenceRaw) {
+        this.findingConfidenceRaw = Math.max(0.0, Math.min(1.0, findingConfidenceRaw));
+    }
+
+    public double getFindingThreshold() { return findingThreshold; }
+    public void setFindingThreshold(double findingThreshold) {
+        this.findingThreshold = Math.max(0.0, Math.min(1.0, findingThreshold));
+    }
+
+    public String getFindingDecisionReason() { return findingDecisionReason; }
+    public void setFindingDecisionReason(String findingDecisionReason) { this.findingDecisionReason = findingDecisionReason; }
+
+    public boolean isLocalMatched() { return localMatched; }
+    public void setLocalMatched(boolean localMatched) { this.localMatched = localMatched; }
+
+    public Boolean getLlmMatched() { return llmMatched; }
+    public void setLlmMatched(Boolean llmMatched) { this.llmMatched = llmMatched; }
+
+    public String getFinalDecision() { return finalDecision; }
+    public void setFinalDecision(String finalDecision) { this.finalDecision = finalDecision; }
+
+    public String getRejectReason() { return rejectReason; }
+    public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
+
+    public byte[] getBaselineRequestBytes() { return baselineRequestBytes; }
+    public void setBaselineRequestBytes(byte[] baselineRequestBytes) { this.baselineRequestBytes = baselineRequestBytes; }
+
+    public byte[] getBaselineResponseBytes() { return baselineResponseBytes; }
+    public void setBaselineResponseBytes(byte[] baselineResponseBytes) { this.baselineResponseBytes = baselineResponseBytes; }
+
+    public String getDedupKey() { return dedupKey; }
+    public void setDedupKey(String dedupKey) { this.dedupKey = dedupKey; }
+
+    public List<ExchangeRecord> getExchangeRecords() { return exchangeRecords; }
+    public void setExchangeRecords(List<ExchangeRecord> exchangeRecords) {
+        this.exchangeRecords = exchangeRecords != null ? exchangeRecords : new ArrayList<>();
+    }
+
     @Override
     public String toString() {
         return "WorkflowResult{" +
                 "attackType=" + attackType +
                 ", attackTypeName='" + getAttackTypeName() + '\'' +
                 ", parameterName='" + parameterName + '\'' +
+                ", candidateId='" + candidateId + '\'' +
+                ", traceId='" + traceId + '\'' +
                 ", completed=" + completed +
                 ", overallConfidence=" + overallConfidence +
+                ", finalDecision='" + finalDecision + '\'' +
                 ", evidence=" + evidence.size() +
                 '}';
     }

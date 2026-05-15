@@ -41,6 +41,7 @@ import org.junit.jupiter.api.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -72,6 +73,8 @@ public class Phase3VerificationTest {
         ExternalResourcePaths.setManualHomeDir(testHomeDir);
         Files.createDirectories(testHomeDir.resolve("prompts"));
         Files.createDirectories(testHomeDir.resolve("rules").resolve("payloads"));
+        copyDirectory(Path.of("ai-burp-copilot").resolve("prompts"), testHomeDir.resolve("prompts"));
+        copyDirectory(Path.of("ai-burp-copilot").resolve("rules"), testHomeDir.resolve("rules"));
         Files.writeString(testHomeDir.resolve("application.yml"), """
                 llm:
                   provider: deepseek
@@ -87,6 +90,24 @@ public class Phase3VerificationTest {
                   allowedInfluenceActions: [READ, CREATE, UPDATE, DELETE, AUTH, UNKNOWN, ALL]
                   allowedVerificationActions: [READ, CREATE, UPDATE, DELETE, AUTH, UNKNOWN, ALL]
                 """, StandardCharsets.UTF_8);
+    }
+
+    private static void copyDirectory(Path source, Path target) throws Exception {
+        if (!Files.exists(source)) {
+            return;
+        }
+        try (var walk = Files.walk(source)) {
+            for (Path path : walk.toList()) {
+                Path relative = source.relativize(path);
+                Path destination = target.resolve(relative);
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                } else {
+                    Files.createDirectories(destination.getParent());
+                    Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
     }
 
     @AfterAll
@@ -871,6 +892,28 @@ public class Phase3VerificationTest {
     }
 
     @Test
+    @Order(36)
+    @DisplayName("Endpoint dedup collapses numeric URI templates")
+    void testEndpointDedupUriTemplate() {
+        HTTPContext first = new HTTPContext();
+        first.setMethod("GET");
+        first.setUrl("http://example.com/users/1001");
+        first.setPath("/users/1001");
+
+        HTTPContext second = new HTTPContext();
+        second.setMethod("GET");
+        second.setUrl("http://example.com/users/1002");
+        second.setPath("/users/1002");
+
+        EndpointDedupStage stage = new EndpointDedupStage();
+        stage.process(first);
+        stage.process(second);
+
+        assertNotEquals(com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED, first.getAnalysisStatus());
+        assertEquals(com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED, second.getAnalysisStatus());
+    }
+
+    @Test
     @Order(37)
     @DisplayName("Form body params are typed as BODY")
     void testFormBodyParamsAreBodyType() {
@@ -1220,6 +1263,85 @@ public class Phase3VerificationTest {
         assertFalse(result.isConfirmedVulnerability());
         assertEquals(0.0, result.getConfidence(), 0.01);
         assertEquals(RiskLevel.INFO, result.getRiskLevel());
+        assertEquals(FinalVerdicts.REJECTED, result.getFinalDecision());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Local confirmed finding should be treated as effective before LLM review")
+    void testLocalConfirmedFindingVerdict() {
+        VerificationResult result = new VerificationResult();
+        result.setPhase("Finding");
+        result.setAttackTypeName("SQLI");
+        result.setParameter("id");
+        result.setFindingGenerated(true);
+        result.setFindingConfidenceRaw(0.72);
+        result.setFindingThreshold(0.55);
+        result.setLocalMatched(true);
+        result.setReviewStatus(ReviewStatus.PENDING);
+
+        FinalVerdicts.recompute(result);
+
+        assertEquals(FinalVerdicts.LOCAL_CONFIRMED, result.getFinalDecision());
+        assertTrue(result.isConfirmedVulnerability());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Manual reject should always win over local finding")
+    void testManualRejectedVerdict() {
+        VerificationResult result = new VerificationResult();
+        result.setPhase("Finding");
+        result.setAttackTypeName("SQLI");
+        result.setParameter("id");
+        result.setFindingGenerated(true);
+        result.setFindingConfidenceRaw(0.88);
+        result.setFindingThreshold(0.55);
+        result.setLocalMatched(true);
+        result.setManualConfirmedOverride(Boolean.FALSE);
+
+        FinalVerdicts.recompute(result);
+
+        assertEquals(FinalVerdicts.MANUAL_REJECTED, result.getFinalDecision());
+        assertFalse(result.isConfirmedVulnerability());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Below-threshold finding should not become effective")
+    void testBelowThresholdFindingVerdict() {
+        VerificationResult result = new VerificationResult();
+        result.setPhase("Finding");
+        result.setAttackTypeName("SQLI");
+        result.setParameter("id");
+        result.setFindingGenerated(true);
+        result.setFindingConfidenceRaw(0.42);
+        result.setFindingThreshold(0.55);
+        result.setLocalMatched(true);
+        result.setReviewStatus(ReviewStatus.PENDING);
+
+        FinalVerdicts.recompute(result);
+
+        assertEquals(FinalVerdicts.BELOW_THRESHOLD, result.getFinalDecision());
+        assertFalse(result.isConfirmedVulnerability());
+    }
+
+    @Test
+    @Order(42)
+    @DisplayName("Workflow context keeps original baseline request and response")
+    void testWorkflowContextCarriesBaselineArtifacts() {
+        HTTPContext httpContext = new HTTPContext();
+        httpContext.setRawRequest("GET /demo HTTP/1.1\r\nHost: example.test\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+        httpContext.setRawResponse("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nok".getBytes(StandardCharsets.UTF_8));
+
+        CandidateParameter candidate = new CandidateParameter();
+        candidate.setParameterName("id");
+        candidate.setAttackType(AttackType.SQLI);
+
+        WorkflowContext workflowContext = new WorkflowContext(httpContext, candidate);
+
+        assertArrayEquals(httpContext.getRawRequest(), workflowContext.getBaselineRequest());
+        assertArrayEquals(httpContext.getRawResponse(), workflowContext.getBaselineResponse());
     }
 
     @Test

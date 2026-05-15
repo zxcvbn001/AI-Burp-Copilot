@@ -5,6 +5,7 @@ import com.aiburpcopilot.core.context.HTTPContext;
 import com.aiburpcopilot.core.context.ParameterContext;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.model.CandidateParameter;
+import com.aiburpcopilot.core.verification.model.ExchangeRecord;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
 import com.aiburpcopilot.core.verification.model.StepResult;
 import com.aiburpcopilot.core.verification.policy.IPolicyEngine;
@@ -25,7 +26,11 @@ import com.aiburpcopilot.utils.PluginLogger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class GenericProbeStep implements VerificationStep {
 
@@ -111,14 +116,36 @@ public class GenericProbeStep implements VerificationStep {
                 ? context.getPolicyEngine()
                 : policyEngine;
 
-        List<ProbeDefinition> probes = probeRuleEngine.getProbes(attackTypeName).stream()
+        String candidateValueType = context.getParameterProfile() != null && context.getParameterProfile().getDetectedType() != null
+                ? context.getParameterProfile().getDetectedType().toUpperCase()
+                : ParameterProfile.TYPE_UNKNOWN;
+        List<ProbeDefinition> enabledProbes = probeRuleEngine.getProbes(attackTypeName).stream()
                 .filter(ProbeDefinition::isEnabledByDefault)
-                .filter(probe -> isAllowedByPolicy(probe, effectivePolicy))
-                .filter(probe -> isApplicableToParameter(probe, httpContext, candidate, context.getParameterProfile()))
-                .sorted(Comparator.comparingInt(ProbeDefinition::getPriority))
+                .sorted(Comparator
+                        .comparingInt((ProbeDefinition probe) -> valueTypePriority(probe, candidateValueType))
+                        .thenComparingInt(ProbeDefinition::getPriority))
                 .toList();
+        List<ProbeDefinition> probes = new ArrayList<>();
+        List<String> rejectedReasons = new ArrayList<>();
+        for (ProbeDefinition probe : enabledProbes) {
+            String rejectReason = policyRejectReason(probe, effectivePolicy);
+            if (rejectReason == null) {
+                rejectReason = applicabilityRejectReason(probe, httpContext, candidate);
+            }
+            if (rejectReason == null) {
+                probes.add(probe);
+            } else {
+                rejectedReasons.add(probe.getId() + ": " + rejectReason);
+            }
+        }
         if (probes.isEmpty()) {
-            return StepResult.softFail(name, "No applicable probe rules for " + attackTypeName);
+            String paramType = candidate.getParameterType() != null
+                    ? candidate.getParameterType().toUpperCase()
+                    : findParameterType(httpContext, candidate.getParameterName());
+            return StepResult.softFail(name, "No applicable probe rules for " + attackTypeName
+                    + " | paramType=" + (paramType != null ? paramType : "UNKNOWN")
+                    + " | valueType=" + candidateValueType
+                    + (rejectedReasons.isEmpty() ? "" : " | rejected=" + rejectedReasons));
         }
 
         byte[] baseline = context.getBaselineResponse();
@@ -133,6 +160,9 @@ public class GenericProbeStep implements VerificationStep {
         result.setStepName(name);
         result.setPhase("Payload Verification");
         result.setContinueWorkflow(true);
+        result.setBaselineRequestBytes(context.getBaselineRequest());
+        result.setBaselineResponseBytes(baseline);
+        result.setDedupKey(buildProbeDedupKey(httpContext, candidate, null));
 
         int tested = 0;
         int matched = 0;
@@ -143,6 +173,7 @@ public class GenericProbeStep implements VerificationStep {
         StringBuilder transcript = new StringBuilder();
         int exchangeIndex = 1;
 
+        Set<String> seenExecutions = new LinkedHashSet<>();
         for (ProbeDefinition probe : probes) {
             if (tested >= maxReplayRequests) {
                 result.setContinueWorkflow(false);
@@ -153,7 +184,8 @@ public class GenericProbeStep implements VerificationStep {
                     httpContext,
                     candidate.getParameterName(),
                     probe,
-                    maxReplayRequests - tested);
+                    maxReplayRequests - tested,
+                    seenExecutions);
             tested += executions.size();
             if (executions.isEmpty()) {
                 continue;
@@ -161,6 +193,7 @@ public class GenericProbeStep implements VerificationStep {
 
             for (ProbeExecution execution : executions) {
                 appendExchange(transcript, exchangeIndex++, probe, execution);
+                result.addExchangeRecord(buildExchangeRecord(context, probe, execution));
             }
 
             ProbeExecution last = executions.get(executions.size() - 1);
@@ -169,21 +202,33 @@ public class GenericProbeStep implements VerificationStep {
             result.setPayload(last.getValue());
             result.setResponseLength(last.getResponseBytes() != null ? last.getResponseBytes().length : 0);
             result.setStrategyName(probe.getStrategyName());
+            result.setDedupKey(buildProbeDedupKey(httpContext, candidate, probe));
             if (probe.getStrategy() != null) {
                 result.setStrategyType(probe.getStrategy());
             }
 
             OracleResult oracle = oracleEngine.evaluate(probe, baseline, baselineDuration, executions);
+            markMatchedExchangeRecords(result, oracle);
             if (probe.isRequiresLlmReview() && !oracle.isLlmAvailable()) {
-                oracle.setMatched(false);
-                oracle.setConfidence(0.0);
-                oracle.setReasoning("该规则要求 LLM 二次研判，但当前 LLM 不可用或研判失败。");
+                String existingReasoning = oracle.getReasoning();
+                String degradedReasoning = "LLM review unavailable, fallback to local oracle";
+                if (existingReasoning != null && !existingReasoning.isBlank()) {
+                    degradedReasoning += " | local=" + existingReasoning;
+                }
+                oracle.setReasoning(degradedReasoning);
+                if (oracle.getLlmReview() == null || oracle.getLlmReview().isBlank()) {
+                    oracle.setLlmReview("LLM review unavailable, kept local oracle result.");
+                }
             }
             if (oracle.getDiffResult() != null) {
                 result.setDiffResult(oracle.getDiffResult());
             }
             if (oracle.getLlmReview() != null && !oracle.getLlmReview().isBlank()) {
                 result.setLlmReview(oracle.getLlmReview());
+            }
+            result.setLocalMatched(result.isLocalMatched() || oracle.isLocalMatched());
+            if (oracle.getLlmMatched() != null) {
+                result.setLlmMatched(oracle.getLlmMatched());
             }
             if (oracle.isMatched()) {
                 matched++;
@@ -199,18 +244,19 @@ public class GenericProbeStep implements VerificationStep {
         result.setSuccess(matched > 0);
         result.setConfidence(combinedConfidence);
         result.setExchangeTranscript(transcript.toString());
-        result.setReasoning("漏洞类型聚合探测：" + attackTypeName
-                + "，规则数=" + probes.size()
-                + "，请求数=" + tested
-                + "，命中证据=" + matched
-                + "，置信度=" + String.format("%.2f", combinedConfidence));
+        result.setDecision(matched > 0 ? "MATCHED" : "NO_MATCH");
+        result.setReasoning("Probe aggregation: " + attackTypeName
+                + ", rules=" + probes.size()
+                + ", requests=" + tested
+                + ", matchedEvidence=" + matched
+                + ", confidence=" + String.format("%.4f", combinedConfidence));
 
         PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, name,
                 "Completed: attackType=" + attackTypeName
                         + " param='" + candidate.getParameterName()
                         + "' requests=" + tested
                         + " matched=" + matched
-                        + " confidence=" + String.format("%.2f", combinedConfidence));
+                        + " confidence=" + String.format("%.4f", combinedConfidence));
         return result;
     }
 
@@ -218,7 +264,8 @@ public class GenericProbeStep implements VerificationStep {
                                               HTTPContext httpContext,
                                               String parameterName,
                                               ProbeDefinition probe,
-                                              int remainingRequests) {
+                                              int remainingRequests,
+                                              Set<String> seenExecutions) {
         List<ProbeExecution> executions = new ArrayList<>();
         int maxRequests = Math.min(Math.max(1, probe.getMaxRequests()), Math.max(0, remainingRequests));
         if (maxRequests <= 0) {
@@ -230,7 +277,7 @@ public class GenericProbeStep implements VerificationStep {
                 break;
             }
             executePayload(replay, httpContext, parameterName, payload.getValue(),
-                    payload.getRole(), payload.getMutation(), probe, executions);
+                    payload.getRole(), payload.getMutation(), probe, executions, seenExecutions);
         }
 
         for (ProbePayloadPair pair : probe.getPayloadPairs()) {
@@ -238,9 +285,9 @@ public class GenericProbeStep implements VerificationStep {
                 break;
             }
             executePayload(replay, httpContext, parameterName, pair.getTrueValue(),
-                    ProbeRole.TRUE_CASE, pair.getTrueMutation(), probe, executions);
+                    ProbeRole.TRUE_CASE, pair.getTrueMutation(), probe, executions, seenExecutions);
             executePayload(replay, httpContext, parameterName, pair.getFalseValue(),
-                    ProbeRole.FALSE_CASE, pair.getFalseMutation(), probe, executions);
+                    ProbeRole.FALSE_CASE, pair.getFalseMutation(), probe, executions, seenExecutions);
         }
         return executions;
     }
@@ -252,7 +299,8 @@ public class GenericProbeStep implements VerificationStep {
                                 ProbeRole role,
                                 String mutation,
                                 ProbeDefinition probe,
-                                List<ProbeExecution> executions) {
+                                List<ProbeExecution> executions,
+                                Set<String> seenExecutions) {
         int maxPayloadLength = probe.getMaxPayloadLength() > 0
                 ? probe.getMaxPayloadLength()
                 : defaultMaxPayloadLength;
@@ -267,6 +315,10 @@ public class GenericProbeStep implements VerificationStep {
         if (mutationValue == null || DangerousPayloadFilter.isPayloadTooLong(mutationValue, maxPayloadLength)) {
             return;
         }
+        String dedupKey = buildExecutionDedupKey(httpContext, parameterName, mutationValue, role, probe);
+        if (seenExecutions != null && !seenExecutions.add(dedupKey)) {
+            return;
+        }
 
         byte[] response = shouldAppendMutation(mutation)
                 ? replay.replayWithAppendedMutation(httpContext, parameterName, payload)
@@ -279,33 +331,80 @@ public class GenericProbeStep implements VerificationStep {
                 replay.getLastReplayDurationMs()));
     }
 
-    private boolean isAllowedByPolicy(ProbeDefinition probe, IPolicyEngine policy) {
+    private String buildExecutionDedupKey(HTTPContext context,
+                                          String parameterName,
+                                          String value,
+                                          ProbeRole role,
+                                          ProbeDefinition probe) {
+        return buildProbeDedupKey(context, parameterName,
+                probe != null ? probe.getAttackTypeName() : attackTypeName,
+                probe != null ? probe.getId() : null,
+                role != null ? role.name() : null,
+                value);
+    }
+
+    private String buildProbeDedupKey(HTTPContext context,
+                                      CandidateParameter candidate,
+                                      ProbeDefinition probe) {
+        return buildProbeDedupKey(
+                context,
+                candidate != null ? candidate.getParameterName() : null,
+                candidate != null ? candidate.getAttackTypeName() : attackTypeName,
+                probe != null ? probe.getId() : null,
+                probe != null ? probe.getStrategyName() : null,
+                null);
+    }
+
+    private String buildProbeDedupKey(HTTPContext context,
+                                      String parameterName,
+                                      String attackTypeName,
+                                      String probeId,
+                                      String strategyOrRole,
+                                      String value) {
+        String method = httpContextValue(context != null ? context.getMethod() : null);
+        String path = httpContextValue(context != null ? context.getPath() : null);
+        String attack = httpContextValue(attackTypeName);
+        String parameter = httpContextValue(parameterName);
+        String probe = httpContextValue(probeId);
+        String roleOrStrategy = httpContextValue(strategyOrRole);
+        String payloadValue = httpContextValue(value);
+        return method + "|" + path + "|" + attack + "|" + parameter + "|" + probe + "|" + roleOrStrategy + "|" + payloadValue;
+    }
+
+    private String httpContextValue(String value) {
+        return value != null ? value.trim().toUpperCase() : "-";
+    }
+
+    private String policyRejectReason(ProbeDefinition probe, IPolicyEngine policy) {
         if (probe == null || policy == null || probe.getStrategyName() == null) {
-            return true;
+            return null;
         }
         String strategy = RuleKeyUtil.normalize(probe.getStrategyName());
         if ("TIME_BASED".equals(strategy) && !policy.isTimeBasedAllowed()) {
-            return false;
+            return "policy blocks TIME_BASED";
         }
         if ("UNION_BASED".equals(strategy) && !policy.isUnionBasedAllowed()) {
-            return false;
+            return "policy blocks UNION_BASED";
         }
-        return !"ERROR_BASED".equals(strategy) || policy.isErrorBasedAllowed();
+        if ("ERROR_BASED".equals(strategy) && !policy.isErrorBasedAllowed()) {
+            return "policy blocks ERROR_BASED";
+        }
+        return null;
     }
 
-    private boolean isApplicableToParameter(ProbeDefinition probe,
-                                            HTTPContext httpContext,
-                                            CandidateParameter candidate,
-                                            ParameterProfile profile) {
+    private String applicabilityRejectReason(ProbeDefinition probe,
+                                             HTTPContext httpContext,
+                                             CandidateParameter candidate) {
         if (probe == null || candidate == null) {
-            return false;
+            return "probe or candidate is null";
         }
         if (!probe.getApplicableParamTypes().isEmpty()) {
             String paramType = candidate.getParameterType() != null
                     ? candidate.getParameterType().toUpperCase()
                     : findParameterType(httpContext, candidate.getParameterName());
             if (paramType == null || !probe.getApplicableParamTypes().contains(paramType)) {
-                return false;
+                return "paramType mismatch: " + (paramType != null ? paramType : "UNKNOWN")
+                        + " not in " + probe.getApplicableParamTypes();
             }
         }
         if (!probe.getHttpMethods().isEmpty()) {
@@ -313,16 +412,18 @@ public class GenericProbeStep implements VerificationStep {
                     ? httpContext.getMethod().toUpperCase()
                     : "";
             if (!probe.getHttpMethods().contains(method)) {
-                return false;
+                return "httpMethod mismatch: " + method + " not in " + probe.getHttpMethods();
             }
         }
-        if (!probe.getValueTypes().isEmpty()) {
-            String valueType = profile != null && profile.getDetectedType() != null
-                    ? profile.getDetectedType().toUpperCase()
-                    : ParameterProfile.TYPE_UNKNOWN;
-            return probe.getValueTypes().contains(valueType);
+        return null;
+    }
+
+    private int valueTypePriority(ProbeDefinition probe, String candidateValueType) {
+        if (probe == null || probe.getValueTypes() == null || probe.getValueTypes().isEmpty()) {
+            return 1;
         }
-        return true;
+        String normalizedValueType = candidateValueType != null ? candidateValueType : ParameterProfile.TYPE_UNKNOWN;
+        return probe.getValueTypes().contains(normalizedValueType) ? 0 : 1;
     }
 
     private boolean isStrongEnoughToStop(ProbeDefinition probe, OracleResult oracle) {
@@ -411,7 +512,70 @@ public class GenericProbeStep implements VerificationStep {
                 .append("\n\n");
     }
 
+    private ExchangeRecord buildExchangeRecord(WorkflowContext context,
+                                               ProbeDefinition probe,
+                                               ProbeExecution execution) {
+        ExchangeRecord record = new ExchangeRecord();
+        record.setExchangeKey(oracleEngine.buildEvidenceKey(probe, execution));
+        record.setSourceStep(name);
+        record.setProbeId(probe != null ? probe.getId() : null);
+        record.setRole(execution.getRole());
+        record.setPayload(execution.getValue());
+        record.setMatched(false);
+        record.setConfidence(0.0);
+        record.setDescription("No local oracle match for this execution.");
+        record.setDiffDescription(null);
+        record.setRequestBytes(execution.getRequestBytes());
+        record.setResponseBytes(execution.getResponseBytes());
+        record.setBaselineRequestBytes(context != null ? context.getBaselineRequest() : null);
+        record.setBaselineResponseBytes(context != null ? context.getBaselineResponse() : null);
+        return record;
+    }
+
+    private void markMatchedExchangeRecords(StepResult result, OracleResult oracle) {
+        if (result == null || oracle == null || result.getExchangeRecords() == null || result.getExchangeRecords().isEmpty()) {
+            return;
+        }
+        Map<String, List<ExchangeRecord>> grouped = new HashMap<>();
+        for (ExchangeRecord record : result.getExchangeRecords()) {
+            if (record == null) {
+                continue;
+            }
+            grouped.computeIfAbsent(record.getExchangeKey(), ignored -> new ArrayList<>()).add(record);
+        }
+        if (oracle.getEvidences() == null) {
+            return;
+        }
+        for (var evidence : oracle.getEvidences()) {
+            if (evidence == null || evidence.getEvidenceKey() == null) {
+                continue;
+            }
+            List<ExchangeRecord> records = grouped.get(evidence.getEvidenceKey());
+            if (records == null || records.isEmpty()) {
+                continue;
+            }
+            for (ExchangeRecord record : records) {
+                record.setMatched(true);
+                record.setEvidenceType(evidence.getEvidenceType());
+                record.setConfidence(evidence.getConfidence());
+                record.setDescription(evidence.getDescription());
+                record.setDiffDescription(evidence.getDiffDescription());
+                if (isEmpty(record.getBaselineRequestBytes())) {
+                    record.setBaselineRequestBytes(evidence.getBaselineRequest());
+                }
+                if (isEmpty(record.getBaselineResponseBytes())) {
+                    record.setBaselineResponseBytes(evidence.getOriginalResponse());
+                }
+            }
+        }
+    }
+
     private String bytesToText(byte[] bytes) {
         return bytes == null || bytes.length == 0 ? "" : new String(bytes, StandardCharsets.UTF_8);
     }
+
+    private boolean isEmpty(byte[] bytes) {
+        return bytes == null || bytes.length == 0;
+    }
 }
+

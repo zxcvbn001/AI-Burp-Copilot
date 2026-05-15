@@ -3,7 +3,9 @@ package com.aiburpcopilot.burp.ui;
 import burp.api.montoya.MontoyaApi;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.pipeline.HistoryEventBus;
-import com.aiburpcopilot.core.verification.model.ReviewStatus;
+import com.aiburpcopilot.core.verification.model.Evidence;
+import com.aiburpcopilot.core.verification.model.ExchangeRecord;
+import com.aiburpcopilot.core.verification.model.FinalVerdicts;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 
 import javax.swing.*;
@@ -13,26 +15,33 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumnModel;
 import java.awt.*;
 import java.text.SimpleDateFormat;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class VerificationPanel extends JPanel {
 
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
+    private static final String EMPTY_DIFF_TEXT = "暂无差异分析。\n可能是请求超时、重放失败，或没有捕获到响应。";
+
     private final MontoyaApi api;
     private final IHistoryService historyService;
     private final JTable table;
     private final VerificationTableModel tableModel;
+    private final JList<ExchangeItem> exchangeList;
+    private final DefaultListModel<ExchangeItem> exchangeListModel;
     private final BurpMessageViewer.RequestView requestViewer;
     private final BurpMessageViewer.ResponseView responseViewer;
-    private final JTextArea exchangeArea;
+    private final BurpMessageViewer.ResponseView baselineViewer;
     private final JTextArea diffArea;
     private final JTextArea reasoningArea;
-    private final JTabbedPane detailTabs;
     private final JLabel statusLabel;
-    private String displayedKey;
+    private final JLabel exchangeHintLabel;
+    private final JLabel exchangeTitleLabel;
+    private final JTabbedPane detailTabs;
+    private String displayedWorkflowKey;
     private boolean refreshing;
 
     public VerificationPanel(MontoyaApi api, IHistoryService historyService) {
@@ -40,20 +49,21 @@ public class VerificationPanel extends JPanel {
         this.historyService = historyService;
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(10, 10, 10, 10));
+
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
-        JButton refreshBtn = new JButton("\u5237\u65b0");
+        JButton refreshBtn = new JButton("刷新");
         refreshBtn.addActionListener(e -> refresh());
         toolbar.add(refreshBtn);
 
-        JButton confirmBtn = new JButton("\u786e\u8ba4\u6709\u6548\u6f0f\u6d1e");
+        JButton confirmBtn = new JButton("确认有效漏洞");
         confirmBtn.addActionListener(e -> setSelectedConfirmed(true));
         toolbar.add(confirmBtn);
 
-        JButton unconfirmBtn = new JButton("\u53d6\u6d88\u786e\u8ba4");
+        JButton unconfirmBtn = new JButton("取消确认");
         unconfirmBtn.addActionListener(e -> setSelectedConfirmed(false));
         toolbar.add(unconfirmBtn);
 
-        statusLabel = new JLabel("\u9a8c\u8bc1\u7ed3\u679c: 0");
+        statusLabel = new JLabel("验证结果: 0");
         toolbar.add(Box.createHorizontalStrut(20));
         toolbar.add(statusLabel);
         add(toolbar, BorderLayout.NORTH);
@@ -66,44 +76,54 @@ public class VerificationPanel extends JPanel {
         UiUtil.applyBurpFont(table);
 
         TableColumnModel colModel = table.getColumnModel();
-        UiUtil.setScaledMinimumColumnWidths(table,
-                70,   // Time
-                160,  // Attack Type
-                100,  // Parameter
-                90,   // Phase
-                130,  // Strategy
-                70,   // Status
-                85,   // Risk
-                70,   // Evidence
-                75,   // Confidence
-                65);  // Confirmed
+        UiUtil.setScaledMinimumColumnWidths(table, 70, 160, 100, 90, 130, 70, 85, 70, 75, 65);
         colModel.getColumn(8).setCellRenderer(new ConfidenceRenderer());
+
+        exchangeListModel = new DefaultListModel<>();
+        exchangeList = new JList<>(exchangeListModel);
+        exchangeList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        exchangeList.setCellRenderer(new ExchangeItemRenderer());
+        UiUtil.applyBurpLabelFont(exchangeList);
 
         requestViewer = new BurpMessageViewer.RequestView(api);
         responseViewer = new BurpMessageViewer.ResponseView(api);
-        exchangeArea = UiUtil.createMessageArea();
+        baselineViewer = new BurpMessageViewer.ResponseView(api);
         diffArea = UiUtil.createMessageArea();
         reasoningArea = UiUtil.createMessageArea();
+        exchangeHintLabel = new JLabel("未选择交换记录");
 
         detailTabs = new JTabbedPane();
         UiUtil.applyBurpFont(detailTabs);
-        detailTabs.addTab("\u8bf7\u6c42", requestViewer);
-        detailTabs.addTab("\u54cd\u5e94", responseViewer);
-        detailTabs.addTab("\u5b8c\u6574\u8fc7\u7a0b", UiUtil.searchableTextPanel(exchangeArea));
-        detailTabs.addTab("\u5dee\u5f02\u6458\u8981", UiUtil.searchableTextPanel(diffArea));
-        detailTabs.addTab("\u5224\u65ad\u4f9d\u636e", UiUtil.searchableTextPanel(reasoningArea));
+        detailTabs.addTab("请求", requestViewer);
+        detailTabs.addTab("响应", responseViewer);
+        detailTabs.addTab("基线响应", baselineViewer);
+        detailTabs.addTab("差异摘要", UiUtil.searchableTextPanel(diffArea));
+        detailTabs.addTab("判断依据", UiUtil.searchableTextPanel(reasoningArea));
 
-        JSplitPane splitPane = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                new JScrollPane(table),
-                detailTabs);
-        splitPane.setResizeWeight(0.35);
-        splitPane.setDividerLocation(200);
-        add(splitPane, BorderLayout.CENTER);
+        JPanel exchangePanel = new JPanel(new BorderLayout(0, 6));
+        exchangePanel.setBorder(new EmptyBorder(6, 6, 6, 6));
+        exchangeTitleLabel = new JLabel("请求 / 响应执行记录");
+        exchangePanel.add(exchangeTitleLabel, BorderLayout.NORTH);
+        exchangePanel.add(new JScrollPane(exchangeList), BorderLayout.CENTER);
+        exchangePanel.add(exchangeHintLabel, BorderLayout.SOUTH);
+
+        JSplitPane lowerSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, exchangePanel, detailTabs);
+        lowerSplit.setResizeWeight(0.24);
+        lowerSplit.setDividerLocation(260);
+
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(table), lowerSplit);
+        mainSplit.setResizeWeight(0.34);
+        mainSplit.setDividerLocation(220);
+        add(mainSplit, BorderLayout.CENTER);
 
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
-                updateDetail();
+                updateWorkflowDetail();
+            }
+        });
+        exchangeList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting() && !refreshing) {
+                updateExchangeDetail();
             }
         });
 
@@ -112,52 +132,79 @@ public class VerificationPanel extends JPanel {
 
     public void refresh() {
         SwingUtilities.invokeLater(() -> {
-            String selectedKey = selectedKey();
+            String selectedKey = selectedWorkflowKey();
+            String selectedExchangeKey = selectedExchangeKey();
             int selectedTab = detailTabs.getSelectedIndex();
             refreshing = true;
             List<VerificationUiSupport.ResultRow> rows = collectWorkflowRows();
             tableModel.setRows(rows);
-            statusLabel.setText("\u9a8c\u8bc1\u7ed3\u679c: " + rows.size());
-            restoreSelection(selectedKey);
+            statusLabel.setText("验证结果: " + rows.size());
+            restoreWorkflowSelection(selectedKey);
             if (selectedTab >= 0 && selectedTab < detailTabs.getTabCount()) {
                 detailTabs.setSelectedIndex(selectedTab);
             }
             refreshing = false;
-            if (displayedKey == null || selectedKey == null || !selectedKey.equals(selectedKey())) {
-                updateDetail();
-            }
+            updateWorkflowDetail();
+            restoreExchangeSelection(selectedExchangeKey);
         });
     }
 
-    private void updateDetail() {
+    private void updateWorkflowDetail() {
         VerificationUiSupport.ResultRow row = tableModel.getRowAt(table.getSelectedRow());
         if (row == null) {
-            displayedKey = null;
-            requestViewer.setBytes(null);
-            responseViewer.setBytes(null);
-            exchangeArea.setText("");
-            diffArea.setText("\u6682\u65e0\u5dee\u5f02\u5206\u6790\u3002\n\u53ef\u80fd\u662f\u8bf7\u6c42\u8d85\u65f6\u3001\u91cd\u653e\u5931\u8d25\uff0c\u6216\u6ca1\u6709\u6355\u83b7\u5230\u54cd\u5e94\u3002");
+            displayedWorkflowKey = null;
+            exchangeTitleLabel.setText("请求 / 响应执行记录");
+            exchangeListModel.clear();
+            clearExchangeDetail(EMPTY_DIFF_TEXT);
             reasoningArea.setText("");
+            exchangeHintLabel.setText("未选择交换记录");
             return;
         }
 
         VerificationResult result = row.result();
-        String currentKey = VerificationUiSupport.workflowKey(row.entry(), result);
-        boolean sameRow = currentKey.equals(displayedKey);
-        int[] positions = sameRow ? captureCaretPositions() : null;
-        requestViewer.setBytes(result.getMutatedRequestBytes());
-        responseViewer.setBytes(result.getMutatedResponseBytes());
-        updateExchangeTab(result);
-        updateDiffTab(result);
-        updateReasoningTab(result);
-        displayedKey = currentKey;
-        if (sameRow) {
-            restoreCaretPositions(positions);
-        } else {
-            diffArea.setCaretPosition(0);
-            exchangeArea.setCaretPosition(0);
-            reasoningArea.setCaretPosition(0);
+        displayedWorkflowKey = VerificationUiSupport.workflowKey(row.entry(), result);
+        reasoningArea.setText(buildReasoningText(result));
+        reasoningArea.setCaretPosition(0);
+
+        List<ExchangeItem> items = buildExchangeItems(collectWorkflowResults(displayedWorkflowKey), result);
+        exchangeListModel.clear();
+        for (ExchangeItem item : items) {
+            exchangeListModel.addElement(item);
         }
+        long matchedCount = items.stream().filter(ExchangeItem::matched).count();
+        exchangeTitleLabel.setText(items.isEmpty()
+                ? "请求 / 响应执行记录"
+                : "请求 / 响应执行记录（命中 " + matchedCount + " / " + items.size() + "）");
+        exchangeHintLabel.setText(items.isEmpty()
+                ? "当前结果没有可展示的请求 / 响应"
+                : "共 " + items.size() + " 条执行记录，选中后右侧显示详情");
+        if (!items.isEmpty()) {
+            exchangeList.setSelectedIndex(0);
+        } else {
+            clearExchangeDetail(EMPTY_DIFF_TEXT);
+        }
+    }
+
+    private void updateExchangeDetail() {
+        ExchangeItem item = exchangeList.getSelectedValue();
+        if (item == null) {
+            clearExchangeDetail(EMPTY_DIFF_TEXT);
+            return;
+        }
+        requestViewer.setBytes(item.requestBytes());
+        responseViewer.setBytes(item.responseBytes());
+        baselineViewer.setBytes(item.baselineResponseBytes());
+        diffArea.setText(item.diffText());
+        diffArea.setCaretPosition(0);
+        exchangeHintLabel.setText(item.hint());
+    }
+
+    private void clearExchangeDetail(String diffText) {
+        requestViewer.setBytes(null);
+        responseViewer.setBytes(null);
+        baselineViewer.setBytes(null);
+        diffArea.setText(diffText);
+        diffArea.setCaretPosition(0);
     }
 
     private List<VerificationUiSupport.ResultRow> collectWorkflowRows() {
@@ -176,50 +223,207 @@ public class VerificationPanel extends JPanel {
         return List.copyOf(grouped.values());
     }
 
+    private List<VerificationResult> collectWorkflowResults(String workflowKey) {
+        if (workflowKey == null || workflowKey.isBlank()) {
+            return List.of();
+        }
+        List<VerificationResult> results = new ArrayList<>();
+        for (VerificationUiSupport.ResultRow row : VerificationUiSupport.collectRows(historyService)) {
+            VerificationResult result = row.result();
+            if (result == null || VerificationUiSupport.isInfluence(result)) {
+                continue;
+            }
+            if (workflowKey.equals(VerificationUiSupport.workflowKey(row.entry(), result))) {
+                results.add(result);
+            }
+        }
+        return results;
+    }
+
     private boolean isBetterWorkflowRepresentative(VerificationResult candidate, VerificationResult current) {
-        if (candidate == null) {
-            return false;
-        }
-        if (current == null) {
-            return true;
-        }
-        boolean candidateFinding = "Finding".equalsIgnoreCase(candidate.getPhase());
-        boolean currentFinding = "Finding".equalsIgnoreCase(current.getPhase());
-        if (candidateFinding != currentFinding) {
-            return candidateFinding;
-        }
-        boolean candidateHasTranscript = hasText(candidate.getExchangeTranscript());
-        boolean currentHasTranscript = hasText(current.getExchangeTranscript());
-        if (candidateHasTranscript != currentHasTranscript) {
-            return candidateHasTranscript;
-        }
-        return candidate.getConfidence() > current.getConfidence();
+        return VerificationUiSupport.isBetterWorkflowRepresentative(candidate, current);
     }
 
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
-
-    private void updateExchangeTab(VerificationResult result) {
-        if (hasText(result.getExchangeTranscript())) {
-            exchangeArea.setText(result.getExchangeTranscript());
-        } else {
-            exchangeArea.setText("\u8be5\u7ed3\u679c\u6ca1\u6709\u5b8c\u6574\u8fc7\u7a0b\u8bb0\u5f55\u3002");
+    private List<ExchangeItem> buildExchangeItems(List<VerificationResult> groupedResults, VerificationResult selectedResult) {
+        List<ExchangeItem> items = new ArrayList<>();
+        Map<String, ExchangeItem> dedup = new LinkedHashMap<>();
+        int index = 1;
+        for (VerificationResult result : groupedResults) {
+            List<ExchangeRecord> records = result.getExchangeRecords() != null ? result.getExchangeRecords() : List.of();
+            for (ExchangeRecord record : records) {
+                if (record == null) {
+                    continue;
+                }
+                byte[] request = record.getRequestBytes();
+                byte[] response = record.getResponseBytes();
+                byte[] baselineResponse = firstNonEmpty(record.getBaselineResponseBytes(), selectedResult.getBaselineResponseBytes());
+                if (isEmpty(request) && isEmpty(response) && isEmpty(baselineResponse)) {
+                    continue;
+                }
+                String key = record.getExchangeKey() != null && !record.getExchangeKey().isBlank()
+                        ? record.getExchangeKey()
+                        : "exchange-" + index;
+                ExchangeItem candidate = new ExchangeItem(
+                        key,
+                        buildExchangeTitle(index, record),
+                        buildExchangeHint(index, record),
+                        request,
+                        response,
+                        baselineResponse,
+                        buildExchangeDiffText(record, index),
+                        record.isMatched());
+                ExchangeItem existing = dedup.get(key);
+                if (existing == null || (!existing.matched() && candidate.matched())) {
+                    dedup.put(key, candidate);
+                }
+                index++;
+            }
         }
+        items.addAll(dedup.values());
+        if (!items.isEmpty()) {
+            return items;
+        }
+
+        List<Evidence> evidences = selectedResult.getEvidences() != null ? selectedResult.getEvidences() : List.of();
+        int evidenceIndex = 1;
+        for (Evidence evidence : evidences) {
+            byte[] request = firstNonEmpty(evidence.getMutatedRequest(), evidence.getRequest());
+            byte[] response = evidence.getMutatedResponse();
+            byte[] baseline = evidence.getOriginalResponse();
+            if (isEmpty(request) && isEmpty(response) && isEmpty(baseline)) {
+                continue;
+            }
+            items.add(new ExchangeItem(
+                    "evidence-" + evidenceIndex,
+                    "Request " + evidenceIndex + " / Response " + evidenceIndex + " | 命中",
+                    buildEvidenceHint(evidenceIndex, evidence),
+                    request,
+                    response,
+                    baseline,
+                    buildEvidenceDiffText(selectedResult, evidence, evidenceIndex),
+                    true));
+            evidenceIndex++;
+        }
+        if (items.isEmpty() && (!isEmpty(selectedResult.getMutatedRequestBytes()) || !isEmpty(selectedResult.getMutatedResponseBytes()))) {
+            items.add(new ExchangeItem(
+                    "fallback-1",
+                    "Request 1 / Response 1 | 未标记命中",
+                    "当前结果未拆分到执行级记录，显示步骤级请求 / 响应",
+                    firstNonEmpty(selectedResult.getMutatedRequestBytes(), selectedResult.getBaselineRequestBytes()),
+                    selectedResult.getMutatedResponseBytes(),
+                    selectedResult.getBaselineResponseBytes(),
+                    buildFallbackDiffText(selectedResult),
+                    false));
+        }
+        return items;
     }
 
-    private void updateDiffTab(VerificationResult result) {
+    private String buildExchangeTitle(int index, ExchangeRecord record) {
+        StringBuilder title = new StringBuilder();
+        title.append("Request ").append(index).append(" / Response ").append(index);
+        title.append(record.isMatched() ? " | 命中" : " | 未命中");
+        if (record.getProbeId() != null && !record.getProbeId().isBlank()) {
+            title.append(" | ").append(record.getProbeId());
+        }
+        if (record.getRole() != null) {
+            title.append(" | ").append(record.getRole().name());
+        }
+        return title.toString();
+    }
+
+    private String buildExchangeHint(int index, ExchangeRecord record) {
+        StringBuilder hint = new StringBuilder();
+        hint.append(record.isMatched() ? "命中记录 " : "执行记录 ").append(index);
+        if (record.getEvidenceType() != null && !record.getEvidenceType().isBlank()) {
+            hint.append(" | ").append(record.getEvidenceType());
+        }
+        hint.append(" | conf=").append(String.format("%.2f", record.getConfidence()));
+        if (record.getDescription() != null && !record.getDescription().isBlank()) {
+            hint.append(" | ").append(record.getDescription());
+        }
+        return hint.toString();
+    }
+
+    private String buildExchangeDiffText(ExchangeRecord record, int index) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== 执行记录 ").append(index).append(" ===\n\n");
+        sb.append("命中状态: ").append(record.isMatched() ? "命中" : "未命中").append("\n");
+        if (record.getProbeId() != null && !record.getProbeId().isBlank()) {
+            sb.append("Probe: ").append(record.getProbeId()).append("\n");
+        }
+        if (record.getRole() != null) {
+            sb.append("Role: ").append(record.getRole().name()).append("\n");
+        }
+        if (record.getPayload() != null && !record.getPayload().isBlank()) {
+            sb.append("Payload: ").append(record.getPayload()).append("\n");
+        }
+        sb.append("Confidence: ").append(String.format("%.2f", record.getConfidence())).append("\n");
+        if (record.getEvidenceType() != null && !record.getEvidenceType().isBlank()) {
+            sb.append("EvidenceType: ").append(record.getEvidenceType()).append("\n");
+        }
+        if (record.getDescription() != null && !record.getDescription().isBlank()) {
+            sb.append("Description: ").append(record.getDescription()).append("\n");
+        }
+        if (record.getDiffDescription() != null && !record.getDiffDescription().isBlank()) {
+            sb.append("Diff: ").append(record.getDiffDescription()).append("\n");
+        } else if (!record.isMatched()) {
+            sb.append("Diff: 本次执行未命中本地证据规则。\n");
+        }
+        if (!isEmpty(record.getBaselineResponseBytes())) {
+            sb.append("\n已附带 baseline response，可在右侧对照。\n");
+        }
+        return sb.toString();
+    }
+
+    private String buildEvidenceHint(int index, Evidence evidence) {
+        StringBuilder hint = new StringBuilder();
+        hint.append("命中记录 ").append(index);
+        if (evidence.getEvidenceType() != null && !evidence.getEvidenceType().isBlank()) {
+            hint.append(" | ").append(evidence.getEvidenceType());
+        }
+        hint.append(" | conf=").append(String.format("%.2f", evidence.getConfidence()));
+        if (evidence.getDescription() != null && !evidence.getDescription().isBlank()) {
+            hint.append(" | ").append(evidence.getDescription());
+        }
+        return hint.toString();
+    }
+
+    private String buildEvidenceDiffText(VerificationResult result, Evidence evidence, int index) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== 交换记录 ").append(index).append(" ===\n\n");
+        if (evidence.getEvidenceType() != null) {
+            sb.append("证据类型: ").append(evidence.getEvidenceType()).append("\n");
+        }
+        sb.append("证据置信度: ").append(String.format("%.2f", evidence.getConfidence())).append("\n");
+        if (evidence.getDescription() != null && !evidence.getDescription().isBlank()) {
+            sb.append("证据说明: ").append(evidence.getDescription()).append("\n");
+        }
+        if (evidence.getDiffDescription() != null && !evidence.getDiffDescription().isBlank()) {
+            sb.append("差异说明: ").append(evidence.getDiffDescription()).append("\n");
+        }
+        if (!isEmpty(evidence.getOriginalResponse())) {
+            sb.append("已携带基线响应，可与当前响应对照。\n");
+        }
+        if (!isEmpty(evidence.getBaselineRequest())) {
+            sb.append("已携带基线请求，可与变异请求对照。\n");
+        }
+        if (evidence.getBaselineSummary() != null && !evidence.getBaselineSummary().isBlank()) {
+            sb.append("基线摘要: ").append(evidence.getBaselineSummary()).append("\n");
+        }
         if (result.getDiffResult() != null) {
-            diffArea.setText(VerificationUiSupport.formatDiffChinese(result.getDiffResult(), result.getResponseTimeMs()));
-        } else {
-            diffArea.setText("\u6682\u65e0\u5dee\u5f02\u5206\u6790\u3002\n\u53ef\u80fd\u662f\u8bf7\u6c42\u8d85\u65f6\u3001\u91cd\u653e\u5931\u8d25\uff0c\u6216\u6ca1\u6709\u6355\u83b7\u5230\u54cd\u5e94\u3002");
+            sb.append("\n").append(VerificationUiSupport.formatDiffChinese(result.getDiffResult(), result.getResponseTimeMs()));
         }
-        if (displayedKey == null) {
-            diffArea.setCaretPosition(0);
-        }
+        return sb.toString();
     }
 
-    private void updateReasoningTab(VerificationResult result) {
+    private String buildFallbackDiffText(VerificationResult result) {
+        if (result.getDiffResult() != null) {
+            return VerificationUiSupport.formatDiffChinese(result.getDiffResult(), result.getResponseTimeMs());
+        }
+        return EMPTY_DIFF_TEXT;
+    }
+
+    private String buildReasoningText(VerificationResult result) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== Confidence: ").append(String.format("%.2f", result.getConfidence()));
         if (result.getRiskLevel() != null) {
@@ -227,43 +431,131 @@ public class VerificationPanel extends JPanel {
         }
         sb.append(" ===\n\n");
         sb.append(result.getReasoning() != null ? result.getReasoning() : "N/A");
-        reasoningArea.setText(sb.toString());
-        if (displayedKey == null) {
-            reasoningArea.setCaretPosition(0);
+        sb.append("\n\n=== Finding Aggregation ===\n");
+        sb.append("generated=").append(result.isFindingGenerated()).append("\n");
+        sb.append("rawConfidence=").append(String.format("%.4f", result.getFindingConfidenceRaw())).append("\n");
+        if (result.getFindingThreshold() > 0) {
+            sb.append("threshold=").append(String.format("%.4f", result.getFindingThreshold())).append("\n");
         }
+        sb.append("finalDecision=").append(result.getFinalDecision() != null ? result.getFinalDecision() : "-").append("\n");
+        sb.append("localMatched=").append(result.isLocalMatched()).append("\n");
+        sb.append("llmMatched=").append(result.getLlmMatched() != null ? result.getLlmMatched() : "null").append("\n");
+        sb.append("manualOverride=").append(result.getManualConfirmedOverride() != null ? result.getManualConfirmedOverride() : "null").append("\n");
+        if (result.getFindingDecisionReason() != null && !result.getFindingDecisionReason().isBlank()) {
+            sb.append("decision=").append(result.getFindingDecisionReason()).append("\n");
+        }
+        if (result.getRejectReason() != null && !result.getRejectReason().isBlank()) {
+            sb.append("rejectReason=").append(result.getRejectReason()).append("\n");
+        }
+        List<ExchangeRecord> records = result.getExchangeRecords();
+        if (records != null && !records.isEmpty()) {
+            sb.append("\n\n=== Execution Records ===\n");
+            for (int i = 0; i < records.size(); i++) {
+                ExchangeRecord record = records.get(i);
+                sb.append("- Request ").append(i + 1).append(" / Response ").append(i + 1);
+                sb.append(record.isMatched() ? " | 命中" : " | 未命中");
+                if (record.getProbeId() != null && !record.getProbeId().isBlank()) {
+                    sb.append(" | ").append(record.getProbeId());
+                }
+                if (record.getRole() != null) {
+                    sb.append(" | ").append(record.getRole().name());
+                }
+                sb.append(" | conf=").append(String.format("%.2f", record.getConfidence()));
+                if (record.getDescription() != null && !record.getDescription().isBlank()) {
+                    sb.append(" | ").append(record.getDescription());
+                }
+                sb.append("\n");
+            }
+        }
+        return sb.toString();
     }
 
     private void setSelectedConfirmed(boolean confirmed) {
         VerificationUiSupport.ResultRow row = tableModel.getRowAt(table.getSelectedRow());
         if (row == null) {
-            JOptionPane.showMessageDialog(this, "\u8bf7\u5148\u9009\u62e9\u4e00\u6761\u9a8c\u8bc1\u8bb0\u5f55\u3002");
+            JOptionPane.showMessageDialog(this, "请先选择一条验证记录。");
             return;
         }
-        row.result().setConfirmedVulnerability(confirmed);
-        row.result().setReviewStatus(confirmed ? ReviewStatus.PENDING : ReviewStatus.NOT_REQUIRED);
-        if (!confirmed) {
-            row.result().setLlmReview(null);
+        row.result().setManualConfirmedOverride(confirmed);
+        if (confirmed) {
+            row.result().setFinalDecision(FinalVerdicts.MANUAL_CONFIRMED);
+        } else {
+            row.result().setFinalDecision(FinalVerdicts.MANUAL_REJECTED);
+            row.result().setRejectReason("Manually rejected by analyst.");
         }
+        FinalVerdicts.recompute(row.result());
         historyService.update(row.entry());
         HistoryEventBus.getInstance().fireRefreshNeeded();
         refresh();
     }
 
-    private String selectedKey() {
+    private String selectedWorkflowKey() {
         VerificationUiSupport.ResultRow row = tableModel.getRowAt(table.getSelectedRow());
         return row != null ? VerificationUiSupport.workflowKey(row.entry(), row.result()) : null;
     }
 
-    private void restoreSelection(String key) {
+    private String selectedExchangeKey() {
+        ExchangeItem item = exchangeList.getSelectedValue();
+        return item != null ? item.key() : null;
+    }
+
+    private void restoreWorkflowSelection(String key) {
         if (key == null) {
             return;
         }
         for (int i = 0; i < tableModel.getRowCount(); i++) {
             VerificationUiSupport.ResultRow row = tableModel.getRowAt(i);
-            if (key.equals(VerificationUiSupport.workflowKey(row.entry(), row.result()))) {
+            if (row != null && key.equals(VerificationUiSupport.workflowKey(row.entry(), row.result()))) {
                 table.setRowSelectionInterval(i, i);
                 return;
             }
+        }
+    }
+
+    private void restoreExchangeSelection(String key) {
+        if (key == null) {
+            return;
+        }
+        for (int i = 0; i < exchangeListModel.size(); i++) {
+            ExchangeItem item = exchangeListModel.get(i);
+            if (item != null && key.equals(item.key())) {
+                exchangeList.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private static byte[] firstNonEmpty(byte[] first, byte[] second) {
+        return !isEmpty(first) ? first : second;
+    }
+
+    private static boolean isEmpty(byte[] bytes) {
+        return bytes == null || bytes.length == 0;
+    }
+
+    private record ExchangeItem(String key,
+                                String title,
+                                String hint,
+                                byte[] requestBytes,
+                                byte[] responseBytes,
+                                byte[] baselineResponseBytes,
+                                String diffText,
+                                boolean matched) {
+        @Override
+        public String toString() {
+            return title;
+        }
+    }
+
+    private static class ExchangeItemRenderer extends DefaultListCellRenderer {
+        @Override
+        public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                      boolean isSelected, boolean cellHasFocus) {
+            JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+            if (value instanceof ExchangeItem item) {
+                label.setText(item.title() + "  |  " + item.hint());
+            }
+            return label;
         }
     }
 
@@ -316,27 +608,6 @@ public class VerificationPanel extends JPanel {
         }
     }
 
-    private int[] captureCaretPositions() {
-        return new int[]{
-                exchangeArea.getCaretPosition(),
-                diffArea.getCaretPosition(),
-                reasoningArea.getCaretPosition()
-        };
-    }
-
-    private void restoreCaretPositions(int[] positions) {
-        if (positions == null || positions.length < 3) {
-            return;
-        }
-        setCaretSafely(exchangeArea, positions[0]);
-        setCaretSafely(diffArea, positions[1]);
-        setCaretSafely(reasoningArea, positions[2]);
-    }
-
-    private void setCaretSafely(javax.swing.text.JTextComponent component, int position) {
-        component.setCaretPosition(Math.max(0, Math.min(position, component.getDocument().getLength())));
-    }
-
     private static class ConfidenceRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
@@ -363,4 +634,3 @@ public class VerificationPanel extends JPanel {
         }
     }
 }
-

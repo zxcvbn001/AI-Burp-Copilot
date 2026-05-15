@@ -10,9 +10,11 @@ import com.aiburpcopilot.core.verification.candidate.ICandidateExtractor;
 import com.aiburpcopilot.core.verification.influence.IParameterProfiler;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.model.CandidateParameter;
+import com.aiburpcopilot.core.verification.model.FinalVerdicts;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
 import com.aiburpcopilot.core.verification.model.InfluenceResult;
 import com.aiburpcopilot.core.verification.model.InfluenceStatus;
+import com.aiburpcopilot.core.verification.model.ExchangeRecord;
 import com.aiburpcopilot.core.verification.model.ReviewStatus;
 import com.aiburpcopilot.core.verification.model.StepResult;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
@@ -27,9 +29,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Phase 3 workflow-based verification stage.
@@ -136,6 +140,7 @@ public class WorkflowVerificationStage implements IPipelineStage {
         int processed = 0;
         List<VerificationResult> verificationResults = new ArrayList<>();
         Map<String, InfluenceResult> influenceCache = new LinkedHashMap<>();
+        Set<String> workflowDedup = new HashSet<>();
 
         pluginLog.info(PluginLogger.Category.VERIFICATION, "WorkflowVerification", "Start: " + context.getPath()
                 + " candidates=" + candidates.size());
@@ -151,6 +156,12 @@ public class WorkflowVerificationStage implements IPipelineStage {
             }
 
             try {
+                String candidateKey = verificationDedupKey(context, candidate);
+                if (!workflowDedup.add(candidateKey)) {
+                    pluginLog.debug(PluginLogger.Category.VERIFICATION,
+                            "WorkflowVerification", "Skip duplicate candidate: " + candidateKey);
+                    continue;
+                }
                 WorkflowContext workflowContext = new WorkflowContext(context, candidate);
                 workflowContext.setPolicyEngine(policyEngine);
                 workflowContext.setReplayEngine(replayEngine);
@@ -251,6 +262,8 @@ public class WorkflowVerificationStage implements IPipelineStage {
         result.setAttackType(finding.getAttackType());
         result.setAttackTypeName(finding.getAttackTypeName());
         result.setParameter(finding.getParameter());
+        result.setCandidateId(finding.getCandidateId());
+        result.setTraceId(finding.getTraceId());
         result.setRequestId(finding.getRequestId());
         result.setUrl(finding.getUrl());
         result.setConfidence(finding.getConfidence());
@@ -260,15 +273,25 @@ public class WorkflowVerificationStage implements IPipelineStage {
         result.setPhase("Finding");
         result.setPayload("aggregated evidence");
         result.setDiffResult(finding.getDiffResult());
+        result.setBaselineRequestBytes(finding.getBaselineRequestBytes());
+        result.setBaselineResponseBytes(finding.getBaselineResponseBytes());
         result.setMutatedRequestBytes(finding.getRequestBytes());
         result.setMutatedResponseBytes(finding.getResponseBytes());
         result.setResponseLength(finding.getResponseBytes() != null ? finding.getResponseBytes().length : 0);
         result.setExchangeTranscript(finding.getExchangeTranscript());
-        result.setConfirmedVulnerability(true);
+        result.setExchangeRecords(finding.getExchangeRecords());
+        result.setEvidences(finding.getEvidences());
         result.setLlmReview(finding.getLlmReview());
-        result.setReviewStatus((finding.getLlmReview() != null && !finding.getLlmReview().isBlank())
-                ? ReviewStatus.PASSED
-                : ReviewStatus.PENDING);
+        result.setFindingGenerated(true);
+        result.setFindingConfidenceRaw(finding.getConfidence());
+        result.setFindingThreshold(finding.getThreshold());
+        result.setFindingDecisionReason(finding.getDecisionReason());
+        result.setLocalMatched(finding.isLocalMatched());
+        result.setLlmMatched(finding.getLlmMatched());
+        result.setFinalDecision(finding.getFinalDecision());
+        result.setDedupKey(finding.getDedupKey());
+        result.setReviewStatus(ReviewStatus.PENDING);
+        FinalVerdicts.recompute(result);
         return result;
     }
 
@@ -279,8 +302,16 @@ public class WorkflowVerificationStage implements IPipelineStage {
         result.setAttackType(workflowResult.getAttackType());
         result.setAttackTypeName(workflowResult.getAttackTypeName());
         result.setParameter(workflowResult.getParameterName());
+        result.setCandidateId(workflowResult.getCandidateId());
+        result.setTraceId(workflowResult.getTraceId());
+        result.setWorkflowName(workflowResult.getWorkflowName());
+        result.setCandidateSource(workflowResult.getCandidateSource());
+        result.setCandidateReasoning(workflowResult.getCandidateReasoning());
+        result.setCandidateConfidence(workflowResult.getCandidateConfidence());
         result.setRequestId(context.getRequestId());
         result.setUrl(context.getUrl());
+        result.setBaselineRequestBytes(workflowResult.getBaselineRequestBytes());
+        result.setBaselineResponseBytes(workflowResult.getBaselineResponseBytes());
         double confidence = stepResult != null
                 ? stepResult.getConfidence()
                 : workflowResult.getOverallConfidence();
@@ -290,6 +321,19 @@ public class WorkflowVerificationStage implements IPipelineStage {
         result.setResponseTimeMs(stepResult != null
                 ? stepResult.getDurationMs()
                 : workflowResult.getDurationMs());
+        result.setFindingGenerated(workflowResult.isFindingGenerated());
+        result.setFindingConfidenceRaw(workflowResult.getFindingConfidenceRaw());
+        result.setFindingThreshold(workflowResult.getFindingThreshold());
+        result.setFindingDecisionReason(workflowResult.getFindingDecisionReason());
+        result.setLocalMatched(stepResult != null ? stepResult.isLocalMatched() : workflowResult.isLocalMatched());
+        result.setLlmMatched(stepResult != null ? stepResult.getLlmMatched() : workflowResult.getLlmMatched());
+        result.setFinalDecision(stepResult != null && stepResult.getDecision() != null
+                ? stepResult.getDecision()
+                : workflowResult.getFinalDecision());
+        result.setRejectReason(workflowResult.getRejectReason());
+        result.setDedupKey(stepResult != null && stepResult.getDedupKey() != null
+                ? stepResult.getDedupKey()
+                : workflowResult.getDedupKey());
         if (stepResult != null) {
             result.setPhase(stepResult.getPhase());
             result.setStrategyType(stepResult.getStrategyType());
@@ -297,15 +341,29 @@ public class WorkflowVerificationStage implements IPipelineStage {
             result.setPayload(stepResult.getPayload());
             result.setDiffResult(stepResult.getDiffResult());
             result.setResponseLength(stepResult.getResponseLength());
+            result.setBaselineRequestBytes(stepResult.getBaselineRequestBytes());
+            result.setBaselineResponseBytes(stepResult.getBaselineResponseBytes());
             result.setMutatedRequestBytes(stepResult.getRequestBytes());
             result.setMutatedResponseBytes(stepResult.getResponseBytes());
             result.setExchangeTranscript(stepResult.getExchangeTranscript());
+            result.setExchangeRecords(stepResult.getExchangeRecords());
             result.setLlmReview(stepResult.getLlmReview());
+            result.setEvidences(stepResult.getEvidences());
             if ("Influence Gate".equalsIgnoreCase(stepResult.getPhase())) {
                 result.setInfluenceStatus(parseInfluenceStatus(stepResult.getReasoning()));
             }
         }
+        FinalVerdicts.recompute(result);
         return result;
+    }
+
+    private String verificationDedupKey(HTTPContext context, CandidateParameter candidate) {
+        String method = context != null && context.getMethod() != null ? context.getMethod().toUpperCase() : "-";
+        String path = context != null && context.getPath() != null ? context.getPath() : "-";
+        String param = candidate != null && candidate.getParameterName() != null ? candidate.getParameterName() : "-";
+        String paramType = candidate != null && candidate.getParameterType() != null ? candidate.getParameterType().toUpperCase() : "-";
+        String attackType = candidate != null && candidate.getAttackTypeName() != null ? candidate.getAttackTypeName() : "-";
+        return method + "|" + path + "|" + param + "|" + paramType + "|" + attackType;
     }
 
     private InfluenceStatus parseInfluenceStatus(String reasoning) {
@@ -350,6 +408,17 @@ public class WorkflowVerificationStage implements IPipelineStage {
                 .append(workflowResult.getEvidence().size());
         if (workflowResult.getStopReason() != null) {
             reasoning.append(", stopReason=").append(workflowResult.getStopReason());
+        }
+        if (workflowResult.getFindingThreshold() > 0) {
+            reasoning.append("\n\nFindingAggregation generated=")
+                    .append(workflowResult.isFindingGenerated())
+                    .append(", rawConfidence=")
+                    .append(String.format("%.4f", workflowResult.getFindingConfidenceRaw()))
+                    .append(", threshold=")
+                    .append(String.format("%.4f", workflowResult.getFindingThreshold()));
+            if (workflowResult.getFindingDecisionReason() != null && !workflowResult.getFindingDecisionReason().isBlank()) {
+                reasoning.append("\n").append(workflowResult.getFindingDecisionReason());
+            }
         }
         return reasoning.toString();
     }

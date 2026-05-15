@@ -9,6 +9,7 @@ import com.aiburpcopilot.core.verification.finding.VulnerabilityFinding;
 import com.aiburpcopilot.core.verification.influence.IParameterProfiler;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.model.CandidateParameter;
+import com.aiburpcopilot.core.verification.model.FinalVerdicts;
 import com.aiburpcopilot.core.verification.model.InfluenceResult;
 import com.aiburpcopilot.core.verification.model.InfluenceStatus;
 import com.aiburpcopilot.core.verification.model.ParameterProfile;
@@ -165,6 +166,8 @@ public class ManualVerificationService {
         result.setAttackType(finding.getAttackType());
         result.setAttackTypeName(finding.getAttackTypeName());
         result.setParameter(finding.getParameter());
+        result.setCandidateId(finding.getCandidateId());
+        result.setTraceId(finding.getTraceId());
         result.setRequestId(finding.getRequestId());
         result.setUrl(finding.getUrl());
         result.setConfidence(finding.getConfidence());
@@ -178,11 +181,17 @@ public class ManualVerificationService {
         result.setMutatedResponseBytes(finding.getResponseBytes());
         result.setResponseLength(finding.getResponseBytes() != null ? finding.getResponseBytes().length : 0);
         result.setExchangeTranscript(finding.getExchangeTranscript());
-        result.setConfirmedVulnerability(true);
+        result.setEvidences(finding.getEvidences());
         result.setLlmReview(finding.getLlmReview());
-        result.setReviewStatus((finding.getLlmReview() != null && !finding.getLlmReview().isBlank())
-                ? ReviewStatus.PASSED
-                : ReviewStatus.PENDING);
+        result.setFindingGenerated(true);
+        result.setFindingConfidenceRaw(finding.getConfidence());
+        result.setFindingThreshold(finding.getThreshold());
+        result.setFindingDecisionReason(finding.getDecisionReason());
+        result.setLocalMatched(finding.isLocalMatched());
+        result.setLlmMatched(finding.getLlmMatched());
+        result.setFinalDecision(finding.getFinalDecision());
+        result.setReviewStatus(ReviewStatus.PENDING);
+        FinalVerdicts.recompute(result);
         return result;
     }
 
@@ -193,12 +202,28 @@ public class ManualVerificationService {
         result.setAttackType(workflowResult.getAttackType());
         result.setAttackTypeName(workflowResult.getAttackTypeName());
         result.setParameter(workflowResult.getParameterName());
+        result.setCandidateId(workflowResult.getCandidateId());
+        result.setTraceId(workflowResult.getTraceId());
+        result.setWorkflowName(workflowResult.getWorkflowName());
+        result.setCandidateSource(workflowResult.getCandidateSource());
+        result.setCandidateReasoning(workflowResult.getCandidateReasoning());
+        result.setCandidateConfidence(workflowResult.getCandidateConfidence());
         result.setRequestId(context.getRequestId());
         result.setUrl(context.getUrl());
         result.setConfidence(stepResult != null ? stepResult.getConfidence() : workflowResult.getOverallConfidence());
         result.setRiskLevel(confidenceToRiskLevel(result.getConfidence()));
         result.setReasoning(stepResult != null ? stepResult.getReasoning() : workflowResult.getStopReason());
         result.setResponseTimeMs(stepResult != null ? stepResult.getDurationMs() : workflowResult.getDurationMs());
+        result.setFindingGenerated(workflowResult.isFindingGenerated());
+        result.setFindingConfidenceRaw(workflowResult.getFindingConfidenceRaw());
+        result.setFindingThreshold(workflowResult.getFindingThreshold());
+        result.setFindingDecisionReason(workflowResult.getFindingDecisionReason());
+        result.setLocalMatched(stepResult != null ? stepResult.isLocalMatched() : workflowResult.isLocalMatched());
+        result.setLlmMatched(stepResult != null ? stepResult.getLlmMatched() : workflowResult.getLlmMatched());
+        result.setFinalDecision(stepResult != null && stepResult.getDecision() != null
+                ? stepResult.getDecision()
+                : workflowResult.getFinalDecision());
+        result.setRejectReason(workflowResult.getRejectReason());
         if (stepResult != null) {
             result.setPhase(stepResult.getPhase());
             result.setStrategyType(stepResult.getStrategyType());
@@ -210,6 +235,7 @@ public class ManualVerificationService {
             result.setMutatedResponseBytes(stepResult.getResponseBytes());
             result.setExchangeTranscript(stepResult.getExchangeTranscript());
             result.setLlmReview(stepResult.getLlmReview());
+            result.setEvidences(stepResult.getEvidences());
             if ("Influence Gate".equalsIgnoreCase(stepResult.getPhase())) {
                 result.setInfluenceStatus(parseInfluenceStatus(stepResult.getReasoning()));
             }
@@ -218,6 +244,20 @@ public class ManualVerificationService {
                         + "\n\nLLM Review=" + stepResult.getLlmReview());
             }
         }
+        if (workflowResult.getFindingThreshold() > 0) {
+            StringBuilder sb = new StringBuilder(result.getReasoning() != null ? result.getReasoning() : "");
+            sb.append("\n\nFindingAggregation generated=")
+                    .append(workflowResult.isFindingGenerated())
+                    .append(", rawConfidence=")
+                    .append(String.format("%.4f", workflowResult.getFindingConfidenceRaw()))
+                    .append(", threshold=")
+                    .append(String.format("%.4f", workflowResult.getFindingThreshold()));
+            if (workflowResult.getFindingDecisionReason() != null && !workflowResult.getFindingDecisionReason().isBlank()) {
+                sb.append("\n").append(workflowResult.getFindingDecisionReason());
+            }
+            result.setReasoning(sb.toString());
+        }
+        FinalVerdicts.recompute(result);
         return result;
     }
 

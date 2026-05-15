@@ -100,7 +100,7 @@ public class InfluenceValidationStep implements VerificationStep {
         String paramName = candidate.getParameterName();
 
         PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, STEP_NAME,
-                "Validating influence for param='" + paramName + "' | attackType=" + candidate.getAttackType());
+                "Validating influence for param='" + paramName + "' | attackType=" + candidate.getAttackTypeName());
 
         IReplayEngine effectiveReplay = getReplayEngine(context);
         if (effectiveReplay == null) {
@@ -187,7 +187,7 @@ public class InfluenceValidationStep implements VerificationStep {
 
                             double deterministicScore = scorer != null ? scorer.score(diff) : 0.0;
                             InfluenceLlmDecision llmDecision = llmAnalyzer != null
-                                    ? llmAnalyzer.analyze(candidate.getAttackType(), paramName,
+                                    ? llmAnalyzer.analyze(candidate.getAttackTypeName(), paramName,
                                     mutationValue, profile, diff, deterministicScore)
                                     : InfluenceLlmDecision.unavailable();
                             double finalScore = mergeInfluenceScore(deterministicScore, llmDecision);

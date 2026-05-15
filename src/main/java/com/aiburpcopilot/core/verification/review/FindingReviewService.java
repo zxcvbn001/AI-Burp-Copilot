@@ -4,6 +4,7 @@ import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.config.Timeouts;
 import com.aiburpcopilot.core.verification.model.DiffResult;
+import com.aiburpcopilot.core.verification.model.FinalVerdicts;
 import com.aiburpcopilot.core.verification.model.ReviewStatus;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 import com.aiburpcopilot.utils.JsonUtil;
@@ -37,6 +38,8 @@ public class FindingReviewService {
             result.setReviewStatus(ReviewStatus.LOCAL_ONLY);
             result.setLlmReview(buildLocalReview(result)
                     + "\n\n说明：AI Provider 未配置或不可用，本次仅执行本地二次研判。");
+            result.setLlmMatched(null);
+            FinalVerdicts.recompute(result);
             return;
         }
 
@@ -46,9 +49,11 @@ public class FindingReviewService {
             applyLlmReview(result, raw);
         } catch (Exception e) {
             result.setReviewStatus(ReviewStatus.FAILED);
+            result.setLlmMatched(null);
             result.setLlmReview(buildLocalReview(result)
                     + "\n\nLLM 二次研判执行失败：" + e.getClass().getSimpleName()
                     + " - " + safe(e.getMessage()));
+            FinalVerdicts.recompute(result);
         }
     }
 
@@ -70,21 +75,25 @@ public class FindingReviewService {
     private void applyLlmReview(VerificationResult result, String raw) {
         Map<String, Object> map = JsonUtil.fromJsonSafe(extractJson(raw), Map.class);
         if (map == null || map.isEmpty()) {
-            result.setReviewStatus(ReviewStatus.PASSED);
+            result.setReviewStatus(ReviewStatus.FAILED);
+            result.setLlmMatched(null);
             result.setLlmReview("LLM 二次研判结果：\n" + safe(raw)
-                    + "\n\n说明：LLM 仅复核证据是否充分，不直接决定漏洞成立。");
+                    + "\n\n说明：未解析到结构化 JSON，已降级为本地结论，请人工复核。");
+            FinalVerdicts.recompute(result);
             return;
         }
 
         boolean supported = asBoolean(map.get("supported"));
         double confidence = asDouble(map.get("confidence"), -1.0);
+        result.setLlmMatched(supported);
         result.setReviewStatus(supported ? ReviewStatus.PASSED : ReviewStatus.REJECTED);
         if (!supported) {
-            result.setConfirmedVulnerability(false);
             result.setConfidence(0.0);
             result.setRiskLevel(com.aiburpcopilot.core.context.RiskLevel.INFO);
+            result.setRejectReason("LLM review rejected the finding evidence.");
         } else if (confidence >= 0.0) {
             result.setConfidence(Math.max(result.getConfidence(), confidence));
+            result.setRejectReason(null);
         }
         StringBuilder text = new StringBuilder();
         text.append("LLM 漏洞级二次研判：")
@@ -99,6 +108,7 @@ public class FindingReviewService {
         appendList(text, "人工复核点", map.get("manualReviewPoints"));
         text.append("\n\n说明：LLM 仅复核证据是否充分，不直接决定漏洞成立。");
         result.setLlmReview(text.toString());
+        FinalVerdicts.recompute(result);
     }
 
     private String buildPrompt(VerificationResult result) {
@@ -110,7 +120,7 @@ public class FindingReviewService {
                 .append("必须返回 JSON，不要 Markdown。格式：\n")
                 .append("{\"supported\":true,\"confidence\":0.0,\"conclusion\":\"...\",\"reasoning\":\"...\",")
                 .append("\"supportingEvidence\":[\"...\"],\"counterEvidence\":[\"...\"],\"manualReviewPoints\":[\"...\"]}\n\n");
-        prompt.append("漏洞类型：").append(value(result.getAttackType())).append("\n")
+        prompt.append("漏洞类型：").append(value(result.getAttackTypeName() != null ? result.getAttackTypeName() : result.getAttackType())).append("\n")
                 .append("参数：").append(value(result.getParameter())).append("\n")
                 .append("URL：").append(value(result.getUrl())).append("\n")
                 .append("Payload：").append(value(result.getPayload())).append("\n")

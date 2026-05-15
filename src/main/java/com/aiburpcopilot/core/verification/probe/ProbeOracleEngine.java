@@ -115,9 +115,7 @@ public class ProbeOracleEngine {
                         "响应中反射了探测标记：" + matchedMarkers,
                         "REFLECTION",
                         confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setOriginalResponse(baselineResponse);
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, baselineResponse, execution, probe);
                 result.addEvidence(evidence);
             }
         }
@@ -126,11 +124,13 @@ public class ProbeOracleEngine {
         }
         if (probe.isRequiresLlmReview() && result.getDiffResult() != null) {
             boolean localMatched = result.isMatched();
+            result.setLocalMatched(localMatched);
             LlmDiffDecision llmDecision = judgeDiffWithLlm(
                     probe, "HTML_REFLECTION", result.getDiffResult(), executions,
                     localMatched, result.getReasoning());
             result.setLlmReview(llmDecision.review);
             result.setLlmAvailable(llmDecision.available);
+            result.setLlmMatched(llmDecision.available ? llmDecision.matched : null);
             if (llmDecision.available) {
                 result.setMatched(localMatched && llmDecision.matched);
                 result.setConfidence(result.isMatched()
@@ -183,8 +183,7 @@ public class ProbeOracleEngine {
             result.setConfidence(confidence);
             result.setReasoning("响应中出现新增错误关键词：" + matched);
             Evidence evidence = Evidence.general(result.getReasoning(), "ERROR_KEYWORD", confidence);
-            evidence.setMutatedRequest(trigger.getRequestBytes());
-            evidence.setMutatedResponse(trigger.getResponseBytes());
+            populateEvidence(evidence, baselineResponse, trigger, probe);
             result.addEvidence(evidence);
         } else {
             result.setReasoning("未发现新增错误关键词");
@@ -211,8 +210,7 @@ public class ProbeOracleEngine {
                 result.setConfidence(Math.max(result.getConfidence(), confidence));
                 result.setReasoning("响应中出现新增关键词：" + matched);
                 Evidence evidence = Evidence.general(result.getReasoning(), "KEYWORD", confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, baselineResponse, execution, probe);
                 result.addEvidence(evidence);
             }
         }
@@ -252,9 +250,7 @@ public class ProbeOracleEngine {
                 result.setConfidence(Math.max(result.getConfidence(), confidence));
                 result.setReasoning("Location 响应头跳转到可控标记：" + location);
                 Evidence evidence = Evidence.general(result.getReasoning(), "REDIRECT_LOCATION", confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setOriginalResponse(baselineResponse);
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, baselineResponse, execution, probe);
                 result.addEvidence(evidence);
             }
         }
@@ -288,9 +284,7 @@ public class ProbeOracleEngine {
                 result.setConfidence(Math.max(result.getConfidence(), confidence));
                 result.setReasoning("模板表达式疑似被服务端求值，出现结果标记：" + matchedMarkers);
                 Evidence evidence = Evidence.general(result.getReasoning(), "EXPRESSION_EVALUATION", confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setOriginalResponse(baselineResponse);
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, baselineResponse, execution, probe);
                 result.addEvidence(evidence);
             }
         }
@@ -324,14 +318,17 @@ public class ProbeOracleEngine {
 
         boolean deterministicMatched = trueBaselineSimilarity >= probe.getOracle().getMinSimilarityTrueBaseline()
                 && trueFalseSimilarity <= probe.getOracle().getMaxSimilarityTrueFalse();
+        result.setLocalMatched(deterministicMatched);
         String deterministicReasoning = "true/false 响应差异：true~baseline="
                 + String.format("%.2f", trueBaselineSimilarity)
                 + "，true~false=" + String.format("%.2f", trueFalseSimilarity);
-            LlmDiffDecision llmDecision = judgeDiffWithLlm(
-                    probe, "PAIR_DIFF", diff, executions, deterministicMatched, deterministicReasoning);
+        List<ProbeExecution> reviewExecutions = withBaselineExecution(baselineResponse, executions);
+        LlmDiffDecision llmDecision = judgeDiffWithLlm(
+                    probe, "PAIR_DIFF", diff, reviewExecutions, deterministicMatched, deterministicReasoning);
             result.setLlmReview(llmDecision.review);
             result.setLlmAvailable(llmDecision.available);
-        boolean hasNegativeEvidence = !negativeEvidenceSignals(probe, executions).isEmpty();
+            result.setLlmMatched(llmDecision.available ? llmDecision.matched : null);
+        boolean hasNegativeEvidence = !negativeEvidenceSignals(probe, reviewExecutions).isEmpty();
         boolean matched = llmDecision.available ? llmDecision.matched : deterministicMatched;
         if (!llmDecision.available && hasNegativeEvidence) {
             matched = false;
@@ -348,9 +345,13 @@ public class ProbeOracleEngine {
             result.setReasoning((llmDecision.available ? "LLM 差异研判确认：" : "")
                     + (llmDecision.available ? llmDecision.reasoning : deterministicReasoning));
             Evidence evidence = Evidence.general(result.getReasoning(), "PAIR_DIFF", confidence);
+            evidence.setRequest(trueCase.getRequestBytes());
+            evidence.setBaselineRequest(trueCase.getRequestBytes());
             evidence.setMutatedRequest(falseCase.getRequestBytes());
             evidence.setOriginalResponse(trueCase.getResponseBytes());
             evidence.setMutatedResponse(falseCase.getResponseBytes());
+            evidence.setBaselineSummary(buildBaselineSummary(trueCase.getResponseBytes(), trueCase.getDurationMs()));
+            evidence.setEvidenceKey(buildEvidenceKey(probe, falseCase));
             result.addEvidence(evidence);
         } else {
             result.setReasoning((llmDecision.available ? "LLM 差异研判未确认：" : "")
@@ -368,6 +369,7 @@ public class ProbeOracleEngine {
             result.setDiffResult(diff);
             double similarity = diff.getSimilarity();
             boolean deterministicMatched = similarity <= probe.getOracle().getMaxSimilarityTrueFalse();
+            result.setLocalMatched(deterministicMatched);
             String deterministicReasoning = "变异响应与 baseline 差异：similarity="
                     + String.format("%.2f", similarity);
             LlmDiffDecision llmDecision = judgeDiffWithLlm(
@@ -375,6 +377,7 @@ public class ProbeOracleEngine {
                     deterministicMatched, deterministicReasoning);
             result.setLlmReview(llmDecision.review);
             result.setLlmAvailable(llmDecision.available);
+            result.setLlmMatched(llmDecision.available ? llmDecision.matched : null);
             boolean hasNegativeEvidence = !negativeEvidenceSignals(probe, List.of(execution)).isEmpty();
             boolean matched = llmDecision.available ? llmDecision.matched : deterministicMatched;
             if (!llmDecision.available && hasNegativeEvidence) {
@@ -392,9 +395,7 @@ public class ProbeOracleEngine {
                 result.setReasoning((llmDecision.available ? "LLM 差异研判确认：" : "")
                         + (llmDecision.available ? llmDecision.reasoning : deterministicReasoning));
                 Evidence evidence = Evidence.general(result.getReasoning(), "BASELINE_DIFF", confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setOriginalResponse(baselineResponse);
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, baselineResponse, execution, probe);
                 result.addEvidence(evidence);
                 break;
             }
@@ -414,6 +415,7 @@ public class ProbeOracleEngine {
             result.setDiffResult(diff);
             double similarity = diff.getSimilarity();
             boolean deterministicMatched = similarity >= probe.getOracle().getMinSimilarityTrueBaseline();
+            result.setLocalMatched(deterministicMatched);
             String deterministicReasoning = "变异响应与 baseline 仍然接近：similarity="
                     + String.format("%.2f", similarity);
             LlmDiffDecision llmDecision = judgeDiffWithLlm(
@@ -421,6 +423,7 @@ public class ProbeOracleEngine {
                     deterministicMatched, deterministicReasoning);
             result.setLlmReview(llmDecision.review);
             result.setLlmAvailable(llmDecision.available);
+            result.setLlmMatched(llmDecision.available ? llmDecision.matched : null);
             boolean matched = llmDecision.available ? llmDecision.matched : deterministicMatched;
             if (matched) {
                 double confidence = llmDecision.available
@@ -431,9 +434,7 @@ public class ProbeOracleEngine {
                 result.setReasoning((llmDecision.available ? "LLM 差异研判确认：" : "")
                         + (llmDecision.available ? llmDecision.reasoning : deterministicReasoning));
                 Evidence evidence = Evidence.general(result.getReasoning(), "BASELINE_SIMILAR", confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setOriginalResponse(baselineResponse);
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, baselineResponse, execution, probe);
                 result.addEvidence(evidence);
                 break;
             }
@@ -458,8 +459,7 @@ public class ProbeOracleEngine {
                 result.setConfidence(Math.max(result.getConfidence(), confidence));
                 result.setReasoning("响应耗时达到延时阈值：" + execution.getDurationMs() + "ms");
                 Evidence evidence = Evidence.general(result.getReasoning(), "TIME_DELAY", confidence);
-                evidence.setMutatedRequest(execution.getRequestBytes());
-                evidence.setMutatedResponse(execution.getResponseBytes());
+                populateEvidence(evidence, null, execution, probe);
                 result.addEvidence(evidence);
             }
         }
@@ -475,14 +475,28 @@ public class ProbeOracleEngine {
             signals.add("No replay response was available for review.");
             return signals;
         }
-        if (allExecutionsLookLikeClientValidationErrors(executions)) {
+        List<ProbeExecution> mutatedExecutions = executions.stream()
+                .filter(execution -> execution.getRole() != ProbeRole.BASELINE)
+                .toList();
+        if (allExecutionsLookLikeClientValidationErrors(mutatedExecutions)) {
             signals.add("All mutated responses look like client-side request validation/parsing failures.");
         }
-        if (probe != null && probe.getAttackType() == AttackType.SQLI
-                && trueFalseOnlyReflectDifferentPayloads(executions)) {
+        if (probe != null && "SQLI".equalsIgnoreCase(probe.getAttackTypeName())
+                && trueFalseOnlyReflectDifferentPayloads(mutatedExecutions)) {
             signals.add("SQLI true/false cases appear to return the same validation error pattern with only reflected input changed.");
         }
         return signals;
+    }
+
+    private List<ProbeExecution> withBaselineExecution(byte[] baselineResponse, List<ProbeExecution> executions) {
+        List<ProbeExecution> result = new ArrayList<>();
+        if (baselineResponse != null && baselineResponse.length > 0) {
+            result.add(new ProbeExecution("<original>", ProbeRole.BASELINE, null, baselineResponse, 0));
+        }
+        if (executions != null) {
+            result.addAll(executions);
+        }
+        return result;
     }
 
     private List<String> positiveEvidenceSignals(ProbeDefinition probe,
@@ -629,12 +643,18 @@ public class ProbeOracleEngine {
         prompt.append("你是 HTTP PoC 证据复核助手。\n")
                 .append("请只判断这些响应差异是否能支持 claimedAttackType，不要因为普通参数校验错误而确认漏洞。\n")
                 .append("只返回 JSON：{\"matched\":true/false,\"confidence\":0.0-1.0,\"reasoning\":\"中文理由\"}\n\n")
-                .append("claimedAttackType: ").append(probe.getAttackType()).append("\n")
+                .append("claimedAttackType: ").append(probe.getAttackTypeName()).append("\n")
                 .append("probeId: ").append(probe.getId()).append("\n")
-                .append("strategy: ").append(probe.getStrategy()).append("\n")
+                .append("strategy: ").append(probe.getStrategyName()).append("\n")
                 .append("oracle: ").append(mode).append("\n")
                 .append("localOracleMatched: ").append(deterministicMatched).append("\n")
                 .append("localOracleReasoning: ").append(deterministicReasoning).append("\n\n")
+                .append("reviewRules:\n")
+                .append("- BASELINE means the original normal request/response and must be treated as the business baseline.\n")
+                .append("- Do not reject only because mutated responses are 404/500.\n")
+                .append("- If BASELINE is normal and TRUE_CASE / FALSE_CASE show stable business or data differences, that can still support the claimed vulnerability.\n")
+                .append("- Reject when the differences look like generic routing errors, WAF blocking, request validation failures, or pure payload reflection.\n")
+                .append("- Focus on business/content differences and timing differences, not just hashes.\n\n")
                 .append("positiveEvidence:\n");
         for (String signal : positiveEvidenceSignals(probe, mode, diff, deterministicMatched, deterministicReasoning)) {
             prompt.append("- ").append(signal).append("\n");
@@ -666,7 +686,9 @@ public class ProbeOracleEngine {
             prompt.append("- role=").append(execution.getRole())
                     .append(", value=").append(summarize(execution.getValue(), 120))
                     .append(", durationMs=").append(execution.getDurationMs())
-                    .append("\n  request: ").append(summarize(firstLine(requestText), 240))
+                    .append("\n  request: ").append(execution.getRole() == ProbeRole.BASELINE
+                            ? "<original baseline request omitted>"
+                            : summarize(firstLine(requestText), 240))
                     .append("\n  responseStatus: ").append(parseStatusCode(responseText))
                     .append("\n  responseSnippet: ").append(summarize(extractBodySnippet(responseText), 500))
                     .append("\n");
@@ -853,6 +875,38 @@ public class ProbeOracleEngine {
             }
         }
         return Math.max(0.0, Math.min(1.0, 1.0 - (diffCount / (double) maxLen)));
+    }
+
+    private void populateEvidence(Evidence evidence,
+                                  byte[] baselineResponse,
+                                  ProbeExecution execution,
+                                  ProbeDefinition probe) {
+        if (evidence == null || execution == null) {
+            return;
+        }
+        evidence.setRequest(execution.getRequestBytes());
+        evidence.setBaselineRequest(execution.getRequestBytes());
+        evidence.setMutatedRequest(execution.getRequestBytes());
+        evidence.setOriginalResponse(baselineResponse);
+        evidence.setMutatedResponse(execution.getResponseBytes());
+        evidence.setBaselineSummary(buildBaselineSummary(baselineResponse, execution.getDurationMs()));
+        evidence.setEvidenceKey(buildEvidenceKey(probe, execution));
+    }
+
+    private String buildBaselineSummary(byte[] baselineResponse, long mutatedDurationMs) {
+        String responseText = text(baselineResponse);
+        int baselineStatus = parseStatusCode(responseText);
+        int baselineLength = baselineResponse != null ? baselineResponse.length : 0;
+        return "baselineStatus=" + baselineStatus
+                + ", baselineLength=" + baselineLength
+                + ", mutatedDurationMs=" + mutatedDurationMs;
+    }
+
+    public String buildEvidenceKey(ProbeDefinition probe, ProbeExecution execution) {
+        String probeId = probe != null && probe.getId() != null ? probe.getId() : "-";
+        String role = execution.getRole() != null ? execution.getRole().name() : "-";
+        String value = execution.getValue() != null ? execution.getValue() : "-";
+        return probeId + "|" + role + "|" + summarize(value, 64);
     }
 
     private record LlmDiffDecision(boolean available,

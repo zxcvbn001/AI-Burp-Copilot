@@ -4,6 +4,9 @@ import com.aiburpcopilot.core.context.AttackType;
 import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 验证结果。
  * <p>
@@ -19,6 +22,12 @@ public class VerificationResult {
 
     /** 目标参数名 */
     private String parameter;
+    private String candidateId;
+    private String traceId;
+    private String workflowName;
+    private String candidateSource;
+    private String candidateReasoning;
+    private double candidateConfidence;
 
     /** 重新评估后的风险等级 */
     private RiskLevel riskLevel;
@@ -56,6 +65,8 @@ public class VerificationResult {
 
     /** 修改后的 HTTP 请求字节（含 payload） */
     private byte[] mutatedRequestBytes;
+    private byte[] baselineRequestBytes;
+    private byte[] baselineResponseBytes;
 
     /** 修改后请求的 HTTP 响应字节 */
     private byte[] mutatedResponseBytes;
@@ -67,6 +78,18 @@ public class VerificationResult {
     private ReviewStatus reviewStatus = ReviewStatus.NOT_REQUIRED;
     private String exchangeTranscript;
     private InfluenceStatus influenceStatus;
+    private List<Evidence> evidences;
+    private boolean findingGenerated;
+    private double findingConfidenceRaw;
+    private double findingThreshold;
+    private String findingDecisionReason;
+    private boolean localMatched;
+    private Boolean llmMatched;
+    private String finalDecision;
+    private String rejectReason;
+    private Boolean manualConfirmedOverride;
+    private String dedupKey;
+    private List<ExchangeRecord> exchangeRecords;
 
     public VerificationResult() {
         this.timestamp = System.currentTimeMillis();
@@ -74,6 +97,8 @@ public class VerificationResult {
         this.confidence = 0.0;
         this.responseLength = 0;
         this.responseTimeMs = 0;
+        this.evidences = new ArrayList<>();
+        this.exchangeRecords = new ArrayList<>();
     }
 
     /**
@@ -118,6 +143,26 @@ public class VerificationResult {
 
     public String getParameter() { return parameter; }
     public void setParameter(String parameter) { this.parameter = parameter; }
+
+    public String getCandidateId() { return candidateId; }
+    public void setCandidateId(String candidateId) { this.candidateId = candidateId; }
+
+    public String getTraceId() { return traceId; }
+    public void setTraceId(String traceId) { this.traceId = traceId; }
+
+    public String getWorkflowName() { return workflowName; }
+    public void setWorkflowName(String workflowName) { this.workflowName = workflowName; }
+
+    public String getCandidateSource() { return candidateSource; }
+    public void setCandidateSource(String candidateSource) { this.candidateSource = candidateSource; }
+
+    public String getCandidateReasoning() { return candidateReasoning; }
+    public void setCandidateReasoning(String candidateReasoning) { this.candidateReasoning = candidateReasoning; }
+
+    public double getCandidateConfidence() { return candidateConfidence; }
+    public void setCandidateConfidence(double candidateConfidence) {
+        this.candidateConfidence = Math.max(0.0, Math.min(1.0, candidateConfidence));
+    }
 
     public RiskLevel getRiskLevel() { return riskLevel; }
     public void setRiskLevel(RiskLevel riskLevel) { this.riskLevel = riskLevel; }
@@ -165,6 +210,12 @@ public class VerificationResult {
     public byte[] getMutatedRequestBytes() { return mutatedRequestBytes; }
     public void setMutatedRequestBytes(byte[] mutatedRequestBytes) { this.mutatedRequestBytes = mutatedRequestBytes; }
 
+    public byte[] getBaselineRequestBytes() { return baselineRequestBytes; }
+    public void setBaselineRequestBytes(byte[] baselineRequestBytes) { this.baselineRequestBytes = baselineRequestBytes; }
+
+    public byte[] getBaselineResponseBytes() { return baselineResponseBytes; }
+    public void setBaselineResponseBytes(byte[] baselineResponseBytes) { this.baselineResponseBytes = baselineResponseBytes; }
+
     public byte[] getMutatedResponseBytes() { return mutatedResponseBytes; }
     public void setMutatedResponseBytes(byte[] mutatedResponseBytes) { this.mutatedResponseBytes = mutatedResponseBytes; }
 
@@ -194,6 +245,52 @@ public class VerificationResult {
 
     public InfluenceStatus getInfluenceStatus() { return influenceStatus; }
     public void setInfluenceStatus(InfluenceStatus influenceStatus) { this.influenceStatus = influenceStatus; }
+
+    public List<Evidence> getEvidences() { return evidences; }
+    public void setEvidences(List<Evidence> evidences) {
+        this.evidences = evidences != null ? new ArrayList<>(evidences) : new ArrayList<>();
+    }
+
+    public boolean isFindingGenerated() { return findingGenerated; }
+    public void setFindingGenerated(boolean findingGenerated) { this.findingGenerated = findingGenerated; }
+
+    public double getFindingConfidenceRaw() { return findingConfidenceRaw; }
+    public void setFindingConfidenceRaw(double findingConfidenceRaw) {
+        this.findingConfidenceRaw = Math.max(0.0, Math.min(1.0, findingConfidenceRaw));
+    }
+
+    public double getFindingThreshold() { return findingThreshold; }
+    public void setFindingThreshold(double findingThreshold) {
+        this.findingThreshold = Math.max(0.0, Math.min(1.0, findingThreshold));
+    }
+
+    public String getFindingDecisionReason() { return findingDecisionReason; }
+    public void setFindingDecisionReason(String findingDecisionReason) { this.findingDecisionReason = findingDecisionReason; }
+
+    public boolean isLocalMatched() { return localMatched; }
+    public void setLocalMatched(boolean localMatched) { this.localMatched = localMatched; }
+
+    public Boolean getLlmMatched() { return llmMatched; }
+    public void setLlmMatched(Boolean llmMatched) { this.llmMatched = llmMatched; }
+
+    public String getFinalDecision() { return finalDecision; }
+    public void setFinalDecision(String finalDecision) { this.finalDecision = finalDecision; }
+
+    public String getRejectReason() { return rejectReason; }
+    public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
+
+    public Boolean getManualConfirmedOverride() { return manualConfirmedOverride; }
+    public void setManualConfirmedOverride(Boolean manualConfirmedOverride) {
+        this.manualConfirmedOverride = manualConfirmedOverride;
+    }
+
+    public String getDedupKey() { return dedupKey; }
+    public void setDedupKey(String dedupKey) { this.dedupKey = dedupKey; }
+
+    public List<ExchangeRecord> getExchangeRecords() { return exchangeRecords; }
+    public void setExchangeRecords(List<ExchangeRecord> exchangeRecords) {
+        this.exchangeRecords = exchangeRecords != null ? new ArrayList<>(exchangeRecords) : new ArrayList<>();
+    }
 
     @Override
     public String toString() {

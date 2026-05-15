@@ -3,6 +3,7 @@ package com.aiburpcopilot.burp.ui;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.verification.model.DiffResult;
+import com.aiburpcopilot.core.verification.model.FinalVerdicts;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 
 import java.util.ArrayList;
@@ -36,6 +37,9 @@ final class VerificationUiSupport {
     }
 
     static String rowKey(HistoryEntry entry, VerificationResult result) {
+        if (result != null && result.getDedupKey() != null && !result.getDedupKey().isBlank()) {
+            return nullToDash(entry.getRequestId()) + "|" + result.getPhase() + "|" + result.getDedupKey();
+        }
         return nullToDash(entry.getRequestId())
                 + "|" + nullToDash(result.getPhase())
                 + "|" + nullToDash(result.getAttackTypeName())
@@ -45,6 +49,12 @@ final class VerificationUiSupport {
     }
 
     static String workflowKey(HistoryEntry entry, VerificationResult result) {
+        if (result != null && result.getTraceId() != null && !result.getTraceId().isBlank()) {
+            return nullToDash(entry.getRequestId()) + "|" + result.getTraceId();
+        }
+        if (result != null && result.getCandidateId() != null && !result.getCandidateId().isBlank()) {
+            return nullToDash(entry.getRequestId()) + "|" + result.getCandidateId();
+        }
         return nullToDash(entry.getRequestId())
                 + "|" + nullToDash(result.getAttackTypeName())
                 + "|" + nullToDash(result.getParameter());
@@ -60,6 +70,43 @@ final class VerificationUiSupport {
 
     static boolean isAggregatedFinding(VerificationResult result) {
         return result != null && PHASE_FINDING.equalsIgnoreCase(result.getPhase());
+    }
+
+    static boolean isEffectiveFinding(VerificationResult result) {
+        return result != null
+                && isPayloadVerification(result)
+                && (isAggregatedFinding(result) || result.getManualConfirmedOverride() != null)
+                && FinalVerdicts.isEffective(result);
+    }
+
+    static boolean isBetterWorkflowRepresentative(VerificationResult candidate, VerificationResult current) {
+        if (candidate == null) {
+            return false;
+        }
+        if (current == null) {
+            return true;
+        }
+        boolean candidateFinding = isAggregatedFinding(candidate);
+        boolean currentFinding = isAggregatedFinding(current);
+        if (candidateFinding != currentFinding) {
+            return candidateFinding;
+        }
+        boolean candidateEffective = FinalVerdicts.isEffective(candidate);
+        boolean currentEffective = FinalVerdicts.isEffective(current);
+        if (candidateEffective != currentEffective) {
+            return candidateEffective;
+        }
+        int candidateEvidence = candidate.getEvidences() != null ? candidate.getEvidences().size() : 0;
+        int currentEvidence = current.getEvidences() != null ? current.getEvidences().size() : 0;
+        if (candidateEvidence != currentEvidence) {
+            return candidateEvidence > currentEvidence;
+        }
+        int candidateRecords = candidate.getExchangeRecords() != null ? candidate.getExchangeRecords().size() : 0;
+        int currentRecords = current.getExchangeRecords() != null ? current.getExchangeRecords().size() : 0;
+        if (candidateRecords != currentRecords) {
+            return candidateRecords > currentRecords;
+        }
+        return candidate.getConfidence() > current.getConfidence();
     }
 
     static String formatDiffChinese(DiffResult diff, long responseTimeMs) {

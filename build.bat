@@ -11,11 +11,20 @@ echo.
 set JAVA_HOME=D:\jdk\jdk21
 set MAVEN_HOME=D:\jdk\apache-maven-3.9.15-bin\apache-maven-3.9.15
 set JAVA_CMD=%JAVA_HOME%\bin\java.exe
+set JAVAC_CMD=%JAVA_HOME%\bin\javac.exe
 set MVN_CMD=%MAVEN_HOME%\bin\mvn.cmd
+set PATH=%JAVA_HOME%\bin;%MAVEN_HOME%\bin;%PATH%
 
 :: Check Java
 if not exist "%JAVA_CMD%" (
     echo [ERROR] JDK not found at: %JAVA_HOME%
+    echo Please check your JDK installation.
+    pause
+    exit /b 1
+)
+
+if not exist "%JAVAC_CMD%" (
+    echo [ERROR] javac not found at: %JAVAC_CMD%
     echo Please check your JDK installation.
     pause
     exit /b 1
@@ -31,6 +40,7 @@ if not exist "%MVN_CMD%" (
 
 echo [INFO] Java: %JAVA_HOME%
 "%JAVA_CMD%" -version 2>&1
+"%JAVAC_CMD%" -version 2>&1
 echo.
 echo [INFO] Maven: %MAVEN_HOME%
 echo.
@@ -48,7 +58,7 @@ if "%mode%"=="" set mode=2
 set PROJECT_DIR=%~dp0
 cd /d "%PROJECT_DIR%"
 
-set MVN_ARGS=-DskipTests -Dmaven.test.skip=true
+set MVN_ARGS=-DskipTests -Dmaven.test.skip=true -Dmaven.compiler.useModulePath=false
 
 if "%mode%"=="1" (
     echo [INFO] Compiling...

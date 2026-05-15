@@ -11,6 +11,7 @@ import java.util.List;
 public class FindingAggregator {
 
     private static final double MIN_FINDING_CONFIDENCE = 0.55;
+    private static final double FINDING_CONFIDENCE_EPSILON = 0.001;
     private static final String PAYLOAD_VERIFICATION_PHASE = "Payload Verification";
 
     public VulnerabilityFinding aggregate(String requestId, String url, WorkflowResult workflowResult) {
@@ -37,14 +38,39 @@ public class FindingAggregator {
             }
         }
 
-        if (confidence < MIN_FINDING_CONFIDENCE || representative == null || vulnerabilityEvidence.isEmpty()) {
+        workflowResult.setFindingThreshold(MIN_FINDING_CONFIDENCE);
+        workflowResult.setFindingConfidenceRaw(confidence);
+
+        if (representative == null) {
+            workflowResult.setFindingGenerated(false);
+            workflowResult.setFindingDecisionReason("No payload verification step produced usable evidence.");
+            workflowResult.setRejectReason(workflowResult.getFindingDecisionReason());
+            workflowResult.setFinalDecision("NO_EVIDENCE");
+            return null;
+        }
+        if (vulnerabilityEvidence.isEmpty()) {
+            workflowResult.setFindingGenerated(false);
+            workflowResult.setFindingDecisionReason("Payload verification succeeded but produced no evidence snapshots.");
+            workflowResult.setRejectReason(workflowResult.getFindingDecisionReason());
+            workflowResult.setFinalDecision("NO_EVIDENCE");
+            return null;
+        }
+        if (!passesThreshold(confidence, MIN_FINDING_CONFIDENCE)) {
+            workflowResult.setFindingGenerated(false);
+            workflowResult.setFindingDecisionReason("Finding not generated: raw confidence="
+                    + String.format("%.4f", confidence)
+                    + " < threshold=" + String.format("%.4f", MIN_FINDING_CONFIDENCE));
+            workflowResult.setRejectReason(workflowResult.getFindingDecisionReason());
+            workflowResult.setFinalDecision("BELOW_THRESHOLD");
             return null;
         }
 
         VulnerabilityFinding finding = new VulnerabilityFinding();
-        finding.setAttackType(workflowResult.getAttackType());
         finding.setAttackTypeName(workflowResult.getAttackTypeName());
+        finding.setAttackType(workflowResult.getAttackType());
         finding.setParameter(workflowResult.getParameterName());
+        finding.setCandidateId(workflowResult.getCandidateId());
+        finding.setTraceId(workflowResult.getTraceId());
         finding.setRequestId(requestId);
         finding.setUrl(url);
         finding.setConfidence(confidence);
@@ -52,12 +78,29 @@ public class FindingAggregator {
         finding.setEvidences(vulnerabilityEvidence);
         finding.setReasoning(buildReasoning(workflowResult, vulnerabilityEvidence, confidence, evidenceCount));
         finding.setDiffResult(representative.getDiffResult());
+        finding.setBaselineRequestBytes(workflowResult.getBaselineRequestBytes());
+        finding.setBaselineResponseBytes(workflowResult.getBaselineResponseBytes());
         finding.setRequestBytes(representative.getRequestBytes());
         finding.setResponseBytes(representative.getResponseBytes());
         finding.setResponseTimeMs(representative.getDurationMs());
         finding.setExchangeTranscript(buildTranscript(workflowResult));
-        finding.setLlmReview(representative.getLlmReview());
+        finding.setExchangeRecords(new ArrayList<>(workflowResult.getExchangeRecords()));
+        finding.setThreshold(MIN_FINDING_CONFIDENCE);
+        finding.setLocalMatched(workflowResult.isLocalMatched());
+        finding.setLlmMatched(null);
+        finding.setFinalDecision("CONFIRMED");
+        finding.setDedupKey(workflowResult.getDedupKey());
+        finding.setDecisionReason("Finding generated: raw confidence="
+                + String.format("%.4f", confidence)
+                + ", threshold=" + String.format("%.4f", MIN_FINDING_CONFIDENCE));
+        workflowResult.setFindingGenerated(true);
+        workflowResult.setFindingDecisionReason(finding.getDecisionReason());
+        workflowResult.setFinalDecision("CONFIRMED");
         return finding;
+    }
+
+    private boolean passesThreshold(double value, double threshold) {
+        return value + FINDING_CONFIDENCE_EPSILON >= threshold;
     }
 
     private boolean isVulnerabilityProofStep(StepResult stepResult) {

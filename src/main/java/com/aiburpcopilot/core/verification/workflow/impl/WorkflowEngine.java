@@ -100,6 +100,16 @@ public class WorkflowEngine implements IWorkflowEngine {
         result.setAttackTypeName(def.getAttackTypeName());
         result.setWorkflowName(def.getName());
         result.setParameterName(context.getCandidate().getParameterName());
+        result.setCandidateId(context.getCandidate().getCandidateId());
+        result.setTraceId(context.getTraceId());
+        result.setRequestId(context.getHttpContext() != null ? context.getHttpContext().getRequestId() : null);
+        result.setUrl(context.getHttpContext() != null ? context.getHttpContext().getUrl() : null);
+        result.setCandidateSource(context.getCandidate().getSource());
+        result.setCandidateReasoning(context.getCandidate().getReasoning());
+        result.setCandidateConfidence(context.getCandidate().getConfidence());
+        result.setBaselineRequestBytes(context.getBaselineRequest());
+        result.setBaselineResponseBytes(context.getBaselineResponse());
+        result.setDedupKey(context.getTraceId());
 
         List<StepResult> stepResults = new ArrayList<>();
 
@@ -111,6 +121,8 @@ public class WorkflowEngine implements IWorkflowEngine {
                 PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine", "Influence not approved: " + reason);
                 result.setCompleted(false);
                 result.setStopReason(reason);
+                result.setRejectReason(reason);
+                result.setFinalDecision("REJECTED");
                 result.setStoppedAtStep(0);
                 result.setDurationMs(System.currentTimeMillis() - workflowStart);
                 return result;
@@ -127,6 +139,8 @@ public class WorkflowEngine implements IWorkflowEngine {
                         "Workflow stopped: " + context.getStopReason());
                 result.setCompleted(false);
                 result.setStopReason(context.getStopReason());
+                result.setRejectReason(context.getStopReason());
+                result.setFinalDecision("REJECTED");
                 result.setStoppedAtStep(i);
                 break;
             }
@@ -140,6 +154,8 @@ public class WorkflowEngine implements IWorkflowEngine {
                 PluginLogger.getInstance().warn(PluginLogger.Category.VERIFICATION, "WorkflowEngine", msg);
                 result.setCompleted(false);
                 result.setStopReason(msg);
+                result.setRejectReason(msg);
+                result.setFinalDecision("REJECTED");
                 result.setStoppedAtStep(i);
                 break;
             }
@@ -165,6 +181,8 @@ public class WorkflowEngine implements IWorkflowEngine {
                 stepResults.add(missingStep);
                 result.setCompleted(false);
                 result.setStopReason(msg);
+                result.setRejectReason(msg);
+                result.setFinalDecision("ERROR");
                 result.setStoppedAtStep(i);
                 break;
             }
@@ -188,6 +206,8 @@ public class WorkflowEngine implements IWorkflowEngine {
                         result.setCompleted(false);
                         result.setStoppedAtStep(i);
                         result.setStopReason(stepResult.getReasoning());
+                        result.setRejectReason(stepResult.getReasoning());
+                        result.setFinalDecision("REJECTED");
                         break;
                     }
                 }
@@ -204,6 +224,8 @@ public class WorkflowEngine implements IWorkflowEngine {
                 result.setCompleted(false);
                 result.setStoppedAtStep(i);
                 result.setStopReason("Exception in step " + stepName + ": " + e.getMessage());
+                result.setRejectReason(result.getStopReason());
+                result.setFinalDecision("ERROR");
                 break;
             }
         }
@@ -224,6 +246,10 @@ public class WorkflowEngine implements IWorkflowEngine {
             for (StepResult sr : stepResults) {
                 totalConfidence += sr.getConfidence();
                 confidenceSteps++;
+                result.setLocalMatched(result.isLocalMatched() || sr.isLocalMatched());
+                if (sr.getLlmMatched() != null) {
+                    result.setLlmMatched(sr.getLlmMatched());
+                }
             }
             result.setOverallConfidence(confidenceSteps > 0 ? totalConfidence / confidenceSteps : 0.0);
         }
@@ -231,6 +257,11 @@ public class WorkflowEngine implements IWorkflowEngine {
         result.setDurationMs(System.currentTimeMillis() - workflowStart);
         result.setCompleted(executedSteps == def.getStepNames().size()
                 && !context.isStopped());
+        if (result.isCompleted()) {
+            result.setFinalDecision(result.isLocalMatched() ? "COMPLETED" : "NO_MATCH");
+        } else if (result.getFinalDecision() == null) {
+            result.setFinalDecision("REJECTED");
+        }
 
         log.info("WorkflowEngine: workflow '{}' completed={}, confidence={:.2f}, duration={}ms, evidence={}",
                 def.getName(), result.isCompleted(), result.getOverallConfidence(),
@@ -239,7 +270,7 @@ public class WorkflowEngine implements IWorkflowEngine {
         PluginLogger.getInstance().info(PluginLogger.Category.VERIFICATION, "WorkflowEngine",
                 "Workflow result: " + def.getName()
                         + " | completed=" + result.isCompleted()
-                        + " | confidence=" + String.format("%.2f", result.getOverallConfidence())
+                        + " | confidence=" + String.format("%.4f", result.getOverallConfidence())
                         + " | duration=" + result.getDurationMs() + "ms"
                         + " | evidence=" + result.getEvidence().size());
 
@@ -343,6 +374,8 @@ public class WorkflowEngine implements IWorkflowEngine {
     private WorkflowResult buildErrorResult(WorkflowResult result, String reason) {
         result.setCompleted(false);
         result.setStopReason(reason);
+        result.setRejectReason(reason);
+        result.setFinalDecision("ERROR");
         result.setOverallConfidence(0.0);
         return result;
     }
