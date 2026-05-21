@@ -17,6 +17,15 @@ dependency-reduced-pom.xml
 ai-burp-copilot/
 .ai-burp-copilot/
 
+# Runtime history databases / test records
+ai-burp-copilot-templates/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
 # Local scratch notes / process files
 notes/
 scratch/
