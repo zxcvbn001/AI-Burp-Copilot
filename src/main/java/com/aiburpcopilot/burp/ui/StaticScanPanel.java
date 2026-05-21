@@ -12,6 +12,7 @@ import javax.swing.border.TitledBorder;
 import javax.swing.table.AbstractTableModel;
 import java.awt.*;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -28,6 +29,7 @@ public class StaticScanPanel extends JPanel {
     private final CloudFindingTableModel cloudFindingTableModel;
     private final JTable cloudApiTable;
     private final CloudApiTableModel cloudApiTableModel;
+    private final JTextArea cloudApiDetailArea;
     private final JTable cloudAssetTable;
     private final CloudAssetTableModel cloudAssetTableModel;
     private final JTable cloudParamTable;
@@ -47,8 +49,6 @@ public class StaticScanPanel extends JPanel {
     private final JTable jsTaskTable;
     private final JsTaskTableModel jsTaskTableModel;
     private final JTextArea authSignalArea;
-    private final JTable recoveredEndpointTable;
-    private final RecoveredEndpointTableModel recoveredEndpointTableModel;
     private final BurpMessageViewer.RequestView requestViewer;
     private final BurpMessageViewer.ResponseView responseViewer;
 
@@ -82,7 +82,13 @@ public class StaticScanPanel extends JPanel {
         cloudFindingTableModel = new CloudFindingTableModel();
         cloudFindingTable = createDataTable(cloudFindingTableModel, 120, 100, 180, 90, 75, 100, 280, 420);
         cloudApiTableModel = new CloudApiTableModel();
-        cloudApiTable = createDataTable(cloudApiTableModel, 70, 240, 280, 130, 100, 120, 180, 120, 220);
+        cloudApiTable = createDataTable(cloudApiTableModel, 65, 240, 300, 90, 65, 80, 95, 160, 280, 240);
+        cloudApiTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting() && !refreshing) {
+                updateCloudApiDetail(false);
+            }
+        });
+        cloudApiDetailArea = createWrappedTextArea();
         cloudAssetTableModel = new CloudAssetTableModel();
         cloudAssetTable = createDataTable(cloudAssetTableModel, 70, 260, 300, 130, 120, 180);
         cloudParamTableModel = new CloudParamTableModel();
@@ -102,8 +108,6 @@ public class StaticScanPanel extends JPanel {
         jsTaskTableModel = new JsTaskTableModel();
         jsTaskTable = createDataTable(jsTaskTableModel, 90, 90, 230, 280, 520);
         authSignalArea = createWrappedTextArea();
-        recoveredEndpointTableModel = new RecoveredEndpointTableModel();
-        recoveredEndpointTable = createDataTable(recoveredEndpointTableModel, 80, 240, 320, 80, 70, 420);
         requestViewer = new BurpMessageViewer.RequestView(api);
         responseViewer = new BurpMessageViewer.ResponseView(api);
 
@@ -118,13 +122,9 @@ public class StaticScanPanel extends JPanel {
         resultTabs.addTab("Auth", titledScroll("Auth Signals", authSignalArea));
         resultTabs.addTab("Tasks", titledScroll("JS AST Tasks", jsTaskTable));
 
-        JPanel recoveredSection = titledScroll("Validated / Recovered Endpoints", recoveredEndpointTable);
-        JSplitPane findingSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT, resultTabs, recoveredSection);
-        findingSplit.setResizeWeight(0.68);
-        findingSplit.setDividerLocation(360);
         JPanel findingPanel = new JPanel(new BorderLayout());
         findingPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
-        findingPanel.add(findingSplit, BorderLayout.CENTER);
+        findingPanel.add(resultTabs, BorderLayout.CENTER);
 
         detailTabs = new JTabbedPane();
         UiUtil.applyBurpFont(detailTabs);
@@ -203,12 +203,17 @@ public class StaticScanPanel extends JPanel {
         String currentId = entry.getRequestId();
         boolean sameEntry = currentId != null && currentId.equals(displayedEntryId);
         StaticScanResult details = entry.getStaticScanDetails();
+        String selectedApiKey = selectedCloudApiKey();
         UiUtil.setTextPreservingView(
                 findingArea,
                 buildSummaryText(entry, details),
                 sameEntry);
         cloudFindingTableModel.setFindings(details != null ? details.getCloudFindings() : List.of());
-        cloudApiTableModel.setApis(details != null ? details.getCloudApis() : List.of());
+        cloudApiTableModel.setApis(
+                details != null ? details.getCloudApis() : List.of(),
+                details != null ? details.getRecoveredEndpoints() : List.of());
+        restoreCloudApiSelection(sameEntry ? selectedApiKey : null);
+        updateCloudApiDetail(sameEntry);
         cloudAssetTableModel.setAssets(details != null ? details.getCloudAssets() : List.of());
         cloudParamTableModel.setParams(details != null ? details.getCloudParams() : List.of());
         cloudSecretTableModel.setSecrets(details != null ? details.getCloudSecrets() : List.of());
@@ -219,7 +224,6 @@ public class StaticScanPanel extends JPanel {
         analyzedScriptTableModel.setScripts(details != null ? details.getAnalyzedScripts() : List.of());
         jsTaskTableModel.setTasks(details != null ? details.getJsAstTasks() : List.of());
         UiUtil.setTextPreservingView(authSignalArea, buildAuthSignalText(details), sameEntry);
-        recoveredEndpointTableModel.setEndpoints(details != null ? details.getRecoveredEndpoints() : List.of());
         requestViewer.setBytes(entry.getRawRequest());
         responseViewer.setBytes(entry.getRawResponse());
         displayedEntryId = currentId;
@@ -230,7 +234,8 @@ public class StaticScanPanel extends JPanel {
         displayedEntryId = null;
         findingArea.setText("");
         cloudFindingTableModel.setFindings(List.of());
-        cloudApiTableModel.setApis(List.of());
+        cloudApiTableModel.setApis(List.of(), List.of());
+        cloudApiDetailArea.setText("");
         cloudAssetTableModel.setAssets(List.of());
         cloudParamTableModel.setParams(List.of());
         cloudSecretTableModel.setSecrets(List.of());
@@ -241,7 +246,6 @@ public class StaticScanPanel extends JPanel {
         analyzedScriptTableModel.setScripts(List.of());
         jsTaskTableModel.setTasks(List.of());
         authSignalArea.setText("");
-        recoveredEndpointTableModel.setEndpoints(List.of());
         requestViewer.setBytes(null);
         responseViewer.setBytes(null);
     }
@@ -264,15 +268,52 @@ public class StaticScanPanel extends JPanel {
     }
 
     private JPanel createEndpointGroupPanel() {
+        JTabbedPane lowerTabs = new JTabbedPane();
+        UiUtil.applyBurpFont(lowerTabs);
+        lowerTabs.addTab("选中接口详情", titledScroll("访问验证 / 接口详情", cloudApiDetailArea));
+        lowerTabs.addTab("Endpoint Findings", titledScroll("Endpoint findings", endpointFindingTable));
+
         JSplitPane split = new JSplitPane(
                 JSplitPane.VERTICAL_SPLIT,
-                titledScroll("API / Endpoint candidates (验证与接口分析受配置管控)", cloudApiTable),
-                titledScroll("Endpoint findings", endpointFindingTable));
+                titledScroll("API / Endpoint candidates（验证结果见表格）", cloudApiTable),
+                lowerTabs);
         split.setResizeWeight(0.65);
         split.setDividerLocation(260);
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(split, BorderLayout.CENTER);
         return panel;
+    }
+
+    private void restoreCloudApiSelection(String selectedApiKey) {
+        if (cloudApiTableModel.getRowCount() == 0) {
+            cloudApiTable.clearSelection();
+            return;
+        }
+        int row = selectedApiKey != null ? cloudApiTableModel.indexOfKey(selectedApiKey) : -1;
+        if (row < 0) {
+            row = 0;
+        }
+        cloudApiTable.setRowSelectionInterval(row, row);
+    }
+
+    private String selectedCloudApiKey() {
+        int row = cloudApiTable.getSelectedRow();
+        if (row < 0) {
+            return null;
+        }
+        return cloudApiTableModel.selectedKey(cloudApiTable.convertRowIndexToModel(row));
+    }
+
+    private void updateCloudApiDetail(boolean preserveView) {
+        int row = cloudApiTable.getSelectedRow();
+        if (row < 0) {
+            UiUtil.setTextPreservingView(cloudApiDetailArea, "请选择上方接口候选，查看验证状态与详细结果。", preserveView);
+            return;
+        }
+        int modelRow = cloudApiTable.convertRowIndexToModel(row);
+        StaticScanResult.CloudApi api = cloudApiTableModel.getApiAt(modelRow);
+        StaticScanResult.RecoveredEndpoint recovered = cloudApiTableModel.getRecoveredAt(modelRow);
+        UiUtil.setTextPreservingView(cloudApiDetailArea, buildCloudApiDetail(api, recovered), preserveView);
     }
 
     private JPanel createExposureGroupPanel() {
@@ -409,12 +450,46 @@ public class StaticScanPanel extends JPanel {
     }
 
     private static class CloudApiTableModel extends AbstractTableModel {
-        private final String[] columns = {"Method", "Raw URL", "Resolved URL", "Base URL", "Confidence", "Source", "Params", "Headers", "Notes"};
+        private final String[] columns = {"方法", "原始 URL", "解析 URL", "访问验证", "状态码", "置信度", "来源", "参数", "来源脚本", "说明"};
         private List<StaticScanResult.CloudApi> apis = List.of();
+        private List<StaticScanResult.RecoveredEndpoint> recoveredEndpoints = List.of();
 
-        void setApis(List<StaticScanResult.CloudApi> apis) {
+        void setApis(List<StaticScanResult.CloudApi> apis, List<StaticScanResult.RecoveredEndpoint> recoveredEndpoints) {
             this.apis = apis != null ? apis : List.of();
+            List<StaticScanResult.RecoveredEndpoint> source = recoveredEndpoints != null ? recoveredEndpoints : List.of();
+            List<StaticScanResult.RecoveredEndpoint> matched = new ArrayList<>(this.apis.size());
+            for (StaticScanResult.CloudApi api : this.apis) {
+                matched.add(findRecovered(api, source));
+            }
+            this.recoveredEndpoints = matched;
             fireTableDataChanged();
+        }
+
+        StaticScanResult.CloudApi getApiAt(int row) {
+            return row >= 0 && row < apis.size() ? apis.get(row) : null;
+        }
+
+        StaticScanResult.RecoveredEndpoint getRecoveredAt(int row) {
+            return row >= 0 && row < recoveredEndpoints.size() ? recoveredEndpoints.get(row) : null;
+        }
+
+        String selectedKey(int viewRow) {
+            if (viewRow < 0) {
+                return null;
+            }
+            return key(getApiAt(viewRow));
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < apis.size(); i++) {
+                if (key.equals(key(apis.get(i)))) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         @Override public int getRowCount() { return apis.size(); }
@@ -424,18 +499,81 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudApi api = apis.get(rowIndex);
+            StaticScanResult.RecoveredEndpoint recovered = getRecoveredAt(rowIndex);
             return switch (columnIndex) {
                 case 0 -> api.getMethod();
                 case 1 -> api.getRawUrl();
                 case 2 -> api.getResolvedUrl();
-                case 3 -> api.getBaseUrl();
-                case 4 -> api.getConfidence();
-                case 5 -> api.getSource();
-                case 6 -> join(api.getParams());
-                case 7 -> join(api.getHeaders());
-                case 8 -> join(api.getNotes());
+                case 3 -> validationStatus(recovered);
+                case 4 -> recovered != null && recovered.getStatusCode() > 0 ? recovered.getStatusCode() : "-";
+                case 5 -> api.getConfidence();
+                case 6 -> api.getSource();
+                case 7 -> join(api.getParams());
+                case 8 -> api.getSourceScriptUrl();
+                case 9 -> recovered != null ? recovered.getReason() : join(api.getNotes());
                 default -> "";
             };
+        }
+
+        private static StaticScanResult.RecoveredEndpoint findRecovered(StaticScanResult.CloudApi api,
+                                                                        List<StaticScanResult.RecoveredEndpoint> endpoints) {
+            if (api == null || endpoints == null || endpoints.isEmpty()) {
+                return null;
+            }
+            for (StaticScanResult.RecoveredEndpoint endpoint : endpoints) {
+                if (endpoint == null || !methodMatches(api.getMethod(), endpoint.getMethod())) {
+                    continue;
+                }
+                if (!scriptMatches(api.getSourceScriptUrl(), endpoint.getSourceScriptUrl())) {
+                    continue;
+                }
+                if (sameValue(api.getRawUrl(), endpoint.getRawUrl())
+                        || sameUrl(api.getResolvedUrl(), endpoint.getUrl())
+                        || sameUrl(api.getRawUrl(), endpoint.getUrl())) {
+                    return endpoint;
+                }
+            }
+            return null;
+        }
+
+        private static boolean methodMatches(String apiMethod, String endpointMethod) {
+            return isBlank(apiMethod) || isBlank(endpointMethod) || apiMethod.trim().equalsIgnoreCase(endpointMethod.trim());
+        }
+
+        private static boolean scriptMatches(String apiScript, String endpointScript) {
+            return isBlank(apiScript) || isBlank(endpointScript) || sameValue(apiScript, endpointScript);
+        }
+
+        private static boolean sameUrl(String left, String right) {
+            if (sameValue(left, right)) {
+                return true;
+            }
+            String normalizedLeft = normalizeUrl(left);
+            String normalizedRight = normalizeUrl(right);
+            return !normalizedLeft.isBlank() && normalizedLeft.equals(normalizedRight);
+        }
+
+        private static String normalizeUrl(String value) {
+            if (value == null) {
+                return "";
+            }
+            String normalized = value.trim();
+            while (normalized.endsWith("/") && normalized.length() > "https://x/".length()) {
+                normalized = normalized.substring(0, normalized.length() - 1);
+            }
+            return normalized;
+        }
+
+        private static boolean sameValue(String left, String right) {
+            return left != null && right != null && left.trim().equals(right.trim());
+        }
+
+        private static String key(StaticScanResult.CloudApi api) {
+            if (api == null) {
+                return null;
+            }
+            return safe(api.getMethod()) + "|" + safe(api.getSourceScriptUrl()) + "|"
+                    + safe(api.getRawUrl()) + "|" + safe(api.getResolvedUrl());
         }
     }
 
@@ -605,34 +743,6 @@ public class StaticScanPanel extends JPanel {
         }
     }
 
-    private static class RecoveredEndpointTableModel extends AbstractTableModel {
-        private final String[] columns = {"Method", "Raw URL", "Resolved URL", "Validated", "Status", "Reason"};
-        private List<StaticScanResult.RecoveredEndpoint> endpoints = List.of();
-
-        void setEndpoints(List<StaticScanResult.RecoveredEndpoint> endpoints) {
-            this.endpoints = endpoints != null ? endpoints : List.of();
-            fireTableDataChanged();
-        }
-
-        @Override public int getRowCount() { return endpoints.size(); }
-        @Override public int getColumnCount() { return columns.length; }
-        @Override public String getColumnName(int column) { return columns[column]; }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            StaticScanResult.RecoveredEndpoint endpoint = endpoints.get(rowIndex);
-            return switch (columnIndex) {
-                case 0 -> endpoint.getMethod();
-                case 1 -> endpoint.getRawUrl();
-                case 2 -> endpoint.getUrl();
-                case 3 -> endpoint.isValidated();
-                case 4 -> endpoint.getStatusCode() > 0 ? endpoint.getStatusCode() : "-";
-                case 5 -> endpoint.getReason();
-                default -> "";
-            };
-        }
-    }
-
     private static String join(List<String> values) {
         return values != null && !values.isEmpty() ? String.join(", ", values) : "";
     }
@@ -643,5 +753,69 @@ public class StaticScanPanel extends JPanel {
 
     private static String oneLine(String value) {
         return value != null ? value.replace("\r", " ").replace("\n", " ").trim() : "";
+    }
+
+    private static String buildCloudApiDetail(StaticScanResult.CloudApi api,
+                                              StaticScanResult.RecoveredEndpoint recovered) {
+        if (api == null) {
+            return "请选择上方接口候选，查看验证状态与详细结果。";
+        }
+        StringBuilder text = new StringBuilder();
+        text.append("接口候选\n");
+        appendLine(text, "方法", api.getMethod());
+        appendLine(text, "原始 URL", api.getRawUrl());
+        appendLine(text, "解析 URL", api.getResolvedUrl());
+        appendLine(text, "Base URL", api.getBaseUrl());
+        appendLine(text, "来源脚本", api.getSourceScriptUrl());
+        appendLine(text, "来源", api.getSource());
+        appendLine(text, "置信度", api.getConfidence());
+        appendLine(text, "认证信号", api.getAuth());
+        appendLine(text, "参数", join(api.getParams()));
+        appendLine(text, "请求头", join(api.getHeaders()));
+        appendLine(text, "说明", join(api.getNotes()));
+
+        text.append("\n访问验证\n");
+        appendLine(text, "结果", validationStatus(recovered));
+        if (recovered != null) {
+            appendLine(text, "验证 URL", recovered.getUrl());
+            appendLine(text, "状态码", recovered.getStatusCode() > 0 ? String.valueOf(recovered.getStatusCode()) : "-");
+            appendLine(text, "验证原因", recovered.getReason());
+            appendLine(text, "验证来源脚本", recovered.getSourceScriptUrl());
+        } else {
+            appendLine(text, "验证原因", "未找到对应验证记录，可能受自动发包开关或最大验证数量限制。");
+        }
+        return text.toString();
+    }
+
+    private static void appendLine(StringBuilder text, String label, Object value) {
+        text.append(label).append(": ").append(value != null && !String.valueOf(value).isBlank() ? value : "-").append('\n');
+    }
+
+    private static String validationStatus(StaticScanResult.RecoveredEndpoint recovered) {
+        if (recovered == null) {
+            return "未验证";
+        }
+        if (recovered.isValidated()) {
+            return "访问成功";
+        }
+        String reason = recovered.getReason() != null ? recovered.getReason() : "";
+        if (reason.contains("自动发包验证已关闭")) {
+            return "未验证";
+        }
+        if (reason.contains("无法解析")) {
+            return "解析失败";
+        }
+        if (recovered.getStatusCode() > 0) {
+            return "访问失败";
+        }
+        return "未验证";
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String safe(String value) {
+        return value != null ? value : "";
     }
 }
