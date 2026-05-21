@@ -85,26 +85,47 @@ public final class ExternalResourcePaths {
             manualHomeDir = envPath;
             return envPath;
         }
+
         String stored = ConfigDirectoryStore.load();
+        Path storedPath = null;
         if (stored != null && !stored.isBlank()) {
-            Path storedPath = configuredPath(stored);
-            if (storedPath != null) {
+            storedPath = configuredPath(stored);
+            if (storedPath != null && !isTemplateDirectory(storedPath)) {
                 manualHomeDir = storedPath;
                 return storedPath;
             }
-            ConfigDirectoryStore.save("");
+            if (storedPath == null) {
+                ConfigDirectoryStore.save("");
+            }
         }
+
         Path cwdPath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_DIR_NAME).toString());
         if (cwdPath != null) {
             manualHomeDir = cwdPath;
+            if (storedPath != null && isTemplateDirectory(storedPath)) {
+                ConfigDirectoryStore.save(cwdPath.toString());
+            }
             return cwdPath;
         }
+
+        if (storedPath != null) {
+            manualHomeDir = storedPath;
+            return storedPath;
+        }
+
         Path templatePath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_TEMPLATE_DIR_NAME).toString());
         if (templatePath != null) {
             manualHomeDir = templatePath;
             return templatePath;
         }
         return null;
+    }
+
+    private static boolean isTemplateDirectory(Path path) {
+        if (path == null || path.getFileName() == null) {
+            return false;
+        }
+        return Constants.CONFIG_TEMPLATE_DIR_NAME.equals(path.getFileName().toString());
     }
 
     private static Path configuredPath(String rawPath) {
