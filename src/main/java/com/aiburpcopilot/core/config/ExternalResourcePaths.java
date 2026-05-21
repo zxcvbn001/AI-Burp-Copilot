@@ -32,9 +32,48 @@ public final class ExternalResourcePaths {
         return resolveHomeDir();
     }
 
+    public static String validateConfigDirectory(Path directoryOrFile) {
+        if (directoryOrFile == null) {
+            return "Config directory is null";
+        }
+        try {
+            Path normalized = directoryOrFile.toAbsolutePath().normalize();
+            Path path = Files.isDirectory(normalized) ? normalized : normalized.getParent();
+            if (path == null) {
+                return "Config directory parent cannot be resolved";
+            }
+            if (!Files.exists(path)) {
+                return "Directory does not exist: " + path;
+            }
+            if (!Files.isDirectory(path)) {
+                return "Path is not a directory: " + path;
+            }
+            Path configFile = path.resolve(Constants.CONFIG_FILE_NAME);
+            Path promptsDir = path.resolve("prompts");
+            Path rulesDir = path.resolve("rules");
+            if (!Files.exists(configFile) || !Files.isRegularFile(configFile)) {
+                return "Missing application.yml: " + configFile;
+            }
+            if (!Files.exists(promptsDir) || !Files.isDirectory(promptsDir)) {
+                return "Missing prompts directory: " + promptsDir;
+            }
+            if (!Files.exists(rulesDir) || !Files.isDirectory(rulesDir)) {
+                return "Missing rules directory: " + rulesDir;
+            }
+            return null;
+        } catch (Exception e) {
+            return e.getClass().getSimpleName() + ": " + e.getMessage();
+        }
+    }
+
     private static Path resolveHomeDir() {
         if (manualHomeDir != null) {
-            return manualHomeDir;
+            Path validatedManual = configuredPath(manualHomeDir.toString());
+            if (validatedManual != null) {
+                manualHomeDir = validatedManual;
+                return validatedManual;
+            }
+            manualHomeDir = null;
         }
         Path systemPropertyPath = configuredPath(System.getProperty("aiburpcopilot.home"));
         if (systemPropertyPath != null) {
@@ -46,6 +85,15 @@ public final class ExternalResourcePaths {
             manualHomeDir = envPath;
             return envPath;
         }
+        String stored = ConfigDirectoryStore.load();
+        if (stored != null && !stored.isBlank()) {
+            Path storedPath = configuredPath(stored);
+            if (storedPath != null) {
+                manualHomeDir = storedPath;
+                return storedPath;
+            }
+            ConfigDirectoryStore.save("");
+        }
         Path cwdPath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_DIR_NAME).toString());
         if (cwdPath != null) {
             manualHomeDir = cwdPath;
@@ -56,13 +104,7 @@ public final class ExternalResourcePaths {
             manualHomeDir = templatePath;
             return templatePath;
         }
-        String stored = ConfigDirectoryStore.load();
-        if (stored == null || stored.isBlank()) {
-            return null;
-        }
-        Path path = Paths.get(stored.trim()).toAbsolutePath().normalize();
-        manualHomeDir = path;
-        return path;
+        return null;
     }
 
     private static Path configuredPath(String rawPath) {
@@ -71,19 +113,7 @@ public final class ExternalResourcePaths {
         }
         try {
             Path path = Paths.get(rawPath.trim()).toAbsolutePath().normalize();
-            if (!Files.exists(path) || !Files.isDirectory(path)) {
-                return null;
-            }
-            Path configFile = path.resolve(Constants.CONFIG_FILE_NAME);
-            Path promptsDir = path.resolve("prompts");
-            Path rulesDir = path.resolve("rules");
-            if (!Files.exists(configFile) || !Files.isRegularFile(configFile)) {
-                return null;
-            }
-            if (!Files.exists(promptsDir) || !Files.isDirectory(promptsDir)) {
-                return null;
-            }
-            if (!Files.exists(rulesDir) || !Files.isDirectory(rulesDir)) {
+            if (validateConfigDirectory(path) != null) {
                 return null;
             }
             return path;

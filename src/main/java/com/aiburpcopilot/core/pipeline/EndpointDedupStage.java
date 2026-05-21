@@ -22,6 +22,9 @@ public class EndpointDedupStage implements IPipelineStage {
 
     @Override
     public void process(HTTPContext context) {
+        if (context.isManualSubmission()) {
+            return;
+        }
         String key = fingerprint(context);
         if (key == null) {
             return;

@@ -22,7 +22,7 @@ final class VerificationUiSupport {
 
     static List<ResultRow> collectRows(IHistoryService historyService) {
         Map<String, ResultRow> dedup = new LinkedHashMap<>();
-        for (HistoryEntry entry : historyService.getAll()) {
+        for (HistoryEntry entry : historyService.searchAdvanced(null, null, null, null, null, null, null, 0, 500)) {
             if (entry.getVerificationResults() == null) {
                 continue;
             }

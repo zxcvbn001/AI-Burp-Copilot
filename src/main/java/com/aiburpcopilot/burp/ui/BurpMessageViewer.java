@@ -19,6 +19,7 @@ final class BurpMessageViewer {
     static final class RequestView extends JPanel {
         private final HttpRequestEditor editor;
         private final JTextArea fallback;
+        private byte[] lastBytes;
 
         RequestView(MontoyaApi api) {
             super(new BorderLayout());
@@ -41,20 +42,24 @@ final class BurpMessageViewer {
         }
 
         void setBytes(byte[] bytes) {
+            boolean sameBytes = java.util.Arrays.equals(lastBytes, bytes);
             if (editor != null) {
-                editor.setRequest(bytes != null && bytes.length > 0
-                        ? HttpRequest.httpRequest(ByteArray.byteArray(bytes))
-                        : HttpRequest.httpRequest());
+                if (!sameBytes) {
+                    editor.setRequest(bytes != null && bytes.length > 0
+                            ? HttpRequest.httpRequest(ByteArray.byteArray(bytes))
+                            : HttpRequest.httpRequest());
+                }
             } else {
-                fallback.setText(UiUtil.bytesToText(bytes));
-                fallback.setCaretPosition(0);
+                UiUtil.setTextPreservingView(fallback, UiUtil.bytesToText(bytes), sameBytes);
             }
+            lastBytes = bytes != null ? java.util.Arrays.copyOf(bytes, bytes.length) : null;
         }
     }
 
     static final class ResponseView extends JPanel {
         private final HttpResponseEditor editor;
         private final JTextArea fallback;
+        private byte[] lastBytes;
 
         ResponseView(MontoyaApi api) {
             super(new BorderLayout());
@@ -77,14 +82,17 @@ final class BurpMessageViewer {
         }
 
         void setBytes(byte[] bytes) {
+            boolean sameBytes = java.util.Arrays.equals(lastBytes, bytes);
             if (editor != null) {
-                editor.setResponse(bytes != null && bytes.length > 0
-                        ? HttpResponse.httpResponse(ByteArray.byteArray(bytes))
-                        : HttpResponse.httpResponse());
+                if (!sameBytes) {
+                    editor.setResponse(bytes != null && bytes.length > 0
+                            ? HttpResponse.httpResponse(ByteArray.byteArray(bytes))
+                            : HttpResponse.httpResponse());
+                }
             } else {
-                fallback.setText(UiUtil.bytesToText(bytes));
-                fallback.setCaretPosition(0);
+                UiUtil.setTextPreservingView(fallback, UiUtil.bytesToText(bytes), sameBytes);
             }
+            lastBytes = bytes != null ? java.util.Arrays.copyOf(bytes, bytes.length) : null;
         }
     }
 }

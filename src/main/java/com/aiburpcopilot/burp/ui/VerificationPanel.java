@@ -42,6 +42,7 @@ public class VerificationPanel extends JPanel {
     private final JLabel exchangeTitleLabel;
     private final JTabbedPane detailTabs;
     private String displayedWorkflowKey;
+    private String displayedExchangeKey;
     private boolean refreshing;
 
     public VerificationPanel(MontoyaApi api, IHistoryService historyService) {
@@ -162,9 +163,10 @@ public class VerificationPanel extends JPanel {
         }
 
         VerificationResult result = row.result();
-        displayedWorkflowKey = VerificationUiSupport.workflowKey(row.entry(), result);
-        reasoningArea.setText(buildReasoningText(result));
-        reasoningArea.setCaretPosition(0);
+        String currentWorkflowKey = VerificationUiSupport.workflowKey(row.entry(), result);
+        boolean sameWorkflow = currentWorkflowKey.equals(displayedWorkflowKey);
+        displayedWorkflowKey = currentWorkflowKey;
+        UiUtil.setTextPreservingView(reasoningArea, buildReasoningText(result), sameWorkflow);
 
         List<ExchangeItem> items = buildExchangeItems(collectWorkflowResults(displayedWorkflowKey), result);
         exchangeListModel.clear();
@@ -179,8 +181,15 @@ public class VerificationPanel extends JPanel {
                 ? "当前结果没有可展示的请求 / 响应"
                 : "共 " + items.size() + " 条执行记录，选中后右侧显示详情");
         if (!items.isEmpty()) {
-            exchangeList.setSelectedIndex(0);
+            String preservedExchangeKey = displayedExchangeKey != null ? displayedExchangeKey : selectedExchangeKey();
+            if (preservedExchangeKey != null) {
+                restoreExchangeSelection(preservedExchangeKey);
+            }
+            if (exchangeList.getSelectedIndex() < 0) {
+                exchangeList.setSelectedIndex(0);
+            }
         } else {
+            displayedExchangeKey = null;
             clearExchangeDetail(EMPTY_DIFF_TEXT);
         }
     }
@@ -188,23 +197,24 @@ public class VerificationPanel extends JPanel {
     private void updateExchangeDetail() {
         ExchangeItem item = exchangeList.getSelectedValue();
         if (item == null) {
+            displayedExchangeKey = null;
             clearExchangeDetail(EMPTY_DIFF_TEXT);
             return;
         }
+        boolean sameExchange = item.key().equals(displayedExchangeKey);
         requestViewer.setBytes(item.requestBytes());
         responseViewer.setBytes(item.responseBytes());
         baselineViewer.setBytes(item.baselineResponseBytes());
-        diffArea.setText(item.diffText());
-        diffArea.setCaretPosition(0);
+        UiUtil.setTextPreservingView(diffArea, item.diffText(), sameExchange);
         exchangeHintLabel.setText(item.hint());
+        displayedExchangeKey = item.key();
     }
 
     private void clearExchangeDetail(String diffText) {
         requestViewer.setBytes(null);
         responseViewer.setBytes(null);
         baselineViewer.setBytes(null);
-        diffArea.setText(diffText);
-        diffArea.setCaretPosition(0);
+        UiUtil.setTextPreservingView(diffArea, diffText, false);
     }
 
     private List<VerificationUiSupport.ResultRow> collectWorkflowRows() {

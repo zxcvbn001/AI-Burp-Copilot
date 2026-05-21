@@ -4,6 +4,7 @@ import com.aiburpcopilot.core.context.AnalysisStatus;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.history.HistoryEntry;
+import com.aiburpcopilot.core.history.HistoryStorageStatus;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.utils.Constants;
 import org.slf4j.Logger;
@@ -71,11 +72,26 @@ public class InMemoryHistoryService implements IHistoryService {
                                      AnalysisStatus status,
                                      int offset,
                                      int limit) {
+        return searchAdvanced(keyword, null, endpointType, riskLevel, status, null, null, offset, limit);
+    }
+
+    @Override
+    public List<HistoryEntry> searchAdvanced(String keyword,
+                                             String site,
+                                             EndpointType endpointType,
+                                             RiskLevel riskLevel,
+                                             AnalysisStatus status,
+                                             Long timeFrom,
+                                             Long timeTo,
+                                             int offset,
+                                             int limit) {
         return entries.stream()
                 .filter(e -> matchesKeyword(e, keyword))
+                .filter(e -> matchesSite(e, site))
                 .filter(e -> endpointType == null || e.getEndpointType() == endpointType)
                 .filter(e -> riskLevel == null || e.getRiskLevel() == riskLevel)
                 .filter(e -> status == null || e.getAnalysisStatus() == status)
+                .filter(e -> matchesTime(e, timeFrom, timeTo))
                 .skip(offset)
                 .limit(limit)
                 .collect(Collectors.toList());
@@ -105,12 +121,51 @@ public class InMemoryHistoryService implements IHistoryService {
                      EndpointType endpointType,
                      RiskLevel riskLevel,
                      AnalysisStatus status) {
+        return countAdvanced(keyword, null, endpointType, riskLevel, status, null, null);
+    }
+
+    @Override
+    public int countAdvanced(String keyword,
+                             String site,
+                             EndpointType endpointType,
+                             RiskLevel riskLevel,
+                             AnalysisStatus status,
+                             Long timeFrom,
+                             Long timeTo) {
         return (int) entries.stream()
                 .filter(e -> matchesKeyword(e, keyword))
+                .filter(e -> matchesSite(e, site))
                 .filter(e -> endpointType == null || e.getEndpointType() == endpointType)
                 .filter(e -> riskLevel == null || e.getRiskLevel() == riskLevel)
                 .filter(e -> status == null || e.getAnalysisStatus() == status)
+                .filter(e -> matchesTime(e, timeFrom, timeTo))
                 .count();
+    }
+
+    @Override
+    public int clearAdvanced(String keyword,
+                             String site,
+                             EndpointType endpointType,
+                             RiskLevel riskLevel,
+                             AnalysisStatus status,
+                             Long timeFrom,
+                             Long timeTo) {
+        int before = entries.size();
+        entries.removeIf(e -> matchesKeyword(e, keyword)
+                && matchesSite(e, site)
+                && (endpointType == null || e.getEndpointType() == endpointType)
+                && (riskLevel == null || e.getRiskLevel() == riskLevel)
+                && (status == null || e.getAnalysisStatus() == status)
+                && matchesTime(e, timeFrom, timeTo));
+        return before - entries.size();
+    }
+
+    @Override
+    public HistoryStorageStatus getStorageStatus() {
+        return new HistoryStorageStatus(
+                HistoryStorageStatus.Mode.IN_MEMORY,
+                "In-Memory",
+                null);
     }
 
     // ---------- Private ----------
@@ -122,5 +177,21 @@ public class InMemoryHistoryService implements IHistoryService {
                 || (entry.getPath() != null && entry.getPath().toLowerCase().contains(lower))
                 || (entry.getMethod() != null && entry.getMethod().toLowerCase().contains(lower))
                 || (entry.getAiSummary() != null && entry.getAiSummary().toLowerCase().contains(lower));
+    }
+
+    private boolean matchesSite(HistoryEntry entry, String site) {
+        if (site == null || site.isBlank()) {
+            return true;
+        }
+        String url = entry.getUrl();
+        return url != null && url.toLowerCase().contains(site.toLowerCase());
+    }
+
+    private boolean matchesTime(HistoryEntry entry, Long timeFrom, Long timeTo) {
+        long timestamp = entry.getTimestamp();
+        if (timeFrom != null && timestamp < timeFrom) {
+            return false;
+        }
+        return timeTo == null || timestamp <= timeTo;
     }
 }

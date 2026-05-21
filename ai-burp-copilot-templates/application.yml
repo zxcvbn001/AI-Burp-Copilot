@@ -40,12 +40,33 @@ scan:
   responseBodyScan:
     enabled: true
     maxSize: 204800
-  staticScanMaxSize: 204800
+  staticScanMaxSize: 200
 ai:
   maxTokens: 20480
   timeoutMs: 60000
   maxPromptLength: 8000
   rateLimitPerMinute: 10
+jsAnalysis:
+  enabled: true
+  baseUrl: http://127.0.0.1:3000
+  apiKey: YOUR_JS_ANALYSIS_API_KEY_HERE
+  apiKeyHeader: x-api-key
+  healthPath: /health
+  analyzePath: /analyze/js
+  fastMode: true
+  mode: fast
+  submitAsync: true
+  taskPollIntervalMs: 1000
+  taskTimeoutMs: 60000
+  connectTimeoutMs: 8000
+  readTimeoutMs: 30000
+  writeTimeoutMs: 30000
+  maxReferencedScripts: 6
+  maxRecursiveDepth: 1
+  maxVerifiedEndpointsPerScript: 12
+  autoVerifyRecoveredApis: true
+  autoAnalyzeVerifiedApis: true
+  autoFetchReferencedScripts: true
 request:
   concurrency: 5
   maxQueueSize: 1000
@@ -53,6 +74,7 @@ storage:
   maxHistory: 10000
   cacheTtlSeconds: 3600
   maxCacheEntries: 5000
+  historyDbPath: ""
 verification:
   enabled: true
   maxRequestsPerEndpoint: 5

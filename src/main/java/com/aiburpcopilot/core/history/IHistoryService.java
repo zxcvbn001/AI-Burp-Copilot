@@ -15,6 +15,10 @@ import java.util.List;
  */
 public interface IHistoryService {
 
+    default HistoryStorageStatus getStorageStatus() {
+        return new HistoryStorageStatus(HistoryStorageStatus.Mode.IN_MEMORY, "Unknown", null);
+    }
+
     /**
      * 添加一条历史记录。
      *
@@ -42,12 +46,24 @@ public interface IHistoryService {
      * @param limit     每页数量
      * @return 符合条件的记录列表
      */
-    List<HistoryEntry> search(String keyword,
-                              EndpointType endpointType,
-                              RiskLevel riskLevel,
-                              AnalysisStatus status,
-                              int offset,
-                              int limit);
+    default List<HistoryEntry> search(String keyword,
+                                      EndpointType endpointType,
+                                      RiskLevel riskLevel,
+                                      AnalysisStatus status,
+                                      int offset,
+                                      int limit) {
+        return searchAdvanced(keyword, null, endpointType, riskLevel, status, null, null, offset, limit);
+    }
+
+    List<HistoryEntry> searchAdvanced(String keyword,
+                                      String site,
+                                      EndpointType endpointType,
+                                      RiskLevel riskLevel,
+                                      AnalysisStatus status,
+                                      Long timeFrom,
+                                      Long timeTo,
+                                      int offset,
+                                      int limit);
 
     /**
      * 根据请求 ID 获取单条记录。
@@ -78,8 +94,26 @@ public interface IHistoryService {
      * @param status       过滤分析状态
      * @return 符合条件的记录数量
      */
-    int count(String keyword,
-              EndpointType endpointType,
-              RiskLevel riskLevel,
-              AnalysisStatus status);
+    default int count(String keyword,
+                      EndpointType endpointType,
+                      RiskLevel riskLevel,
+                      AnalysisStatus status) {
+        return countAdvanced(keyword, null, endpointType, riskLevel, status, null, null);
+    }
+
+    int countAdvanced(String keyword,
+                      String site,
+                      EndpointType endpointType,
+                      RiskLevel riskLevel,
+                      AnalysisStatus status,
+                      Long timeFrom,
+                      Long timeTo);
+
+    int clearAdvanced(String keyword,
+                      String site,
+                      EndpointType endpointType,
+                      RiskLevel riskLevel,
+                      AnalysisStatus status,
+                      Long timeFrom,
+                      Long timeTo);
 }

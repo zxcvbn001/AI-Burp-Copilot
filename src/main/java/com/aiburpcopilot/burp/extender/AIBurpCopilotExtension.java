@@ -2,6 +2,7 @@ package com.aiburpcopilot.burp.extender;
 
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
+import com.aiburpcopilot.burp.contextmenu.SendToAiBurpCopilotMenu;
 import com.aiburpcopilot.burp.proxy.ProxyTrafficHandler;
 import com.aiburpcopilot.burp.ui.MainTab;
 import com.aiburpcopilot.core.ai.IAIProvider;
@@ -9,11 +10,13 @@ import com.aiburpcopilot.core.ai.impl.AIProviderFactory;
 import com.aiburpcopilot.core.cache.ICacheService;
 import com.aiburpcopilot.core.cache.impl.MemoryCacheService;
 import com.aiburpcopilot.core.context.HTTPContext;
+import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.config.impl.YAMLConfigService;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.history.impl.InMemoryHistoryService;
+import com.aiburpcopilot.core.history.impl.SqliteHistoryService;
 import com.aiburpcopilot.core.pipeline.AIAnalysisStage;
 import com.aiburpcopilot.core.pipeline.AnalysisPipeline;
 import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
@@ -104,8 +107,8 @@ public class AIBurpCopilotExtension implements BurpExtension {
         api.extension().setName("AI Burp Copilot");
         log.info("Starting AI Burp Copilot v2...");
 
-        historyService = new InMemoryHistoryService();
         configService = new YAMLConfigService();
+        historyService = createHistoryService();
         mainTab = new MainTab(
                 api,
                 historyService,
@@ -120,6 +123,9 @@ public class AIBurpCopilotExtension implements BurpExtension {
             proxyHandler = new ProxyTrafficHandler(delegatingPipeline);
             api.http().registerHttpHandler(proxyHandler);
             log.info("Proxy handler registered");
+
+            api.userInterface().registerContextMenuItemsProvider(new SendToAiBurpCopilotMenu(delegatingPipeline));
+            log.info("Context menu provider registered");
 
             api.extension().registerUnloadingHandler(() -> {
                 log.info("Extension unloading, shutting down runtime...");
@@ -151,6 +157,30 @@ public class AIBurpCopilotExtension implements BurpExtension {
 
     public IPipeline getPipeline() {
         return delegatingPipeline;
+    }
+
+    private IHistoryService createHistoryService() {
+        try {
+            return new SqliteHistoryService(loadStorageConfigSafely());
+        } catch (Exception e) {
+            log.error("Failed to initialize SQLite history service, fallback to memory history", e);
+            if (api != null) {
+                api.logging().logToError("AI Burp Copilot: SQLite history unavailable, fallback to in-memory history. " + e.getMessage());
+            }
+            return new InMemoryHistoryService();
+        }
+    }
+
+    private AppConfig.StorageConfig loadStorageConfigSafely() {
+        try {
+            if (ExternalResourcePaths.homeDirOrNull() != null) {
+                configService.reload();
+                return configService.getConfig().getStorage();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load storage config during bootstrap, fallback to default SQLite settings", e);
+        }
+        return null;
     }
 
     private void reloadRuntimeServices() {
@@ -193,7 +223,8 @@ public class AIBurpCopilotExtension implements BurpExtension {
         IEndpointClassifier endpointClassifier = new EndpointClassifier(
                 aiProvider, promptService, cacheService, configService);
         IStaticScanner staticScanner = new StaticResourceScanner(
-                aiProvider, promptService, cacheService, configService);
+                aiProvider, promptService, cacheService, configService,
+                historyService, endpointClassifier, api);
         log.info("Scanner components initialized");
 
         VerificationGuard verificationGuard = new VerificationGuard(
@@ -237,7 +268,7 @@ public class AIBurpCopilotExtension implements BurpExtension {
         pipeline.registerStage(new EndpointDedupStage());
         pipeline.registerStage(new StatusCodeFilterStage(configService));
         pipeline.registerStage(new EndpointClassificationStage(endpointClassifier));
-        pipeline.registerStage(new StaticScanStage(staticScanner));
+        pipeline.registerStage(new StaticScanStage(staticScanner, historyService));
         pipeline.registerStage(new AIAnalysisStage(
                 aiProvider, promptService, cacheService, configService, capabilityCatalog));
         pipeline.registerStage(new RiskEvaluatorStage());

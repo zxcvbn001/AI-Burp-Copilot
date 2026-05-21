@@ -92,6 +92,69 @@ final class UiUtil {
         return panel;
     }
 
+    static TextViewState captureTextViewState(JTextComponent component) {
+        if (component == null) {
+            return null;
+        }
+        JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, component);
+        Point viewPosition = viewport != null ? viewport.getViewPosition() : null;
+        return new TextViewState(component.getCaretPosition(), viewPosition != null ? new Point(viewPosition) : null);
+    }
+
+    static void restoreTextViewState(JTextComponent component, TextViewState state) {
+        if (component == null) {
+            return;
+        }
+        if (state == null) {
+            resetTextView(component);
+            return;
+        }
+        SwingUtilities.invokeLater(() -> {
+            int length = component.getDocument() != null ? component.getDocument().getLength() : 0;
+            int caret = Math.max(0, Math.min(state.caretPosition(), length));
+            component.setCaretPosition(caret);
+            JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, component);
+            if (viewport != null && state.viewPosition() != null) {
+                Point point = state.viewPosition();
+                int maxX = Math.max(0, component.getWidth() - viewport.getWidth());
+                int maxY = Math.max(0, component.getHeight() - viewport.getHeight());
+                viewport.setViewPosition(new Point(
+                        Math.max(0, Math.min(point.x, maxX)),
+                        Math.max(0, Math.min(point.y, maxY))));
+            }
+        });
+    }
+
+    static void setTextPreservingView(JTextComponent component, String text, boolean preserveView) {
+        String safeText = text != null ? text : "";
+        if (component != null && safeText.equals(component.getText())) {
+            if (!preserveView) {
+                resetTextView(component);
+            }
+            return;
+        }
+        TextViewState state = preserveView ? captureTextViewState(component) : null;
+        component.setText(safeText);
+        if (preserveView) {
+            restoreTextViewState(component, state);
+        } else {
+            resetTextView(component);
+        }
+    }
+
+    static void resetTextView(JTextComponent component) {
+        if (component == null) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> {
+            component.setCaretPosition(0);
+            JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, component);
+            if (viewport != null) {
+                viewport.setViewPosition(new Point(0, 0));
+            }
+        });
+    }
+
     static void highlight(JTextComponent component, String needle, JLabel hitLabel) {
         component.getHighlighter().removeAllHighlights();
         if (needle == null || needle.isBlank()) {
@@ -126,5 +189,23 @@ final class UiUtil {
             return "";
         }
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    static final class TextViewState {
+        private final int caretPosition;
+        private final Point viewPosition;
+
+        private TextViewState(int caretPosition, Point viewPosition) {
+            this.caretPosition = caretPosition;
+            this.viewPosition = viewPosition;
+        }
+
+        int caretPosition() {
+            return caretPosition;
+        }
+
+        Point viewPosition() {
+            return viewPosition;
+        }
     }
 }

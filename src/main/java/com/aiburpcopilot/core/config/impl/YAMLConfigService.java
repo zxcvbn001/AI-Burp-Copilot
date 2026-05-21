@@ -27,13 +27,15 @@ public class YAMLConfigService implements IConfigService {
     private volatile AppConfig currentConfig;
 
     public YAMLConfigService() {
-        Path homeDir = ExternalResourcePaths.homeDirOrNull();
-        this.configDir = homeDir;
-        this.configFile = homeDir != null ? homeDir.resolve("application.yml") : null;
+        refreshConfigLocation();
     }
 
     @Override
     public synchronized void reloadFrom(Path configDirectory) {
+        String validationError = ExternalResourcePaths.validateConfigDirectory(configDirectory);
+        if (validationError != null) {
+            throw new IllegalStateException(validationError);
+        }
         ExternalResourcePaths.setManualConfigFile(configDirectory);
         this.configDir = ExternalResourcePaths.homeDir();
         this.configFile = ExternalResourcePaths.configFile();
@@ -42,12 +44,16 @@ public class YAMLConfigService implements IConfigService {
 
     @Override
     public Path getConfigFilePath() {
+        if (configFile == null) {
+            refreshConfigLocation();
+        }
         return configFile;
     }
 
     @Override
     public synchronized void reload() {
         try {
+            refreshConfigLocation();
             if (configFile == null) {
                 throw new IllegalStateException("Config directory is not configured");
             }
@@ -72,12 +78,15 @@ public class YAMLConfigService implements IConfigService {
             notifyListeners();
         } catch (Exception e) {
             log.error("Failed to load configuration from {}", configFile, e);
-            throw new IllegalStateException("Unable to load application.yml from configured directory", e);
+            String rootMessage = rootCauseMessage(e);
+            throw new IllegalStateException("Unable to load application.yml from configured directory"
+                    + (rootMessage != null && !rootMessage.isBlank() ? ": " + rootMessage : ""), e);
         }
     }
 
     @Override
     public synchronized void save() {
+        refreshConfigLocation();
         saveInternal();
         notifyListeners();
     }
@@ -102,6 +111,7 @@ public class YAMLConfigService implements IConfigService {
 
     private void saveInternal() {
         try {
+            refreshConfigLocation();
             if (configDir == null || configFile == null) {
                 throw new IllegalStateException("Config directory is not configured");
             }
@@ -127,5 +137,31 @@ public class YAMLConfigService implements IConfigService {
                 log.warn("Config change listener error", e);
             }
         }
+    }
+
+    private void refreshConfigLocation() {
+        Path homeDir = ExternalResourcePaths.homeDirOrNull();
+        this.configDir = homeDir;
+        this.configFile = homeDir != null ? homeDir.resolve("application.yml") : null;
+    }
+
+    private String rootCauseMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null && current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        if (current == null) {
+            return null;
+        }
+        String message = current.getMessage();
+        if (message == null || message.isBlank()) {
+            return current.getClass().getSimpleName();
+        }
+        if (message.contains("rateLimitPerSecond")) {
+            return current.getClass().getSimpleName()
+                    + ": " + message
+                    + " | Please rename 'ai.rateLimitPerSecond' to 'ai.rateLimitPerMinute' in the active application.yml";
+        }
+        return current.getClass().getSimpleName() + ": " + message;
     }
 }

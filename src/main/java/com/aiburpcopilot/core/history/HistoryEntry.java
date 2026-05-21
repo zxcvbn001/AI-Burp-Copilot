@@ -1,6 +1,7 @@
 package com.aiburpcopilot.core.history;
 
 import com.aiburpcopilot.core.context.*;
+import com.aiburpcopilot.scanner.staticresource.StaticScanResult;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -86,6 +87,8 @@ public class HistoryEntry {
     /** 验证结果列表（由 WorkflowVerificationStage 填充） */
     private java.util.List<com.aiburpcopilot.core.verification.model.VerificationResult> verificationResults;
 
+    private StaticScanResult staticScanDetails;
+
     // ---------- Constructors ----------
 
     public HistoryEntry() {}
@@ -165,6 +168,7 @@ public class HistoryEntry {
         HistoryEntry entry = fromHTTPContext(context);
         entry.analysisStatus = AnalysisStatus.COMPLETED;
         entry.aiSummary = context.getStaticScanResult();
+        entry.staticScanDetails = context.getStaticScanDetails();
         return entry;
     }
 
@@ -221,4 +225,6 @@ public class HistoryEntry {
 
     public java.util.List<com.aiburpcopilot.core.verification.model.VerificationResult> getVerificationResults() { return verificationResults; }
     public void setVerificationResults(java.util.List<com.aiburpcopilot.core.verification.model.VerificationResult> verificationResults) { this.verificationResults = verificationResults; }
+    public StaticScanResult getStaticScanDetails() { return staticScanDetails; }
+    public void setStaticScanDetails(StaticScanResult staticScanDetails) { this.staticScanDetails = staticScanDetails; }
 }

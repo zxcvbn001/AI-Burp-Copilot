@@ -3,6 +3,8 @@ package com.aiburpcopilot.burp.ui;
 import burp.api.montoya.MontoyaApi;
 import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.discovery.ISiteDiscoveryService;
+import com.aiburpcopilot.core.discovery.impl.InMemorySiteDiscoveryService;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.pipeline.HistoryEventBus;
@@ -18,6 +20,7 @@ public class MainTab extends JPanel {
     private final ParameterInfluencePanel parameterInfluencePanel;
     private final VerificationPanel verificationPanel;
     private final StaticScanPanel staticScanPanel;
+    private final SitePatternDiscoveryPanel sitePatternDiscoveryPanel;
     private final ConfirmedVulnerabilityPanel confirmedVulnerabilityPanel;
     private final ReportExportPanel reportExportPanel;
     private final LogPanel logPanel;
@@ -37,11 +40,13 @@ public class MainTab extends JPanel {
                 api, historyService, manualVerificationService);
         this.verificationPanel = new VerificationPanel(api, historyService);
         this.staticScanPanel = new StaticScanPanel(api, historyService);
+        ISiteDiscoveryService siteDiscoveryService = new InMemorySiteDiscoveryService(historyService, api);
+        this.sitePatternDiscoveryPanel = new SitePatternDiscoveryPanel(api, siteDiscoveryService);
         this.reportExportPanel = new ReportExportPanel();
         this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(
                 api, historyService, aiProvider, configService, reportExportPanel);
         this.logPanel = new LogPanel();
-        this.settingsPanel = new SettingsPanel(configService, api, reloadRuntimeResources);
+        this.settingsPanel = new SettingsPanel(configService, historyService, api, reloadRuntimeResources);
 
         JTabbedPane tabbedPane = new JTabbedPane();
         UiUtil.applyBurpFont(tabbedPane);
@@ -50,6 +55,7 @@ public class MainTab extends JPanel {
         tabbedPane.addTab("\u53c2\u6570\u5206\u6790", parameterInfluencePanel);
         tabbedPane.addTab("\u6f0f\u6d1e\u9a8c\u8bc1\u8fc7\u7a0b", verificationPanel);
         tabbedPane.addTab("\u9759\u6001\u6587\u4ef6\u5206\u6790", staticScanPanel);
+        tabbedPane.addTab("\u7ad9\u70b9\u89c4\u5f8b\u53d1\u73b0", sitePatternDiscoveryPanel);
         tabbedPane.addTab("\u6709\u6548\u6f0f\u6d1e", confirmedVulnerabilityPanel);
         tabbedPane.addTab("\u62a5\u544a\u5bfc\u51fa", reportExportPanel);
         tabbedPane.addTab("\u65e5\u5fd7", logPanel);
@@ -87,6 +93,7 @@ public class MainTab extends JPanel {
             parameterInfluencePanel.refresh();
             verificationPanel.refresh();
             staticScanPanel.refresh();
+            sitePatternDiscoveryPanel.refresh();
             confirmedVulnerabilityPanel.refresh();
         });
     }

@@ -70,6 +70,9 @@ public class HTTPContext {
     /** 静态资源扫描结果（仅对 STATIC_RESOURCE 类型有效） */
     private String staticScanResult;
 
+    /** 静态资源扫描结构化结果（仅对 STATIC_RESOURCE 类型有效） */
+    private com.aiburpcopilot.scanner.staticresource.StaticScanResult staticScanDetails;
+
     /** 请求时间戳 */
     private long timestamp;
 
@@ -90,6 +93,9 @@ public class HTTPContext {
 
     /** 验证结果列表（由 WorkflowVerificationStage 填充） */
     private java.util.List<com.aiburpcopilot.core.verification.model.VerificationResult> verificationResults;
+
+    /** 是否由用户手动触发（例如 Send to 插件） */
+    private boolean manualSubmission;
 
     public HTTPContext() {
         this.requestId = UUID.randomUUID().toString().replace("-", "");
@@ -250,6 +256,14 @@ public class HTTPContext {
         this.staticScanResult = staticScanResult;
     }
 
+    public com.aiburpcopilot.scanner.staticresource.StaticScanResult getStaticScanDetails() {
+        return staticScanDetails;
+    }
+
+    public void setStaticScanDetails(com.aiburpcopilot.scanner.staticresource.StaticScanResult staticScanDetails) {
+        this.staticScanDetails = staticScanDetails;
+    }
+
     public long getTimestamp() {
         return timestamp;
     }
@@ -303,6 +317,14 @@ public class HTTPContext {
             this.verificationResults = new java.util.ArrayList<>();
         }
         this.verificationResults.add(result);
+    }
+
+    public boolean isManualSubmission() {
+        return manualSubmission;
+    }
+
+    public void setManualSubmission(boolean manualSubmission) {
+        this.manualSubmission = manualSubmission;
     }
 
     // ---------- Utility Methods ----------

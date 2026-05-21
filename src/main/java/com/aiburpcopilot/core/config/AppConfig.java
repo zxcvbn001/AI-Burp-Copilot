@@ -1,7 +1,6 @@
 package com.aiburpcopilot.core.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.ArrayList;
@@ -21,6 +20,7 @@ public class AppConfig {
     private LLMConfig llm = new LLMConfig();
     private ScanConfig scan = new ScanConfig();
     private AIConfig ai = new AIConfig();
+    private JsAnalysisConfig jsAnalysis = new JsAnalysisConfig();
     private RequestConfig request = new RequestConfig();
     private StorageConfig storage = new StorageConfig();
     private VerificationConfig verification = new VerificationConfig();
@@ -130,7 +130,7 @@ public class AppConfig {
         private ResponseBodyScanConfig responseBodyScan = new ResponseBodyScanConfig();
 
         @JsonProperty("staticScanMaxSize")
-        private int staticScanMaxSize = 204800; // 200KB
+        private int staticScanMaxSize = 200; // KB
 
         public List<String> getSkipExtensions() { return skipExtensions; }
         public void setSkipExtensions(List<String> skipExtensions) { this.skipExtensions = skipExtensions; }
@@ -152,7 +152,7 @@ public class AppConfig {
         private boolean enabled = true;
 
         @JsonProperty("maxSize")
-        private int maxSize = 204800; // 200KB
+        private int maxSize = 204800; // bytes
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -174,7 +174,6 @@ public class AppConfig {
         private int maxPromptLength = 8000;
 
         @JsonProperty("rateLimitPerMinute")
-        @JsonAlias("rateLimitPerSecond")
         private int rateLimitPerMinute = 60;
 
         public int getMaxTokens() { return maxTokens; }
@@ -185,6 +184,135 @@ public class AppConfig {
         public void setMaxPromptLength(int maxPromptLength) { this.maxPromptLength = maxPromptLength; }
         public int getRateLimitPerMinute() { return rateLimitPerMinute; }
         public void setRateLimitPerMinute(int rateLimitPerMinute) { this.rateLimitPerMinute = rateLimitPerMinute; }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class JsAnalysisConfig {
+        @JsonProperty("enabled")
+        private boolean enabled = true;
+
+        @JsonProperty("baseUrl")
+        private String baseUrl = "http://127.0.0.1:3000";
+
+        @JsonProperty("apiKey")
+        private String apiKey = "";
+
+        @JsonProperty("apiKeyHeader")
+        private String apiKeyHeader = "x-api-key";
+
+        @JsonProperty("healthPath")
+        private String healthPath = "/health";
+
+        @JsonProperty("analyzePath")
+        private String analyzePath = "/analyze/js";
+
+        @JsonProperty("fastMode")
+        private boolean fastMode = true;
+
+        @JsonProperty("mode")
+        private String mode = "fast";
+
+        @JsonProperty("submitAsync")
+        private boolean submitAsync = true;
+
+        @JsonProperty("taskPollIntervalMs")
+        private int taskPollIntervalMs = 1000;
+
+        @JsonProperty("taskTimeoutMs")
+        private int taskTimeoutMs = 60000;
+
+        @JsonProperty("connectTimeoutMs")
+        private int connectTimeoutMs = 8000;
+
+        @JsonProperty("readTimeoutMs")
+        private int readTimeoutMs = 30000;
+
+        @JsonProperty("writeTimeoutMs")
+        private int writeTimeoutMs = 30000;
+
+        @JsonProperty("maxReferencedScripts")
+        private int maxReferencedScripts = 6;
+
+        @JsonProperty("maxRecursiveDepth")
+        private int maxRecursiveDepth = 1;
+
+        @JsonProperty("maxVerifiedEndpointsPerScript")
+        private int maxVerifiedEndpointsPerScript = 12;
+
+        @JsonProperty("autoVerifyRecoveredEndpoints")
+        private Boolean legacyAutoVerifyRecoveredEndpoints;
+
+        @JsonProperty("autoVerifyRecoveredApis")
+        private boolean autoVerifyRecoveredApis = true;
+
+        @JsonProperty("autoAnalyzeVerifiedApis")
+        private boolean autoAnalyzeVerifiedApis = true;
+
+        @JsonProperty("autoFetchReferencedScripts")
+        private boolean autoFetchReferencedScripts = true;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+        public String getApiKeyHeader() { return apiKeyHeader; }
+        public void setApiKeyHeader(String apiKeyHeader) { this.apiKeyHeader = apiKeyHeader; }
+        public String getHealthPath() { return healthPath; }
+        public void setHealthPath(String healthPath) { this.healthPath = healthPath; }
+        public String getAnalyzePath() { return analyzePath; }
+        public void setAnalyzePath(String analyzePath) { this.analyzePath = analyzePath; }
+        public boolean isFastMode() { return fastMode; }
+        public void setFastMode(boolean fastMode) { this.fastMode = fastMode; }
+        public String getMode() { return mode; }
+        public void setMode(String mode) { this.mode = mode; }
+        public boolean isSubmitAsync() { return submitAsync; }
+        public void setSubmitAsync(boolean submitAsync) { this.submitAsync = submitAsync; }
+        public int getTaskPollIntervalMs() { return taskPollIntervalMs; }
+        public void setTaskPollIntervalMs(int taskPollIntervalMs) { this.taskPollIntervalMs = taskPollIntervalMs; }
+        public int getTaskTimeoutMs() { return taskTimeoutMs; }
+        public void setTaskTimeoutMs(int taskTimeoutMs) { this.taskTimeoutMs = taskTimeoutMs; }
+        public int getConnectTimeoutMs() { return connectTimeoutMs; }
+        public void setConnectTimeoutMs(int connectTimeoutMs) { this.connectTimeoutMs = connectTimeoutMs; }
+        public int getReadTimeoutMs() { return readTimeoutMs; }
+        public void setReadTimeoutMs(int readTimeoutMs) { this.readTimeoutMs = readTimeoutMs; }
+        public int getWriteTimeoutMs() { return writeTimeoutMs; }
+        public void setWriteTimeoutMs(int writeTimeoutMs) { this.writeTimeoutMs = writeTimeoutMs; }
+        public int getMaxReferencedScripts() { return maxReferencedScripts; }
+        public void setMaxReferencedScripts(int maxReferencedScripts) { this.maxReferencedScripts = maxReferencedScripts; }
+        public int getMaxRecursiveDepth() { return maxRecursiveDepth; }
+        public void setMaxRecursiveDepth(int maxRecursiveDepth) { this.maxRecursiveDepth = maxRecursiveDepth; }
+        public int getMaxVerifiedEndpointsPerScript() { return maxVerifiedEndpointsPerScript; }
+        public void setMaxVerifiedEndpointsPerScript(int maxVerifiedEndpointsPerScript) {
+            this.maxVerifiedEndpointsPerScript = maxVerifiedEndpointsPerScript;
+        }
+        public boolean isAutoVerifyRecoveredApis() {
+            return legacyAutoVerifyRecoveredEndpoints != null
+                    ? legacyAutoVerifyRecoveredEndpoints
+                    : autoVerifyRecoveredApis;
+        }
+        public void setAutoVerifyRecoveredApis(boolean autoVerifyRecoveredApis) {
+            this.autoVerifyRecoveredApis = autoVerifyRecoveredApis;
+            this.legacyAutoVerifyRecoveredEndpoints = null;
+        }
+        public boolean isAutoAnalyzeVerifiedApis() { return autoAnalyzeVerifiedApis; }
+        public void setAutoAnalyzeVerifiedApis(boolean autoAnalyzeVerifiedApis) {
+            this.autoAnalyzeVerifiedApis = autoAnalyzeVerifiedApis;
+        }
+        public boolean isAutoFetchReferencedScripts() {
+            return legacyAutoVerifyRecoveredEndpoints != null
+                    ? legacyAutoVerifyRecoveredEndpoints
+                    : autoFetchReferencedScripts;
+        }
+        public void setAutoFetchReferencedScripts(boolean autoFetchReferencedScripts) {
+            this.autoFetchReferencedScripts = autoFetchReferencedScripts;
+            this.legacyAutoVerifyRecoveredEndpoints = null;
+        }
+        public Boolean getLegacyAutoVerifyRecoveredEndpoints() { return legacyAutoVerifyRecoveredEndpoints; }
+        public void setLegacyAutoVerifyRecoveredEndpoints(Boolean legacyAutoVerifyRecoveredEndpoints) {
+            this.legacyAutoVerifyRecoveredEndpoints = legacyAutoVerifyRecoveredEndpoints;
+        }
     }
 
     // ---------- Request Config ----------
@@ -216,12 +344,17 @@ public class AppConfig {
         @JsonProperty("maxCacheEntries")
         private int maxCacheEntries = 5000;
 
+        @JsonProperty("historyDbPath")
+        private String historyDbPath = "";
+
         public int getMaxHistory() { return maxHistory; }
         public void setMaxHistory(int maxHistory) { this.maxHistory = maxHistory; }
         public int getCacheTtlSeconds() { return cacheTtlSeconds; }
         public void setCacheTtlSeconds(int cacheTtlSeconds) { this.cacheTtlSeconds = cacheTtlSeconds; }
         public int getMaxCacheEntries() { return maxCacheEntries; }
         public void setMaxCacheEntries(int maxCacheEntries) { this.maxCacheEntries = maxCacheEntries; }
+        public String getHistoryDbPath() { return historyDbPath; }
+        public void setHistoryDbPath(String historyDbPath) { this.historyDbPath = historyDbPath; }
     }
 
     // ---------- Verification Config ----------
@@ -277,6 +410,8 @@ public class AppConfig {
     public void setScan(ScanConfig scan) { this.scan = scan; }
     public AIConfig getAi() { return ai; }
     public void setAi(AIConfig ai) { this.ai = ai; }
+    public JsAnalysisConfig getJsAnalysis() { return jsAnalysis; }
+    public void setJsAnalysis(JsAnalysisConfig jsAnalysis) { this.jsAnalysis = jsAnalysis; }
     public RequestConfig getRequest() { return request; }
     public void setRequest(RequestConfig request) { this.request = request; }
     public StorageConfig getStorage() { return storage; }

@@ -47,6 +47,10 @@ public class HistoryStage implements IPipelineStage {
             } else {
                 entry = HistoryEntry.fromHTTPContext(context);
             }
+            HistoryEntry existing = historyService.getById(context.getRequestId());
+            if (entry.getStaticScanDetails() == null && existing != null && existing.getStaticScanDetails() != null) {
+                entry.setStaticScanDetails(existing.getStaticScanDetails());
+            }
             historyService.update(entry);
             if (isNew) {
                 HistoryEventBus.getInstance().fireHistoryAdded(entry);

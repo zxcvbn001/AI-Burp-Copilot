@@ -18,6 +18,7 @@ public class ReportExportPanel extends JPanel {
     private final ExportTaskTableModel tableModel;
     private final JTable table;
     private final JTextArea detailArea;
+    private ExportTaskHandle displayedHandle;
 
     public ReportExportPanel() {
         setLayout(new BorderLayout());
@@ -61,11 +62,13 @@ public class ReportExportPanel extends JPanel {
     private void updateDetail() {
         ExportTaskHandle handle = tableModel.getRowAt(table.getSelectedRow());
         if (handle == null) {
+            displayedHandle = null;
             detailArea.setText("");
             return;
         }
-        detailArea.setText(handle.detailText());
-        detailArea.setCaretPosition(0);
+        boolean sameHandle = handle == displayedHandle;
+        UiUtil.setTextPreservingView(detailArea, handle.detailText(), sameHandle);
+        displayedHandle = handle;
     }
 
     public static final class ExportTaskHandle {

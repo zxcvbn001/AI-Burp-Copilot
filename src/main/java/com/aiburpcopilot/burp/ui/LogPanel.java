@@ -46,6 +46,7 @@ public class LogPanel extends JPanel {
         private final JLabel statusLabel;
 
         private int lastSeenCount = -1;
+        private String displayedEntryKey;
 
         private CategoryLogView(PluginLogger.Category category) {
             this.category = category;
@@ -157,20 +158,24 @@ public class LogPanel extends JPanel {
             }
             int row = table.getSelectedRow();
             if (row < 0) {
+                displayedEntryKey = null;
                 detailMetaLabel.setText("Select one row to view the full log.");
                 detailArea.setText("");
                 return;
             }
             PluginLogger.LogEntry entry = tableModel.getEntryAt(table.convertRowIndexToModel(row));
             if (entry == null) {
+                displayedEntryKey = null;
                 detailMetaLabel.setText("Select one row to view the full log.");
                 detailArea.setText("");
                 return;
             }
+            String currentKey = entry.formatTimestamp() + "|" + entry.level().name() + "|" + LogTableModel.displaySource(entry);
+            boolean sameEntry = currentKey.equals(displayedEntryKey);
             detailMetaLabel.setText(entry.formatTimestamp() + "  [" + entry.level().name() + "]  "
                     + LogTableModel.displaySource(entry));
-            detailArea.setText(entry.message() != null ? entry.message() : "");
-            detailArea.setCaretPosition(0);
+            UiUtil.setTextPreservingView(detailArea, entry.message() != null ? entry.message() : "", sameEntry);
+            displayedEntryKey = currentKey;
         }
 
         private void copySelectedRows() {

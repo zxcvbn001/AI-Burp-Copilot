@@ -2,6 +2,8 @@ package com.aiburpcopilot.core.pipeline;
 
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.HTTPContext;
+import com.aiburpcopilot.core.history.HistoryEntry;
+import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.scanner.staticresource.IStaticScanner;
 import com.aiburpcopilot.scanner.staticresource.StaticScanResult;
 import org.slf4j.Logger;
@@ -18,9 +20,15 @@ public class StaticScanStage implements IPipelineStage {
     private static final Logger log = LoggerFactory.getLogger(StaticScanStage.class);
 
     private final IStaticScanner staticScanner;
+    private final IHistoryService historyService;
 
     public StaticScanStage(IStaticScanner staticScanner) {
+        this(staticScanner, null);
+    }
+
+    public StaticScanStage(IStaticScanner staticScanner, IHistoryService historyService) {
         this.staticScanner = staticScanner;
+        this.historyService = historyService;
     }
 
     @Override
@@ -31,11 +39,25 @@ public class StaticScanStage implements IPipelineStage {
     @Override
     public void process(HTTPContext context) {
         StaticScanResult result = staticScanner.scan(context);
+        context.setStaticScanDetails(result);
+        attachStructuredResult(context, result);
 
         if (result.isHasFindings()) {
             log.info("Static scan found {} issues for: {}",
                     result.getFindings() != null ? result.getFindings().size() : 0,
                     context.getPath());
+        }
+    }
+
+    private void attachStructuredResult(HTTPContext context, StaticScanResult result) {
+        if (historyService == null || context == null || context.getRequestId() == null) {
+            return;
+        }
+        HistoryEntry existing = historyService.getById(context.getRequestId());
+        if (existing != null) {
+            existing.setStaticScanDetails(result);
+            existing.setAiSummary(context.getStaticScanResult());
+            historyService.update(existing);
         }
     }
 

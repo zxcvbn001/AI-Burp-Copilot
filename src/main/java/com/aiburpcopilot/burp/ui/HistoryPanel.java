@@ -3,6 +3,7 @@ package com.aiburpcopilot.burp.ui;
 import com.aiburpcopilot.core.context.AnalysisStatus;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.RiskLevel;
+import com.aiburpcopilot.core.history.HistoryExportService;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
 
@@ -10,6 +11,9 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.*;
 import java.awt.*;
+import java.io.File;
+import java.nio.file.Path;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -27,11 +31,16 @@ public class HistoryPanel extends JPanel {
     private final JTable table;
     private final HistoryTableModel tableModel;
     private final JTextField searchField;
+    private final JTextField siteField;
+    private final JTextField timeFromField;
+    private final JTextField timeToField;
     private final JComboBox<String> typeFilter;
     private final JComboBox<String> riskFilter;
     private final JComboBox<String> statusFilter;
+    private final HistoryExportService exportService = new HistoryExportService();
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("HH:mm:ss");
+    private static final SimpleDateFormat FILTER_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm");
 
     public HistoryPanel(IHistoryService historyService) {
         this.historyService = historyService;
@@ -46,6 +55,23 @@ public class HistoryPanel extends JPanel {
         searchField = new JTextField(20);
         searchField.addActionListener(e -> refresh());
         toolbar.add(searchField);
+
+        toolbar.add(new JLabel("Site:"));
+        siteField = new JTextField(18);
+        siteField.addActionListener(e -> refresh());
+        toolbar.add(siteField);
+
+        toolbar.add(new JLabel("From:"));
+        timeFromField = new JTextField(14);
+        timeFromField.setToolTipText("yyyy-MM-dd HH:mm");
+        timeFromField.addActionListener(e -> refresh());
+        toolbar.add(timeFromField);
+
+        toolbar.add(new JLabel("To:"));
+        timeToField = new JTextField(14);
+        timeToField.setToolTipText("yyyy-MM-dd HH:mm");
+        timeToField.addActionListener(e -> refresh());
+        toolbar.add(timeToField);
 
         toolbar.add(new JLabel("Type:"));
         typeFilter = new JComboBox<>(new String[]{"All", "ENDPOINT", "STATIC_RESOURCE", "UNKNOWN"});
@@ -65,6 +91,14 @@ public class HistoryPanel extends JPanel {
         JButton clearBtn = new JButton("Clear");
         clearBtn.addActionListener(e -> clearHistory());
         toolbar.add(clearBtn);
+
+        JButton clearFilteredBtn = new JButton("Clear Filtered");
+        clearFilteredBtn.addActionListener(e -> clearFilteredHistory());
+        toolbar.add(clearFilteredBtn);
+
+        JButton exportBtn = new JButton("Export Filtered");
+        exportBtn.addActionListener(e -> exportFilteredHistory());
+        toolbar.add(exportBtn);
 
         add(toolbar, BorderLayout.NORTH);
 
@@ -109,14 +143,22 @@ public class HistoryPanel extends JPanel {
     public void refresh() {
         SwingUtilities.invokeLater(() -> {
             String keyword = searchField.getText().trim();
+            String site = siteField.getText().trim();
             EndpointType type = parseTypeFilter();
             RiskLevel risk = parseRiskFilter();
             AnalysisStatus status = parseStatusFilter();
+            Long timeFrom = parseTime(timeFromField.getText().trim(), false);
+            Long timeTo = parseTime(timeToField.getText().trim(), true);
 
-            List<HistoryEntry> results = (keyword.isEmpty() && type == null && risk == null && status == null)
-                    ? historyService.getAll()
-                    : historyService.search(keyword.isEmpty() ? null : keyword,
-                    type, risk, status, 0, 200);
+            List<HistoryEntry> results = (keyword.isEmpty() && site.isEmpty() && type == null && risk == null && status == null
+                    && timeFrom == null && timeTo == null)
+                    ? historyService.searchAdvanced(null, null, null, null, null, null, null, 0, 200)
+                    : historyService.searchAdvanced(
+                    keyword.isEmpty() ? null : keyword,
+                    site.isEmpty() ? null : site,
+                    type, risk, status,
+                    timeFrom, timeTo,
+                    0, 200);
 
             tableModel.setEntries(results);
         });
@@ -134,8 +176,68 @@ public class HistoryPanel extends JPanel {
         }
     }
 
+    private void clearFilteredHistory() {
+        String summary = buildFilterSummary();
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "Clear history records matching current filters?\n\n" + summary,
+                "Confirm Filtered Clear",
+                JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        int deleted = historyService.clearAdvanced(
+                emptyToNull(searchField.getText().trim()),
+                emptyToNull(siteField.getText().trim()),
+                parseTypeFilter(),
+                parseRiskFilter(),
+                parseStatusFilter(),
+                parseTime(timeFromField.getText().trim(), false),
+                parseTime(timeToField.getText().trim(), true));
+        refresh();
+        JOptionPane.showMessageDialog(this,
+                "Deleted " + deleted + " history records.",
+                "Filtered Clear",
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void exportFilteredHistory() {
+        try {
+            List<HistoryEntry> entries = historyService.searchAdvanced(
+                    emptyToNull(searchField.getText().trim()),
+                    emptyToNull(siteField.getText().trim()),
+                    parseTypeFilter(),
+                    parseRiskFilter(),
+                    parseStatusFilter(),
+                    parseTime(timeFromField.getText().trim(), false),
+                    parseTime(timeToField.getText().trim(), true),
+                    0,
+                    10_000);
+            JFileChooser chooser = new JFileChooser();
+            chooser.setSelectedFile(new File("history-export.csv"));
+            int result = chooser.showSaveDialog(this);
+            if (result != JFileChooser.APPROVE_OPTION) {
+                return;
+            }
+            Path output = chooser.getSelectedFile().toPath();
+            exportService.exportCsv(entries, output);
+            JOptionPane.showMessageDialog(this,
+                    "Exported " + entries.size() + " records to:\n" + output,
+                    "Export Success",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "Export failed: " + e.getMessage(),
+                    "Export Error",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void showDetailDialog(HistoryEntry entry) {
         if (entry == null) return;
+        HistoryEntry fullEntry = historyService.getById(entry.getRequestId());
+        if (fullEntry != null) {
+            entry = fullEntry;
+        }
 
         StringBuilder sb = new StringBuilder();
         sb.append("=== History Detail ===\n\n");
@@ -195,6 +297,33 @@ public class HistoryPanel extends JPanel {
         String selected = (String) statusFilter.getSelectedItem();
         if (selected == null || "All".equals(selected)) return null;
         return AnalysisStatus.valueOf(selected);
+    }
+
+    private Long parseTime(String text, boolean endOfMinute) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            Date parsed = FILTER_DATE_FORMAT.parse(text);
+            long value = parsed.getTime();
+            return endOfMinute ? value + 59_999 : value;
+        } catch (ParseException e) {
+            throw new IllegalArgumentException("Invalid time format, use yyyy-MM-dd HH:mm");
+        }
+    }
+
+    private String emptyToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private String buildFilterSummary() {
+        return "keyword=" + emptyToNull(searchField.getText().trim())
+                + "\nsite=" + emptyToNull(siteField.getText().trim())
+                + "\nfrom=" + emptyToNull(timeFromField.getText().trim())
+                + "\nto=" + emptyToNull(timeToField.getText().trim())
+                + "\ntype=" + parseTypeFilter()
+                + "\nrisk=" + parseRiskFilter()
+                + "\nstatus=" + parseStatusFilter();
     }
 
     // ========== Table Model ==========
