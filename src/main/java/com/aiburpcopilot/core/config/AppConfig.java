@@ -251,6 +251,9 @@ public class AppConfig {
         @JsonProperty("autoFetchReferencedScripts")
         private boolean autoFetchReferencedScripts = true;
 
+        @JsonProperty("requestBuilder")
+        private RecoveredRequestBuilderConfig requestBuilder = new RecoveredRequestBuilderConfig();
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
         public String getBaseUrl() { return baseUrl; }
@@ -313,6 +316,59 @@ public class AppConfig {
         public void setLegacyAutoVerifyRecoveredEndpoints(Boolean legacyAutoVerifyRecoveredEndpoints) {
             this.legacyAutoVerifyRecoveredEndpoints = legacyAutoVerifyRecoveredEndpoints;
         }
+        public RecoveredRequestBuilderConfig getRequestBuilder() { return requestBuilder; }
+        public void setRequestBuilder(RecoveredRequestBuilderConfig requestBuilder) {
+            this.requestBuilder = requestBuilder != null ? requestBuilder : new RecoveredRequestBuilderConfig();
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RecoveredRequestBuilderConfig {
+        @JsonProperty("enabled")
+        private boolean enabled = true;
+
+        @JsonProperty("appendParamsToQuery")
+        private boolean appendParamsToQuery = true;
+
+        @JsonProperty("buildBodyForUnsafeMethods")
+        private boolean buildBodyForUnsafeMethods = false;
+
+        @JsonProperty("defaultBodyFormat")
+        private String defaultBodyFormat = "json";
+
+        @JsonProperty("placeholderValue")
+        private String placeholderValue = "";
+
+        @JsonProperty("copyJsHeaders")
+        private boolean copyJsHeaders = true;
+
+        @JsonProperty("copyAuthSignalHeaders")
+        private boolean copyAuthSignalHeaders = false;
+
+        @JsonProperty("maxParams")
+        private int maxParams = 20;
+
+        @JsonProperty("maxHeaders")
+        private int maxHeaders = 12;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public boolean isAppendParamsToQuery() { return appendParamsToQuery; }
+        public void setAppendParamsToQuery(boolean appendParamsToQuery) { this.appendParamsToQuery = appendParamsToQuery; }
+        public boolean isBuildBodyForUnsafeMethods() { return buildBodyForUnsafeMethods; }
+        public void setBuildBodyForUnsafeMethods(boolean buildBodyForUnsafeMethods) { this.buildBodyForUnsafeMethods = buildBodyForUnsafeMethods; }
+        public String getDefaultBodyFormat() { return defaultBodyFormat; }
+        public void setDefaultBodyFormat(String defaultBodyFormat) { this.defaultBodyFormat = defaultBodyFormat; }
+        public String getPlaceholderValue() { return placeholderValue; }
+        public void setPlaceholderValue(String placeholderValue) { this.placeholderValue = placeholderValue; }
+        public boolean isCopyJsHeaders() { return copyJsHeaders; }
+        public void setCopyJsHeaders(boolean copyJsHeaders) { this.copyJsHeaders = copyJsHeaders; }
+        public boolean isCopyAuthSignalHeaders() { return copyAuthSignalHeaders; }
+        public void setCopyAuthSignalHeaders(boolean copyAuthSignalHeaders) { this.copyAuthSignalHeaders = copyAuthSignalHeaders; }
+        public int getMaxParams() { return maxParams; }
+        public void setMaxParams(int maxParams) { this.maxParams = maxParams; }
+        public int getMaxHeaders() { return maxHeaders; }
+        public void setMaxHeaders(int maxHeaders) { this.maxHeaders = maxHeaders; }
     }
 
     // ---------- Request Config ----------

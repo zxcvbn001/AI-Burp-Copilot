@@ -67,6 +67,16 @@ jsAnalysis:
   autoVerifyRecoveredApis: true
   autoAnalyzeVerifiedApis: true
   autoFetchReferencedScripts: true
+  requestBuilder:
+    enabled: true
+    appendParamsToQuery: true
+    buildBodyForUnsafeMethods: false
+    defaultBodyFormat: json
+    placeholderValue: ""
+    copyJsHeaders: true
+    copyAuthSignalHeaders: false
+    maxParams: 20
+    maxHeaders: 12
 request:
   concurrency: 5
   maxQueueSize: 1000

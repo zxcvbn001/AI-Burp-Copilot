@@ -70,6 +70,15 @@ public class SettingsPanel extends JPanel {
     private JCheckBox jsAnalysisAutoVerifyRecoveredApisEnabled;
     private JCheckBox jsAnalysisAutoAnalyzeVerifiedApisEnabled;
     private JCheckBox jsAnalysisAutoFetchReferencedScriptsEnabled;
+    private JCheckBox jsRequestBuilderEnabled;
+    private JCheckBox jsRequestBuilderAppendParamsEnabled;
+    private JCheckBox jsRequestBuilderBuildBodyEnabled;
+    private JTextField jsRequestBuilderBodyFormatField;
+    private JTextField jsRequestBuilderPlaceholderField;
+    private JCheckBox jsRequestBuilderCopyHeadersEnabled;
+    private JCheckBox jsRequestBuilderCopyAuthHeadersEnabled;
+    private JTextField jsRequestBuilderMaxParamsField;
+    private JTextField jsRequestBuilderMaxHeadersField;
 
     private JTextField maxHistoryField;
     private JTextField cacheTtlField;
@@ -416,6 +425,69 @@ public class SettingsPanel extends JPanel {
         jsAnalysisAutoFetchReferencedScriptsEnabled = new JCheckBox("启用");
         panel.add(jsAnalysisAutoFetchReferencedScriptsEnabled, gbc);
 
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("恢复接口请求构造："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderEnabled = new JCheckBox("启用");
+        panel.add(jsRequestBuilderEnabled, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("参数补到 Query："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderAppendParamsEnabled = new JCheckBox("启用");
+        panel.add(jsRequestBuilderAppendParamsEnabled, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("写操作自动构造 Body："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderBuildBodyEnabled = new JCheckBox("启用");
+        panel.add(jsRequestBuilderBuildBodyEnabled, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("默认 Body 格式："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderBodyFormatField = new JTextField(20);
+        panel.add(jsRequestBuilderBodyFormatField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("参数占位值："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderPlaceholderField = new JTextField(20);
+        panel.add(jsRequestBuilderPlaceholderField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("复制 JS Header："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderCopyHeadersEnabled = new JCheckBox("启用");
+        panel.add(jsRequestBuilderCopyHeadersEnabled, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("复制认证信号 Header："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderCopyAuthHeadersEnabled = new JCheckBox("启用");
+        panel.add(jsRequestBuilderCopyAuthHeadersEnabled, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("最多补充参数数："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderMaxParamsField = new JTextField(20);
+        panel.add(jsRequestBuilderMaxParamsField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("最多复制 Header 数："), gbc);
+        gbc.gridx = 1;
+        jsRequestBuilderMaxHeadersField = new JTextField(20);
+        panel.add(jsRequestBuilderMaxHeadersField, gbc);
+
         return panel;
     }
 
@@ -624,6 +696,16 @@ public class SettingsPanel extends JPanel {
         jsAnalysisAutoVerifyRecoveredApisEnabled.setSelected(config.getJsAnalysis().isAutoVerifyRecoveredApis());
         jsAnalysisAutoAnalyzeVerifiedApisEnabled.setSelected(config.getJsAnalysis().isAutoAnalyzeVerifiedApis());
         jsAnalysisAutoFetchReferencedScriptsEnabled.setSelected(config.getJsAnalysis().isAutoFetchReferencedScripts());
+        AppConfig.RecoveredRequestBuilderConfig requestBuilder = config.getJsAnalysis().getRequestBuilder();
+        jsRequestBuilderEnabled.setSelected(requestBuilder.isEnabled());
+        jsRequestBuilderAppendParamsEnabled.setSelected(requestBuilder.isAppendParamsToQuery());
+        jsRequestBuilderBuildBodyEnabled.setSelected(requestBuilder.isBuildBodyForUnsafeMethods());
+        jsRequestBuilderBodyFormatField.setText(requestBuilder.getDefaultBodyFormat());
+        jsRequestBuilderPlaceholderField.setText(requestBuilder.getPlaceholderValue());
+        jsRequestBuilderCopyHeadersEnabled.setSelected(requestBuilder.isCopyJsHeaders());
+        jsRequestBuilderCopyAuthHeadersEnabled.setSelected(requestBuilder.isCopyAuthSignalHeaders());
+        jsRequestBuilderMaxParamsField.setText(String.valueOf(requestBuilder.getMaxParams()));
+        jsRequestBuilderMaxHeadersField.setText(String.valueOf(requestBuilder.getMaxHeaders()));
 
         maxHistoryField.setText(String.valueOf(config.getStorage().getMaxHistory()));
         cacheTtlField.setText(String.valueOf(config.getStorage().getCacheTtlSeconds()));
@@ -694,6 +776,17 @@ public class SettingsPanel extends JPanel {
             config.getJsAnalysis().setAutoVerifyRecoveredApis(jsAnalysisAutoVerifyRecoveredApisEnabled.isSelected());
             config.getJsAnalysis().setAutoAnalyzeVerifiedApis(jsAnalysisAutoAnalyzeVerifiedApisEnabled.isSelected());
             config.getJsAnalysis().setAutoFetchReferencedScripts(jsAnalysisAutoFetchReferencedScriptsEnabled.isSelected());
+            AppConfig.RecoveredRequestBuilderConfig requestBuilder = config.getJsAnalysis().getRequestBuilder();
+            requestBuilder.setEnabled(jsRequestBuilderEnabled.isSelected());
+            requestBuilder.setAppendParamsToQuery(jsRequestBuilderAppendParamsEnabled.isSelected());
+            requestBuilder.setBuildBodyForUnsafeMethods(jsRequestBuilderBuildBodyEnabled.isSelected());
+            requestBuilder.setDefaultBodyFormat(jsRequestBuilderBodyFormatField.getText().trim());
+            requestBuilder.setPlaceholderValue(jsRequestBuilderPlaceholderField.getText());
+            requestBuilder.setCopyJsHeaders(jsRequestBuilderCopyHeadersEnabled.isSelected());
+            requestBuilder.setCopyAuthSignalHeaders(jsRequestBuilderCopyAuthHeadersEnabled.isSelected());
+            requestBuilder.setMaxParams(Integer.parseInt(jsRequestBuilderMaxParamsField.getText().trim()));
+            requestBuilder.setMaxHeaders(Integer.parseInt(jsRequestBuilderMaxHeadersField.getText().trim()));
+            config.getJsAnalysis().setRequestBuilder(requestBuilder);
 
             config.getStorage().setMaxHistory(Integer.parseInt(maxHistoryField.getText().trim()));
             config.getStorage().setCacheTtlSeconds(Integer.parseInt(cacheTtlField.getText().trim()));

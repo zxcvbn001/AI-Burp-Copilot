@@ -38,6 +38,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class StaticResourceScanner implements IStaticScanner {
 
@@ -345,10 +346,12 @@ public class StaticResourceScanner implements IStaticScanner {
             return recovered;
         }
 
-        ValidationReplay replay = replayRequest(absoluteUrl, recovered.getMethod(), false);
+        ValidationReplay replay = replayRequest(absoluteUrl, recovered.getMethod(), false, api);
         recovered.setValidated(replay.exists);
         recovered.setStatusCode(replay.statusCode);
         recovered.setReason(buildRecoveredReason(replay.reason, api));
+        recovered.setRequestBytes(replay.requestBytes);
+        recovered.setResponseBytes(replay.responseBytes);
         return recovered;
     }
 
@@ -946,12 +949,20 @@ public class StaticResourceScanner implements IStaticScanner {
         endpointContext.setQuery(uri != null ? uri.getRawQuery() : null);
         endpointContext.setEndpointType(EndpointType.ENDPOINT);
         endpointContext.setAnalysisStatus(AnalysisStatus.COMPLETED);
-        ValidationReplay replay = replayRequest(recovered.getUrl(), recovered.getMethod(), false);
-        endpointContext.setRawRequest(replay.requestBytes);
-        endpointContext.setRawResponse(replay.responseBytes);
-        endpointContext.setResponseBody(extractResponseBody(replay.responseBytes));
-        endpointContext.setStatusCode(replay.statusCode);
-        endpointContext.setResponseContentType(extractContentType(replay.responseBytes));
+        byte[] requestBytes = recovered.getRequestBytes();
+        byte[] responseBytes = recovered.getResponseBytes();
+        int statusCode = recovered.getStatusCode();
+        if (requestBytes == null || requestBytes.length == 0 || responseBytes == null || responseBytes.length == 0) {
+            ValidationReplay replay = replayRequest(recovered.getUrl(), recovered.getMethod(), false, null);
+            requestBytes = replay.requestBytes;
+            responseBytes = replay.responseBytes;
+            statusCode = replay.statusCode;
+        }
+        endpointContext.setRawRequest(requestBytes);
+        endpointContext.setRawResponse(responseBytes);
+        endpointContext.setResponseBody(extractResponseBody(responseBytes));
+        endpointContext.setStatusCode(statusCode);
+        endpointContext.setResponseContentType(extractContentType(responseBytes));
 
         if (recovered.getParams() != null) {
             for (String param : recovered.getParams()) {
@@ -1053,12 +1064,15 @@ public class StaticResourceScanner implements IStaticScanner {
     }
 
     private ValidationReplay validateStaticChild(String url) {
-        return replayRequest(url, "GET", true);
+        return replayRequest(url, "GET", true, null);
     }
 
-    private ValidationReplay replayRequest(String absoluteUrl, String method, boolean staticFile) {
+    private ValidationReplay replayRequest(String absoluteUrl,
+                                           String method,
+                                           boolean staticFile,
+                                           JsAnalysisResponse.ApiResult apiResult) {
         ValidationReplay replay = new ValidationReplay();
-        replay.requestBytes = buildRawRequest(absoluteUrl, method);
+        replay.requestBytes = buildRawRequest(absoluteUrl, method, apiResult);
         replay.responseBytes = null;
         replay.statusCode = -1;
         replay.exists = false;
@@ -1072,7 +1086,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 return replay;
             }
             if (staticFile && "HEAD".equalsIgnoreCase(method)) {
-                replay.requestBytes = buildRawRequest(absoluteUrl, "HEAD");
+                replay.requestBytes = buildRawRequest(absoluteUrl, "HEAD", null);
             }
             byte[] markedRequest = InternalTrafficMarker.ensureMarked(replay.requestBytes);
             replay.requestBytes = markedRequest;
@@ -1317,20 +1331,249 @@ public class StaticResourceScanner implements IStaticScanner {
     }
 
     private byte[] buildRawRequest(String absoluteUrl, String method) {
+        return buildRawRequest(absoluteUrl, method, null);
+    }
+
+    private byte[] buildRawRequest(String absoluteUrl, String method, JsAnalysisResponse.ApiResult apiResult) {
         URI uri = safeUri(absoluteUrl);
         if (uri == null || uri.getHost() == null) {
             return new byte[0];
         }
-        String path = uri.getRawPath() == null || uri.getRawPath().isBlank() ? "/" : uri.getRawPath();
-        if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
-            path += "?" + uri.getRawQuery();
+        AppConfig.RecoveredRequestBuilderConfig builderConfig = requestBuilderConfig();
+        String normalizedMethod = normalizeHttpMethod(method);
+        String path = buildRequestTarget(uri, normalizedMethod, apiResult, builderConfig);
+        List<String> headerLines = buildRequestHeaders(uri, normalizedMethod, apiResult, builderConfig);
+        String body = buildRequestBody(normalizedMethod, apiResult, builderConfig);
+        if (body != null && !body.isEmpty()) {
+            headerLines.add("Content-Length: " + body.getBytes(StandardCharsets.UTF_8).length);
         }
-        String raw = method + " " + path + " HTTP/1.1\r\n"
-                + "Host: " + uri.getAuthority() + "\r\n"
-                + "User-Agent: AI-Burp-Copilot-Static/1.0\r\n"
-                + "Accept: */*\r\n"
-                + "Connection: close\r\n\r\n";
+        String raw = normalizedMethod + " " + path + " HTTP/1.1\r\n"
+                + String.join("\r\n", headerLines)
+                + "\r\n\r\n"
+                + (body != null ? body : "");
         return raw.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private AppConfig.RecoveredRequestBuilderConfig requestBuilderConfig() {
+        try {
+            AppConfig.JsAnalysisConfig jsConfig = configService.getConfig().getJsAnalysis();
+            if (jsConfig != null && jsConfig.getRequestBuilder() != null) {
+                return jsConfig.getRequestBuilder();
+            }
+        } catch (Exception ignored) {
+        }
+        return new AppConfig.RecoveredRequestBuilderConfig();
+    }
+
+    private String buildRequestTarget(URI uri,
+                                      String method,
+                                      JsAnalysisResponse.ApiResult apiResult,
+                                      AppConfig.RecoveredRequestBuilderConfig builderConfig) {
+        String path = uri.getRawPath() == null || uri.getRawPath().isBlank() ? "/" : uri.getRawPath();
+        List<String> queryParts = new ArrayList<>();
+        if (uri.getRawQuery() != null && !uri.getRawQuery().isBlank()) {
+            queryParts.add(uri.getRawQuery());
+        }
+        if (builderConfig != null
+                && builderConfig.isEnabled()
+                && builderConfig.isAppendParamsToQuery()
+                && isQueryLikeMethod(method)
+                && apiResult != null
+                && apiResult.getParams() != null
+                && !apiResult.getParams().isEmpty()) {
+            Set<String> existingParams = queryParts.stream()
+                    .flatMap(part -> List.of(part.split("&")).stream())
+                    .map(part -> {
+                        int idx = part.indexOf('=');
+                        return idx >= 0 ? part.substring(0, idx) : part;
+                    })
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            int maxParams = Math.max(0, builderConfig.getMaxParams());
+            for (String param : apiResult.getParams()) {
+                if (maxParams-- <= 0) {
+                    break;
+                }
+                String normalizedParam = sanitizeParamName(param);
+                if (normalizedParam.isBlank() || existingParams.contains(normalizedParam)) {
+                    continue;
+                }
+                existingParams.add(normalizedParam);
+                queryParts.add(normalizedParam + "=" + urlEncode(builderConfig.getPlaceholderValue()));
+            }
+        }
+        if (!queryParts.isEmpty()) {
+            path += "?" + String.join("&", queryParts);
+        }
+        return path;
+    }
+
+    private List<String> buildRequestHeaders(URI uri,
+                                             String method,
+                                             JsAnalysisResponse.ApiResult apiResult,
+                                             AppConfig.RecoveredRequestBuilderConfig builderConfig) {
+        List<String> headers = new ArrayList<>();
+        Set<String> headerNames = new LinkedHashSet<>();
+        addHeader(headers, headerNames, "Host", uri.getAuthority());
+        addHeader(headers, headerNames, "User-Agent", "AI-Burp-Copilot-Static/1.0");
+        addHeader(headers, headerNames, "Accept", "*/*");
+
+        if (builderConfig != null && builderConfig.isEnabled() && builderConfig.isCopyJsHeaders() && apiResult != null) {
+            int maxHeaders = Math.max(0, builderConfig.getMaxHeaders());
+            for (String header : apiResult.getHeaders() != null ? apiResult.getHeaders() : List.<String>of()) {
+                if (maxHeaders-- <= 0) {
+                    break;
+                }
+                addJsHeader(headers, headerNames, header);
+            }
+        }
+
+        if (builderConfig != null
+                && builderConfig.isEnabled()
+                && builderConfig.isCopyAuthSignalHeaders()
+                && apiResult != null
+                && apiResult.getAuth() != null
+                && !apiResult.getAuth().isBlank()) {
+            addJsHeader(headers, headerNames, apiResult.getAuth());
+        }
+
+        String body = buildRequestBody(method, apiResult, builderConfig);
+        if (body != null && !body.isEmpty() && !headerNames.contains("content-type")) {
+            String format = normalizedBodyFormat(builderConfig);
+            addHeader(headers, headerNames, "Content-Type",
+                    "form".equals(format)
+                            ? "application/x-www-form-urlencoded"
+                            : "application/json");
+        }
+        addHeader(headers, headerNames, "Connection", "close");
+        return headers;
+    }
+
+    private void addJsHeader(List<String> headers, Set<String> headerNames, String rawHeader) {
+        if (rawHeader == null || rawHeader.isBlank()) {
+            return;
+        }
+        String header = rawHeader.trim();
+        int idx = header.indexOf(':');
+        if (idx > 0) {
+            String name = header.substring(0, idx).trim();
+            if (!isUnsafeJsHeader(name)) {
+                addHeader(headers, headerNames, name, header.substring(idx + 1).trim());
+            }
+            return;
+        }
+        if (header.matches("(?i)^[A-Z0-9-]+$") && !isUnsafeJsHeader(header)) {
+            addHeader(headers, headerNames, header, "");
+        }
+    }
+
+    private void addHeader(List<String> headers, Set<String> headerNames, String name, String value) {
+        if (name == null || name.isBlank()) {
+            return;
+        }
+        String normalized = name.trim();
+        if (normalized.contains("\r") || normalized.contains("\n")) {
+            return;
+        }
+        String key = normalized.toLowerCase(Locale.ROOT);
+        if (headerNames.contains(key)) {
+            return;
+        }
+        headerNames.add(key);
+        headers.add(normalized + ": " + (value != null ? value : ""));
+    }
+
+    private boolean isUnsafeJsHeader(String name) {
+        String normalized = name != null ? name.trim().toLowerCase(Locale.ROOT) : "";
+        return normalized.isBlank()
+                || normalized.equals("host")
+                || normalized.equals("content-length")
+                || normalized.equals("connection")
+                || normalized.equals("cookie")
+                || normalized.equals("authorization")
+                || normalized.equals("proxy-authorization");
+    }
+
+    private String buildRequestBody(String method,
+                                    JsAnalysisResponse.ApiResult apiResult,
+                                    AppConfig.RecoveredRequestBuilderConfig builderConfig) {
+        if (builderConfig == null
+                || !builderConfig.isEnabled()
+                || !builderConfig.isBuildBodyForUnsafeMethods()
+                || isQueryLikeMethod(method)
+                || apiResult == null
+                || apiResult.getParams() == null
+                || apiResult.getParams().isEmpty()) {
+            return "";
+        }
+        String format = normalizedBodyFormat(builderConfig);
+        int maxParams = Math.max(0, builderConfig.getMaxParams());
+        List<String> params = new ArrayList<>();
+        for (String param : apiResult.getParams()) {
+            if (maxParams-- <= 0) {
+                break;
+            }
+            String normalizedParam = sanitizeParamName(param);
+            if (!normalizedParam.isBlank()) {
+                params.add(normalizedParam);
+            }
+        }
+        if (params.isEmpty()) {
+            return "";
+        }
+        String placeholder = builderConfig.getPlaceholderValue() != null
+                ? builderConfig.getPlaceholderValue()
+                : "";
+        if ("form".equals(format)) {
+            return params.stream()
+                    .map(param -> param + "=" + urlEncode(placeholder))
+                    .collect(Collectors.joining("&"));
+        }
+        return params.stream()
+                .map(param -> "\"" + jsonEscape(param) + "\":\"" + jsonEscape(placeholder) + "\"")
+                .collect(Collectors.joining(",", "{", "}"));
+    }
+
+    private String normalizedBodyFormat(AppConfig.RecoveredRequestBuilderConfig builderConfig) {
+        String format = builderConfig != null ? builderConfig.getDefaultBodyFormat() : null;
+        if (format != null && "form".equalsIgnoreCase(format.trim())) {
+            return "form";
+        }
+        return "json";
+    }
+
+    private boolean isQueryLikeMethod(String method) {
+        return method == null
+                || method.isBlank()
+                || "GET".equalsIgnoreCase(method)
+                || "HEAD".equalsIgnoreCase(method)
+                || "DELETE".equalsIgnoreCase(method)
+                || "OPTIONS".equalsIgnoreCase(method);
+    }
+
+    private String sanitizeParamName(String param) {
+        if (param == null) {
+            return "";
+        }
+        String normalized = param.trim();
+        int equalIdx = normalized.indexOf('=');
+        if (equalIdx >= 0) {
+            normalized = normalized.substring(0, equalIdx);
+        }
+        return normalized.replaceAll("[\\r\\n&?#\\s]+", "");
+    }
+
+    private String urlEncode(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private String jsonEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private int parseStatusCode(byte[] responseBytes) {
