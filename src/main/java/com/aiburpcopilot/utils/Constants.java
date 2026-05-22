@@ -33,6 +33,9 @@ public final class Constants {
     /** 静态资源审查 Prompt */
     public static final String PROMPT_STATIC_REVIEW = "static-review-v1";
 
+    /** 站点接口规律推理 Prompt */
+    public static final String PROMPT_SITE_DISCOVERY = "site-discovery-v1";
+
     // ========== HTTP 相关 ==========
 
     public static final String HEADER_AUTHORIZATION = "Authorization";

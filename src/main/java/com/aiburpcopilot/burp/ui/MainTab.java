@@ -9,6 +9,7 @@ import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.pipeline.HistoryEventBus;
 import com.aiburpcopilot.core.verification.ManualVerificationService;
+import com.aiburpcopilot.prompts.impl.FilePromptService;
 
 import javax.swing.*;
 import java.awt.*;
@@ -40,7 +41,12 @@ public class MainTab extends JPanel {
                 api, historyService, manualVerificationService);
         this.verificationPanel = new VerificationPanel(api, historyService);
         this.staticScanPanel = new StaticScanPanel(api, historyService);
-        ISiteDiscoveryService siteDiscoveryService = new InMemorySiteDiscoveryService(historyService, api);
+        ISiteDiscoveryService siteDiscoveryService = new InMemorySiteDiscoveryService(
+                historyService,
+                api,
+                aiProvider,
+                new FilePromptService(),
+                configService);
         this.sitePatternDiscoveryPanel = new SitePatternDiscoveryPanel(api, siteDiscoveryService);
         this.reportExportPanel = new ReportExportPanel();
         this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(

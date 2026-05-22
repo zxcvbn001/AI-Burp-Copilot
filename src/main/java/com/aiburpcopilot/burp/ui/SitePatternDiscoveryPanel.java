@@ -36,6 +36,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
 
     private List<DiscoveryCandidate> currentCandidates = List.of();
     private String displayedCandidateKey;
+    private SwingWorker<List<DiscoveryCandidate>, Void> refreshWorker;
 
     public SitePatternDiscoveryPanel(MontoyaApi api, ISiteDiscoveryService discoveryService) {
         this.discoveryService = discoveryService;
@@ -66,8 +67,8 @@ public class SitePatternDiscoveryPanel extends JPanel {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         UiUtil.applyBurpFont(table);
-        UiUtil.setScaledMinimumColumnWidths(table, 90, 100, 360, 80, 80, 140);
-        table.getColumnModel().getColumn(5).setCellRenderer(new JudgmentRenderer());
+        UiUtil.setScaledMinimumColumnWidths(table, 90, 70, 100, 360, 80, 80, 140);
+        table.getColumnModel().getColumn(6).setCellRenderer(new JudgmentRenderer());
 
         sourceArea = UiUtil.createMessageArea();
         attemptListModel = new DefaultListModel<>();
@@ -124,20 +125,39 @@ public class SitePatternDiscoveryPanel extends JPanel {
     }
 
     public void refresh() {
-        SwingUtilities.invokeLater(() -> {
-            String previousHost = hostFilterCombo.getSelectedItem() instanceof String value ? value : "ALL";
-            String previousKey = selectedCandidateKey();
-            reloadHostFilter(previousHost);
-            currentCandidates = discoveryService.getCandidates(selectedHostFilter());
-            tableModel.setRows(currentCandidates);
-            summaryLabel.setText("候选: " + currentCandidates.size());
-            restoreSelection(previousKey);
-            if (table.getSelectedRow() < 0 && !currentCandidates.isEmpty()) {
-                table.setRowSelectionInterval(0, 0);
-            } else {
-                updateCandidateDetail();
+        if (refreshWorker != null && !refreshWorker.isDone()) {
+            return;
+        }
+        String previousHost = hostFilterCombo.getSelectedItem() instanceof String value ? value : "ALL";
+        String previousKey = selectedCandidateKey();
+        reloadHostFilter(previousHost);
+        String hostFilter = selectedHostFilter();
+        summaryLabel.setText("候选: " + currentCandidates.size() + " | LLM 推理中...");
+        refreshWorker = new SwingWorker<>() {
+            @Override
+            protected List<DiscoveryCandidate> doInBackground() {
+                return discoveryService.getCandidates(hostFilter);
             }
-        });
+
+            @Override
+            protected void done() {
+                try {
+                    currentCandidates = get();
+                } catch (Exception e) {
+                    currentCandidates = List.of();
+                    reviewArea.setText("接口推理失败: " + e.getMessage());
+                }
+                tableModel.setRows(currentCandidates);
+                summaryLabel.setText("候选: " + currentCandidates.size());
+                restoreSelection(previousKey);
+                if (table.getSelectedRow() < 0 && !currentCandidates.isEmpty()) {
+                    table.setRowSelectionInterval(0, 0);
+                } else {
+                    updateCandidateDetail();
+                }
+            }
+        };
+        refreshWorker.execute();
     }
 
     private void reloadHostFilter(String preferred) {
@@ -234,10 +254,20 @@ public class SitePatternDiscoveryPanel extends JPanel {
     private String buildSourceText(DiscoveryCandidate candidate) {
         StringBuilder sb = new StringBuilder();
         sb.append("目标: ").append(candidate.getUrl()).append("\n");
+        if (candidate.getMethodHint() != null && !candidate.getMethodHint().isBlank()) {
+            sb.append("建议方法: ").append(candidate.getMethodHint()).append("\n");
+        }
         sb.append("类型: ").append(candidate.getAssetType()).append("\n");
         sb.append("评分: ").append(String.format("%.2f", candidate.getScore())).append("\n");
         sb.append("规律来源: ").append(candidate.getSourceReason()).append("\n");
         sb.append("支撑流量数: ").append(candidate.getSupportingObservationCount()).append("\n");
+
+        if (!candidate.getSupportingMethods().isEmpty()) {
+            sb.append("\n关联方法:\n");
+            for (String method : candidate.getSupportingMethods()) {
+                sb.append("- ").append(method).append("\n");
+            }
+        }
 
         if (!candidate.getSupportingPaths().isEmpty()) {
             sb.append("\n参考路径:\n");
@@ -325,7 +355,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
     }
 
     private static class CandidateTableModel extends AbstractTableModel {
-        private final String[] columns = {"Host", "Type", "Path", "Score", "状态码", "研判"};
+        private final String[] columns = {"Host", "Method", "Type", "Path", "Score", "状态码", "研判"};
         private List<DiscoveryCandidate> rows = List.of();
 
         void setRows(List<DiscoveryCandidate> rows) {
@@ -358,12 +388,14 @@ public class SitePatternDiscoveryPanel extends JPanel {
             DiscoveryValidation validation = candidate.getValidation();
             return switch (columnIndex) {
                 case 0 -> candidate.getHost();
-                case 1 -> candidate.getAssetType();
-                case 2 -> candidate.getPath();
-                case 3 -> String.format("%.2f", candidate.getScore());
-                case 4 -> validation != null && validation.getFinalStatusCode() > 0
+                case 1 -> candidate.getMethodHint() != null && !candidate.getMethodHint().isBlank()
+                        ? candidate.getMethodHint() : "-";
+                case 2 -> candidate.getAssetType();
+                case 3 -> candidate.getPath();
+                case 4 -> String.format("%.2f", candidate.getScore());
+                case 5 -> validation != null && validation.getFinalStatusCode() > 0
                         ? String.valueOf(validation.getFinalStatusCode()) : "-";
-                case 5 -> validation != null ? validation.getJudgment().getDisplayName() : DiscoveryJudgment.UNVALIDATED.getDisplayName();
+                case 6 -> validation != null ? validation.getJudgment().getDisplayName() : DiscoveryJudgment.UNVALIDATED.getDisplayName();
                 default -> "";
             };
         }

@@ -4,6 +4,10 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.message.HttpRequestResponse;
+import com.aiburpcopilot.core.ai.IAIProvider;
+import com.aiburpcopilot.core.config.IConfigService;
+import com.aiburpcopilot.core.config.Timeouts;
+import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.discovery.DiscoveryAssetType;
 import com.aiburpcopilot.core.discovery.DiscoveryAttempt;
 import com.aiburpcopilot.core.discovery.DiscoveryCandidate;
@@ -13,7 +17,11 @@ import com.aiburpcopilot.core.discovery.DiscoveryValidationStatus;
 import com.aiburpcopilot.core.discovery.ISiteDiscoveryService;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.prompts.IPromptService;
 import com.aiburpcopilot.utils.HttpUtil;
+import com.aiburpcopilot.utils.Constants;
+import com.aiburpcopilot.utils.JsonUtil;
+import com.aiburpcopilot.utils.PluginLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,14 +31,19 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
 
@@ -47,11 +60,26 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
 
     private final IHistoryService historyService;
     private final MontoyaApi api;
+    private final IAIProvider aiProvider;
+    private final IPromptService promptService;
+    private final IConfigService configService;
     private final Map<String, DiscoveryValidation> validationCache = new ConcurrentHashMap<>();
+    private final Map<String, CachedInference> inferenceCache = new ConcurrentHashMap<>();
 
     public InMemorySiteDiscoveryService(IHistoryService historyService, MontoyaApi api) {
+        this(historyService, api, null, null, null);
+    }
+
+    public InMemorySiteDiscoveryService(IHistoryService historyService,
+                                        MontoyaApi api,
+                                        IAIProvider aiProvider,
+                                        IPromptService promptService,
+                                        IConfigService configService) {
         this.historyService = historyService;
         this.api = api;
+        this.aiProvider = aiProvider;
+        this.promptService = promptService;
+        this.configService = configService;
     }
 
     @Override
@@ -71,7 +99,7 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         Map<String, HostObservation> grouped = groupObservations(hostFilter);
         Map<String, DiscoveryCandidate> candidates = new LinkedHashMap<>();
         for (HostObservation observation : grouped.values()) {
-            inferEndpointCandidates(observation, candidates);
+            inferEndpointCandidatesWithLlm(observation, candidates);
         }
         return candidates.values().stream()
                 .peek(candidate -> candidate.setValidation(cloneValidation(validationCache.get(candidate.getKey()))))
@@ -113,7 +141,7 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         validation.setStatus(DiscoveryValidationStatus.RUNNING);
         List<DiscoveryAttempt> attempts = new ArrayList<>();
 
-        attempts.add(executeAttempt(candidate, "GET", 1));
+        attempts.add(executeAttempt(candidate, normalizeMethod(candidate.getMethodHint()), 1));
 
         ValidationAssessment assessment = assess(candidate, attempts);
         validation.setStatus(DiscoveryValidationStatus.COMPLETED);
@@ -272,6 +300,223 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         }
     }
 
+    private void inferEndpointCandidatesWithLlm(HostObservation observation, Map<String, DiscoveryCandidate> candidates) {
+        if (observation == null || observation.endpointPaths.isEmpty()) {
+            return;
+        }
+        if (aiProvider == null || !aiProvider.isAvailable() || promptService == null) {
+            log.debug("LLM site discovery unavailable, falling back to local inference for {}", observation != null ? observation.host : "-");
+            inferEndpointCandidates(observation, candidates);
+            return;
+        }
+
+        String fingerprint = observationFingerprint(observation);
+        CachedInference cached = inferenceCache.get(observation.host);
+        if (cached != null && Objects.equals(cached.fingerprint(), fingerprint)) {
+            for (DiscoveryCandidate candidate : cached.candidates()) {
+                mergeCandidate(candidates, candidate);
+            }
+            return;
+        }
+
+        Optional<String> promptTemplate = promptService.loadTemplate(Constants.PROMPT_SITE_DISCOVERY);
+        if (promptTemplate.isEmpty()) {
+            log.warn("Site discovery prompt not found: {}", Constants.PROMPT_SITE_DISCOVERY);
+            inferEndpointCandidates(observation, candidates);
+            return;
+        }
+
+        try {
+            String prompt = buildLlmDiscoveryPrompt(promptTemplate.get(), observation);
+            PluginLogger.getInstance().info(
+                    PluginLogger.Category.LLM,
+                    "SiteDiscovery",
+                    "Calling LLM for site endpoint inference: " + observation.host
+                            + " [validatedEndpoints=" + observation.endpointPaths.size() + "]");
+            String response = aiProvider.analyzeDiff(prompt)
+                    .get(siteDiscoveryWaitMs(), TimeUnit.MILLISECONDS);
+            List<DiscoveryCandidate> inferred = parseLlmCandidates(observation, response);
+            if (inferred.isEmpty()) {
+                PluginLogger.getInstance().info(
+                        PluginLogger.Category.LLM,
+                        "SiteDiscovery",
+                        "LLM returned no site endpoint candidates for: " + observation.host);
+            }
+            inferenceCache.put(observation.host, new CachedInference(fingerprint, cloneCandidates(inferred)));
+            for (DiscoveryCandidate candidate : inferred) {
+                mergeCandidate(candidates, candidate);
+            }
+        } catch (Exception e) {
+            log.warn("LLM site discovery failed for {}: {}", observation.host, e.getMessage());
+            PluginLogger.getInstance().warn(
+                    PluginLogger.Category.LLM,
+                    "SiteDiscovery",
+                    "LLM site endpoint inference failed: " + observation.host + " | " + e.getMessage());
+            inferEndpointCandidates(observation, candidates);
+        }
+    }
+
+    private String buildLlmDiscoveryPrompt(String template, HostObservation observation) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("host", observation.host);
+        input.put("observedEndpoints", observation.endpointPaths.values().stream()
+                .sorted(Comparator.comparing(path -> path.path))
+                .limit(120)
+                .map(path -> {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("method", path.methods.isEmpty() ? "GET" : String.join(",", path.methods));
+                    item.put("path", path.path);
+                    item.put("params", new ArrayList<>(path.parameters));
+                    item.put("statusCodes", new ArrayList<>(path.statusCodes));
+                    item.put("source", path.fromJsRecovered ? "validated-js-ast" : "history");
+                    item.put("observations", path.observationCount);
+                    return item;
+                })
+                .toList());
+        input.put("negativeExamples", validationCache.values().stream()
+                .filter(validation -> validation != null && validation.getJudgment() == DiscoveryJudgment.NOT_FOUND)
+                .map(DiscoveryValidation::getReasoning)
+                .filter(reason -> reason != null && !reason.isBlank())
+                .limit(30)
+                .toList());
+
+        return template + "\n\n[INPUT_JSON]\n" + JsonUtil.toPrettyJson(input);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<DiscoveryCandidate> parseLlmCandidates(HostObservation observation, String response) {
+        String json = extractJson(response);
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        Map<String, Object> root = JsonUtil.fromJsonSafe(json, Map.class);
+        if (root == null) {
+            return List.of();
+        }
+        Object rawCandidates = root.get("candidates");
+        if (!(rawCandidates instanceof List<?> items)) {
+            return List.of();
+        }
+
+        List<DiscoveryCandidate> result = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+            Map<String, Object> candidateMap = rawMap.entrySet().stream()
+                    .collect(Collectors.toMap(
+                            entry -> String.valueOf(entry.getKey()),
+                            Map.Entry::getValue,
+                            (first, second) -> first,
+                            LinkedHashMap::new));
+            DiscoveryCandidate candidate = toCandidate(observation, candidateMap);
+            if (candidate != null) {
+                result.add(candidate);
+            }
+        }
+        return result;
+    }
+
+    private DiscoveryCandidate toCandidate(HostObservation observation, Map<String, Object> values) {
+        String rawPath = stringValue(values.get("path"));
+        String normalizedPath = normalizePath(rawPath);
+        if (normalizedPath == null || normalizedPath.isBlank() || "/".equals(normalizedPath)) {
+            return null;
+        }
+        if (observation.allPaths.contains(normalizedPath) || HttpUtil.isStaticExtension(normalizedPath)) {
+            return null;
+        }
+
+        List<String> evidence = stringList(values.get("evidence"));
+        if (evidence.isEmpty()) {
+            evidence = stringList(values.get("evidencePaths"));
+        }
+        List<String> supportingPaths = evidence.stream()
+                .map(this::normalizePath)
+                .filter(path -> path != null && observation.allPaths.contains(path))
+                .distinct()
+                .limit(10)
+                .toList();
+        if (supportingPaths.isEmpty()) {
+            return null;
+        }
+
+        List<String> params = extractCandidateParams(values.get("params"));
+        double confidence = clamp(doubleValue(values.get("confidence"), 0.55));
+        String method = normalizeMethod(stringValue(values.get("method")));
+        String reason = stringValue(values.get("reason"));
+        if (reason.isBlank()) {
+            reason = "LLM 基于已验证历史接口和已验证 JS AST 恢复接口推理";
+        }
+
+        DiscoveryCandidate candidate = createCandidate(
+                observation.host,
+                normalizedPath,
+                DiscoveryAssetType.ENDPOINT,
+                confidence,
+                "LLM 接口规律推理：" + reason,
+                supportingPaths,
+                params,
+                supportingPaths.size());
+        candidate.setMethodHint(method);
+        candidate.setSupportingMethods(List.of(method));
+        candidate.setKey(candidate.getKey() + "|" + method);
+        return candidate;
+    }
+
+    private List<String> extractCandidateParams(Object rawParams) {
+        if (!(rawParams instanceof List<?> items)) {
+            return List.of();
+        }
+        List<String> params = new ArrayList<>();
+        for (Object item : items) {
+            if (item instanceof Map<?, ?> map) {
+                String name = stringValue(map.get("name"));
+                if (!name.isBlank()) {
+                    params.add(name);
+                }
+            } else {
+                String value = stringValue(item);
+                if (!value.isBlank()) {
+                    params.add(value);
+                }
+            }
+        }
+        return params.stream().distinct().limit(20).toList();
+    }
+
+    private String observationFingerprint(HostObservation observation) {
+        return observation.endpointPaths.values().stream()
+                .sorted(Comparator.comparing(path -> path.path))
+                .map(path -> path.path + "|" + String.join(",", path.methods) + "|" + String.join(",", path.parameters))
+                .collect(Collectors.joining("\n"));
+    }
+
+    private List<DiscoveryCandidate> cloneCandidates(List<DiscoveryCandidate> source) {
+        if (source == null || source.isEmpty()) {
+            return List.of();
+        }
+        List<DiscoveryCandidate> copies = new ArrayList<>();
+        for (DiscoveryCandidate candidate : source) {
+            DiscoveryCandidate copy = new DiscoveryCandidate();
+            copy.setKey(candidate.getKey());
+            copy.setHost(candidate.getHost());
+            copy.setPath(candidate.getPath());
+            copy.setUrl(candidate.getUrl());
+            copy.setAssetType(candidate.getAssetType());
+            copy.setScore(candidate.getScore());
+            copy.setMethodHint(candidate.getMethodHint());
+            copy.setSourceReason(candidate.getSourceReason());
+            copy.setSupportingObservationCount(candidate.getSupportingObservationCount());
+            copy.setSupportingPaths(candidate.getSupportingPaths());
+            copy.setSupportingParameters(candidate.getSupportingParameters());
+            copy.setSupportingMethods(candidate.getSupportingMethods());
+            copy.setValidation(cloneValidation(candidate.getValidation()));
+            copies.add(copy);
+        }
+        return copies;
+    }
+
     private Map<String, HostObservation> groupObservations(String hostFilter) {
         Map<String, HostObservation> grouped = new LinkedHashMap<>();
         for (HistoryEntry entry : historyService.getAll()) {
@@ -294,11 +539,38 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
             if (HttpUtil.isStaticExtension(normalizedPath)) {
                 continue;
             }
+            if (!isUsableObservedEndpoint(entry, normalizedPath)) {
+                continue;
+            }
             PathObservation pathObservation = observation.endpointPaths.computeIfAbsent(normalizedPath, PathObservation::new);
             pathObservation.observationCount++;
             pathObservation.parameters.addAll(parameters);
+            pathObservation.methods.add(normalizeMethod(entry.getMethod()));
+            if (entry.getStatusCode() > 0) {
+                pathObservation.statusCodes.add(String.valueOf(entry.getStatusCode()));
+            }
+            pathObservation.fromJsRecovered = pathObservation.fromJsRecovered
+                    || (entry.getRequestId() != null && entry.getRequestId().startsWith("js-"));
         }
         return grouped;
+    }
+
+    private boolean isUsableObservedEndpoint(HistoryEntry entry, String normalizedPath) {
+        if (entry == null || normalizedPath == null || HttpUtil.isStaticExtension(normalizedPath)) {
+            return false;
+        }
+        EndpointType endpointType = entry.getEndpointType();
+        if (endpointType != null && endpointType != EndpointType.ENDPOINT && endpointType != EndpointType.UNKNOWN) {
+            return false;
+        }
+        int status = entry.getStatusCode();
+        if (NEGATIVE_CODES.contains(status)) {
+            return false;
+        }
+        if (entry.getRequestId() != null && entry.getRequestId().startsWith("js-")) {
+            return POSITIVE_ENDPOINT_CODES.contains(status);
+        }
+        return true;
     }
 
     private Set<String> extractParameterNames(HistoryEntry entry) {
@@ -547,6 +819,67 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         return normalized;
     }
 
+    private String normalizeMethod(String method) {
+        if (method == null || method.isBlank()) {
+            return "GET";
+        }
+        String normalized = method.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS" -> normalized;
+            default -> "GET";
+        };
+    }
+
+    private String extractJson(String response) {
+        if (response == null || response.isBlank()) {
+            return null;
+        }
+        int fencedStart = response.indexOf("```json");
+        if (fencedStart >= 0) {
+            int contentStart = response.indexOf('\n', fencedStart);
+            int fencedEnd = response.indexOf("```", contentStart + 1);
+            if (contentStart >= 0 && fencedEnd > contentStart) {
+                return response.substring(contentStart + 1, fencedEnd).trim();
+            }
+        }
+        int objectStart = response.indexOf('{');
+        int objectEnd = response.lastIndexOf('}');
+        if (objectStart >= 0 && objectEnd > objectStart) {
+            return response.substring(objectStart, objectEnd + 1).trim();
+        }
+        return null;
+    }
+
+    private List<String> stringList(Object value) {
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(this::stringValue)
+                    .filter(item -> !item.isBlank())
+                    .toList();
+        }
+        String single = stringValue(value);
+        return single.isBlank() ? List.of() : List.of(single);
+    }
+
+    private String stringValue(Object value) {
+        return value != null ? String.valueOf(value).trim() : "";
+    }
+
+    private double doubleValue(Object value, double fallback) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return value != null ? Double.parseDouble(String.valueOf(value)) : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private long siteDiscoveryWaitMs() {
+        return Math.max(20000L, Timeouts.effectiveLlmWaitMs(configService));
+    }
+
     private List<String> splitSegments(String path) {
         return Arrays.stream(path.split("/"))
                 .filter(part -> part != null && !part.isBlank())
@@ -582,7 +915,10 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
     private static final class PathObservation {
         private final String path;
         private final Set<String> parameters = new LinkedHashSet<>();
+        private final Set<String> methods = new LinkedHashSet<>();
+        private final Set<String> statusCodes = new LinkedHashSet<>();
         private int observationCount;
+        private boolean fromJsRecovered;
 
         private PathObservation(String path) {
             this.path = path;
@@ -611,5 +947,11 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
                                         int finalStatusCode,
                                         String contentType,
                                         String reasoning) {
+    }
+
+    private record CachedInference(String fingerprint, List<DiscoveryCandidate> candidates) {
+        private CachedInference {
+            candidates = candidates != null ? List.copyOf(candidates) : List.of();
+        }
     }
 }

@@ -11,10 +11,12 @@ public class DiscoveryCandidate {
     private String url;
     private DiscoveryAssetType assetType;
     private double score;
+    private String methodHint;
     private String sourceReason;
     private int supportingObservationCount;
     private List<String> supportingPaths = new ArrayList<>();
     private List<String> supportingParameters = new ArrayList<>();
+    private List<String> supportingMethods = new ArrayList<>();
     private DiscoveryValidation validation = new DiscoveryValidation();
 
     public String getKey() {
@@ -65,6 +67,14 @@ public class DiscoveryCandidate {
         this.score = score;
     }
 
+    public String getMethodHint() {
+        return methodHint;
+    }
+
+    public void setMethodHint(String methodHint) {
+        this.methodHint = methodHint;
+    }
+
     public String getSourceReason() {
         return sourceReason;
     }
@@ -95,6 +105,14 @@ public class DiscoveryCandidate {
 
     public void setSupportingParameters(List<String> supportingParameters) {
         this.supportingParameters = supportingParameters != null ? new ArrayList<>(supportingParameters) : new ArrayList<>();
+    }
+
+    public List<String> getSupportingMethods() {
+        return supportingMethods;
+    }
+
+    public void setSupportingMethods(List<String> supportingMethods) {
+        this.supportingMethods = supportingMethods != null ? new ArrayList<>(supportingMethods) : new ArrayList<>();
     }
 
     public DiscoveryValidation getValidation() {
