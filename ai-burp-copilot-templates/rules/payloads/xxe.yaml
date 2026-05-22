@@ -17,13 +17,13 @@ probes:
     valueTypes: [STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY abc \"AI_BURP_COPILOT_XXE\">]><x>&abc;</x>"
+      - value: "<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY abc \"{{randAlpha:xxeMarker:12}}\">]><x>&abc;</x>"
         role: TRIGGER
         mutation: REPLACE
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_XXE"
+        - "{{randAlpha:xxeMarker:12}}"
       minConfidence: 0.72
 
   - id: xxe_entity_keyword_probe_alt
@@ -40,12 +40,13 @@ probes:
     valueTypes: [STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY alt \"AI_BURP_COPILOT_XXE_ALT\">]><root>&alt;</root>"
+      - value: "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY alt \"{{randAlpha:xxeAltMarker:12}}\">]><root>&alt;</root>"
         role: TRIGGER
         mutation: REPLACE
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_XXE_ALT"
+        - "{{randAlpha:xxeAltMarker:12}}"
       minConfidence: 0.72
+
 

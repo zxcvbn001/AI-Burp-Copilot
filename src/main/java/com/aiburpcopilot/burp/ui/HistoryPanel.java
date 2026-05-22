@@ -6,6 +6,7 @@ import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.history.HistoryExportService;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.pipeline.HistoryEventBus;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -108,6 +109,7 @@ public class HistoryPanel extends JPanel {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         UiUtil.applyBurpFont(table);
+        UiUtil.installHistoryDeleteMenu(table, historyService, this::selectedEntry, this::refresh);
 
         // 列宽设置
         UiUtil.setScaledColumnWidths(table,
@@ -172,8 +174,17 @@ public class HistoryPanel extends JPanel {
                 JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             historyService.clear();
+            HistoryEventBus.getInstance().fireHistoryCleared();
             refresh();
         }
+    }
+
+    private HistoryEntry selectedEntry() {
+        int row = table.getSelectedRow();
+        if (row < 0) {
+            return null;
+        }
+        return tableModel.getEntryAt(table.convertRowIndexToModel(row));
     }
 
     private void clearFilteredHistory() {
@@ -193,6 +204,7 @@ public class HistoryPanel extends JPanel {
                 parseStatusFilter(),
                 parseTime(timeFromField.getText().trim(), false),
                 parseTime(timeToField.getText().trim(), true));
+        HistoryEventBus.getInstance().fireRefreshNeeded();
         refresh();
         JOptionPane.showMessageDialog(this,
                 "Deleted " + deleted + " history records.",

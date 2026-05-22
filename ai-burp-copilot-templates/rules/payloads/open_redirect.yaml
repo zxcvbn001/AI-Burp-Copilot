@@ -15,17 +15,17 @@ probes:
     applicableParamTypes: [QUERY, BODY]
     valueTypes: [URL, STRING, UNKNOWN]
     payloads:
-      - value: "https://example.com/ai-burp-copilot-open-redirect"
+      - value: "https://example.com/{{randLower:redirectMarker:12}}"
         role: TRIGGER
         mutation: REPLACE
         markers:
           - "example.com"
-          - "ai-burp-copilot-open-redirect"
+          - "{{randLower:redirectMarker:12}}"
     oracle:
       type: REDIRECT_LOCATION
       requireMarkers:
         - "example.com"
-        - "ai-burp-copilot-open-redirect"
+        - "{{randLower:redirectMarker:12}}"
       minConfidence: 0.82
 
   - id: open_redirect_protocol_relative
@@ -39,17 +39,17 @@ probes:
     applicableParamTypes: [QUERY, BODY]
     valueTypes: [URL, STRING, UNKNOWN]
     payloads:
-      - value: "//example.com/ai-burp-copilot-open-redirect"
+      - value: "//example.com/{{randLower:redirectMarker:12}}"
         role: TRIGGER
         mutation: REPLACE
         markers:
           - "example.com"
-          - "ai-burp-copilot-open-redirect"
+          - "{{randLower:redirectMarker:12}}"
     oracle:
       type: REDIRECT_LOCATION
       requireMarkers:
         - "example.com"
-        - "ai-burp-copilot-open-redirect"
+        - "{{randLower:redirectMarker:12}}"
       minConfidence: 0.78
 
   - id: open_redirect_encoded_absolute_url
@@ -63,15 +63,15 @@ probes:
     applicableParamTypes: [QUERY, BODY]
     valueTypes: [URL, STRING, UNKNOWN]
     payloads:
-      - value: "https:%2F%2Fexample.com%2Fai-burp-copilot-open-redirect"
+      - value: "https:%2F%2Fexample.com%2F{{randLower:redirectMarker:12}}"
         role: TRIGGER
         mutation: REPLACE
         markers:
           - "example.com"
-          - "ai-burp-copilot-open-redirect"
+          - "{{randLower:redirectMarker:12}}"
     oracle:
       type: REDIRECT_LOCATION
       requireMarkers:
         - "example.com"
-        - "ai-burp-copilot-open-redirect"
+        - "{{randLower:redirectMarker:12}}"
       minConfidence: 0.76

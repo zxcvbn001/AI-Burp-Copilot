@@ -74,6 +74,14 @@ public interface IHistoryService {
     HistoryEntry getById(String requestId);
 
     /**
+     * 根据请求 ID 删除单条历史记录。
+     *
+     * @param requestId 请求 ID
+     * @return 是否删除了记录
+     */
+    boolean deleteById(String requestId);
+
+    /**
      * 清空所有历史记录。
      */
     void clear();

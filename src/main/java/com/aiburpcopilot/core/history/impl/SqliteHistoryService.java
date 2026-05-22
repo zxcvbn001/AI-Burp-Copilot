@@ -100,6 +100,21 @@ public class SqliteHistoryService implements IHistoryService {
     }
 
     @Override
+    public synchronized boolean deleteById(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return false;
+        }
+        try (Connection connection = openConnection();
+             PreparedStatement ps = connection.prepareStatement(
+                     "DELETE FROM history_entries WHERE request_id = ?")) {
+            ps.setString(1, requestId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to delete history entry", e);
+        }
+    }
+
+    @Override
     public synchronized void clear() {
         execute("DELETE FROM history_entries");
     }

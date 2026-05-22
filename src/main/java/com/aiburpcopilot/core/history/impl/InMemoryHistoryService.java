@@ -106,6 +106,18 @@ public class InMemoryHistoryService implements IHistoryService {
     }
 
     @Override
+    public boolean deleteById(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return false;
+        }
+        boolean removed = entries.removeIf(e -> requestId.equals(e.getRequestId()));
+        if (removed) {
+            log.info("History entry deleted: {}", requestId);
+        }
+        return removed;
+    }
+
+    @Override
     public void clear() {
         entries.clear();
         log.info("History cleared");

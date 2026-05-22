@@ -66,6 +66,7 @@ public class StaticScanPanel extends JPanel {
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         UiUtil.applyBurpFont(table);
         UiUtil.setScaledColumnWidths(table, 85, 75, 380, 560);
+        UiUtil.installHistoryDeleteMenu(table, historyService, this::selectedEntry, this::refresh);
 
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
@@ -186,6 +187,14 @@ public class StaticScanPanel extends JPanel {
                 return;
             }
         }
+    }
+
+    private HistoryEntry selectedEntry() {
+        int row = table.getSelectedRow();
+        if (row < 0) {
+            return null;
+        }
+        return tableModel.getEntryAt(table.convertRowIndexToModel(row));
     }
 
     private void updateDetail(HistoryEntry entry) {

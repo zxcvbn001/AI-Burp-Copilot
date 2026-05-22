@@ -454,6 +454,11 @@ public class AIBurpCopilotExtension implements BurpExtension {
         }
 
         @Override
+        public boolean deleteById(String requestId) {
+            return current().deleteById(requestId);
+        }
+
+        @Override
         public void clear() {
             current().clear();
         }

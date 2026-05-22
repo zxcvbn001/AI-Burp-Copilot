@@ -462,8 +462,8 @@ probes:
       - NUMERIC
     requiresLlmReview: true
     payloadPairs:
-      - truePayload: "..."
-        falsePayload: "..."
+      - trueValue: "..."
+        falseValue: "..."
     oracle:
       type: PAIR_DIFF
       minConfidence: 0.7
@@ -480,6 +480,30 @@ probes:
 - `payloads`：单请求 payload。
 - `payloadPairs`：true / false 成对 payload。
 - `oracle`：命中判断方式。
+
+规则 payload、`markers`、`oracle.keywords`、`oracle.requireMarkers` 和 `oracle.errorKeywords` 支持运行时随机变量。变量在每次 probe 执行时生成，同一个命名变量会在 payload 和 oracle 中保持一致：
+
+```yaml
+payloads:
+  - value: ";echo {{randAlpha:cmdMarker:12}};"
+    role: TRIGGER
+    mutation: APPEND
+oracle:
+  type: KEYWORD
+  keywords:
+    - "{{randAlpha:cmdMarker:12}}"
+```
+
+可用变量：
+
+- `{{rand:name:8}}` / `{{random:name:8}}`：随机字母数字。
+- `{{randLower:name:8}}`：随机小写字母，适合标签名、文件名、域名前缀。
+- `{{randAlpha:name:8}}`：随机字母。
+- `{{randNum:name:6}}`：随机数字。
+- `{{randHex:name:8}}`：随机十六进制。
+- `{{uuid:name}}`：随机 UUID。
+- `{{timestamp:name}}`：当前毫秒时间戳。
+- `{{arithLeft:name}}` / `{{arithRight:name}}` / `{{arithResult:name}}`：同一组随机乘法表达式及结果，适合 SSTI 这类表达式验证。
 
 常见 oracle：
 

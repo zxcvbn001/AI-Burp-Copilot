@@ -1,12 +1,19 @@
 package com.aiburpcopilot.burp.ui;
 
+import com.aiburpcopilot.core.history.HistoryEntry;
+import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.pipeline.HistoryEventBus;
+
 import javax.swing.*;
 import javax.swing.table.TableColumnModel;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.JTextComponent;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Supplier;
 
 final class UiUtil {
 
@@ -189,6 +196,83 @@ final class UiUtil {
             return "";
         }
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    static void installHistoryDeleteMenu(JTable table,
+                                         IHistoryService historyService,
+                                         Supplier<HistoryEntry> selectedEntrySupplier,
+                                         Runnable afterDelete) {
+        if (table == null || historyService == null || selectedEntrySupplier == null) {
+            return;
+        }
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem deleteItem = new JMenuItem("删除选中记录");
+        deleteItem.addActionListener(e -> {
+            HistoryEntry entry = selectedEntrySupplier.get();
+            if (entry == null || entry.getRequestId() == null || entry.getRequestId().isBlank()) {
+                JOptionPane.showMessageDialog(table, "请先选择一条记录。", "删除记录", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            String message = "确认删除这条历史记录？\n\n"
+                    + nullToEmpty(entry.getMethod()) + " " + nullToEmpty(entry.getUrl())
+                    + "\nrequestId=" + entry.getRequestId();
+            int confirm = JOptionPane.showConfirmDialog(
+                    table,
+                    message,
+                    "确认删除",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
+            try {
+                boolean deleted = historyService.deleteById(entry.getRequestId());
+                if (!deleted) {
+                    JOptionPane.showMessageDialog(table, "未找到对应记录，可能已经被删除。", "删除记录", JOptionPane.INFORMATION_MESSAGE);
+                }
+                HistoryEventBus.getInstance().fireRefreshNeeded();
+                if (afterDelete != null) {
+                    afterDelete.run();
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(
+                        table,
+                        "删除失败：" + ex.getMessage(),
+                        "删除记录",
+                        JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        menu.add(deleteItem);
+
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                maybeShowPopup(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                maybeShowPopup(e);
+            }
+
+            private void maybeShowPopup(MouseEvent e) {
+                if (!e.isPopupTrigger()) {
+                    return;
+                }
+                int row = table.rowAtPoint(e.getPoint());
+                if (row >= 0 && row < table.getRowCount()) {
+                    table.setRowSelectionInterval(row, row);
+                    deleteItem.setEnabled(true);
+                } else {
+                    deleteItem.setEnabled(false);
+                }
+                menu.show(e.getComponent(), e.getX(), e.getY());
+            }
+        });
+    }
+
+    private static String nullToEmpty(Object value) {
+        return value != null ? String.valueOf(value) : "";
     }
 
     static final class TextViewState {

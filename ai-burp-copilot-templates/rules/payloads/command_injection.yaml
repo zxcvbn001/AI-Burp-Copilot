@@ -15,13 +15,13 @@ probes:
     valueTypes: [STRING, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloads:
-      - value: ";echo AI_BURP_COPILOT_CMD;"
+      - value: ";echo {{randAlpha:cmdMarker:12}};"
         role: TRIGGER
         mutation: APPEND
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_CMD"
+        - "{{randAlpha:cmdMarker:12}}"
       minConfidence: 0.74
 
   - id: command_injection_pipe_echo_marker
@@ -36,13 +36,13 @@ probes:
     valueTypes: [STRING, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloads:
-      - value: "|echo AI_BURP_COPILOT_CMD|"
+      - value: "|echo {{randAlpha:cmdMarker:12}}|"
         role: TRIGGER
         mutation: APPEND
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_CMD"
+        - "{{randAlpha:cmdMarker:12}}"
       minConfidence: 0.72
 
   - id: command_injection_and_echo_marker
@@ -57,13 +57,13 @@ probes:
     valueTypes: [STRING, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloads:
-      - value: "&&echo AI_BURP_COPILOT_CMD&&"
+      - value: "&&echo {{randAlpha:cmdMarker:12}}&&"
         role: TRIGGER
         mutation: APPEND
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_CMD"
+        - "{{randAlpha:cmdMarker:12}}"
       minConfidence: 0.72
 
   - id: command_injection_single_and_echo_marker
@@ -78,13 +78,13 @@ probes:
     valueTypes: [STRING, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloads:
-      - value: "&echo AI_BURP_COPILOT_CMD&"
+      - value: "&echo {{randAlpha:cmdMarker:12}}&"
         role: TRIGGER
         mutation: APPEND
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_CMD"
+        - "{{randAlpha:cmdMarker:12}}"
       minConfidence: 0.70
 
   - id: command_injection_or_echo_marker
@@ -99,13 +99,13 @@ probes:
     valueTypes: [STRING, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloads:
-      - value: "||echo AI_BURP_COPILOT_CMD||"
+      - value: "||echo {{randAlpha:cmdMarker:12}}||"
         role: TRIGGER
         mutation: APPEND
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_CMD"
+        - "{{randAlpha:cmdMarker:12}}"
       minConfidence: 0.70
 
   - id: command_injection_subshell_echo_marker
@@ -120,11 +120,12 @@ probes:
     valueTypes: [STRING, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloads:
-      - value: "$(printf AI_BURP_COPILOT_CMD)"
+      - value: "$(printf {{randAlpha:cmdMarker:12}})"
         role: TRIGGER
         mutation: APPEND
     oracle:
       type: KEYWORD
       keywords:
-        - "AI_BURP_COPILOT_CMD"
+        - "{{randAlpha:cmdMarker:12}}"
       minConfidence: 0.74
+

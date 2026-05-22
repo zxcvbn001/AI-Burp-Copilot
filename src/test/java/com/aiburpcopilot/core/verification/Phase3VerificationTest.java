@@ -18,9 +18,16 @@ import com.aiburpcopilot.core.verification.influence.impl.ReplayEngine;
 import com.aiburpcopilot.core.verification.influence.IReplayEngine;
 import com.aiburpcopilot.core.verification.payload.impl.YamlPayloadRuleEngine;
 import com.aiburpcopilot.core.verification.finding.FindingAggregator;
+import com.aiburpcopilot.core.verification.probe.IProbeRuleEngine;
+import com.aiburpcopilot.core.verification.probe.OracleDefinition;
+import com.aiburpcopilot.core.verification.probe.ProbeDefinition;
+import com.aiburpcopilot.core.verification.probe.ProbeOracleEngine;
+import com.aiburpcopilot.core.verification.probe.ProbePayload;
+import com.aiburpcopilot.core.verification.probe.ProbeRole;
 import com.aiburpcopilot.core.verification.technique.TechniqueRecommendation;
 import com.aiburpcopilot.core.verification.technique.VerificationTechnique;
 import com.aiburpcopilot.core.verification.workflow.WorkflowContext;
+import com.aiburpcopilot.core.verification.workflow.impl.GenericProbeStep;
 import com.aiburpcopilot.core.verification.workflow.impl.InfluenceValidationStep;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowRegistry;
 import com.aiburpcopilot.core.verification.workflow.impl.WorkflowStepFactory;
@@ -1264,6 +1271,71 @@ public class Phase3VerificationTest {
 
     @Test
     @Order(42)
+    @DisplayName("Probe variables render consistently for payload and oracle")
+    void testProbeVariablesRenderConsistentlyForPayloadAndOracle() {
+        ProbeDefinition probe = new ProbeDefinition();
+        probe.setAttackType(AttackType.XSS);
+        probe.setId("xss_random_marker");
+        probe.setStrategyName("REFLECTION");
+        probe.setMaxRequests(1);
+        probe.setEvidenceWeight(1.0);
+
+        ProbePayload payload = new ProbePayload();
+        payload.setValue("<{{randAlpha:marker:10}}>");
+        payload.setRole(ProbeRole.SINGLE);
+        payload.setMarkers(List.of("{{randAlpha:marker:10}}"));
+        probe.setPayloads(List.of(payload));
+
+        OracleDefinition oracle = new OracleDefinition();
+        oracle.setType("KEYWORD");
+        oracle.setKeywords(List.of("{{randAlpha:marker:10}}"));
+        oracle.setMinConfidence(0.8);
+        probe.setOracle(oracle);
+
+        ReflectingReplayEngine replay = new ReflectingReplayEngine();
+        GenericProbeStep step = new GenericProbeStep(
+                "XSSProbes",
+                AttackType.XSS,
+                replay,
+                new SingleProbeRuleEngine(probe),
+                new ProbeOracleEngine(new InfluenceDiffEngine()),
+                null,
+                128);
+
+        HTTPContext httpContext = new HTTPContext();
+        httpContext.setMethod("GET");
+        httpContext.setUrl("http://example.test/search?q=base");
+        httpContext.setPath("/search");
+        httpContext.addParameter(new ParameterContext("q", "base", ParameterType.QUERY));
+        httpContext.setRawResponse("HTTP/1.1 200 OK\r\n\r\nbaseline".getBytes(StandardCharsets.UTF_8));
+
+        CandidateParameter candidate = new CandidateParameter();
+        candidate.setAttackType(AttackType.XSS);
+        candidate.setParameterName("q");
+        candidate.setParameterType("QUERY");
+        candidate.setConfidence(1.0);
+
+        WorkflowContext workflowContext = new WorkflowContext(httpContext, candidate);
+        workflowContext.setBaselineResponse(httpContext.getRawResponse());
+        workflowContext.setReplayEngine(replay);
+        workflowContext.setPayloadVerificationAllowed(true);
+
+        StepResult result = step.execute(workflowContext);
+
+        assertTrue(result.isSuccess());
+        assertEquals(1, result.getExchangeRecords().size());
+        String payloadValue = result.getExchangeRecords().get(0).getPayload();
+        assertNotNull(payloadValue);
+        assertFalse(payloadValue.contains("{{"));
+        assertTrue(payloadValue.matches("<[A-Za-z]{10}>"));
+        String marker = payloadValue.substring(1, payloadValue.length() - 1);
+        assertTrue(result.getReasoning().contains("matchedEvidence=1"));
+        assertTrue(result.getEvidences().stream().anyMatch(evidence ->
+                evidence.getDescription() != null && evidence.getDescription().contains(marker)));
+    }
+
+    @Test
+    @Order(42)
     @DisplayName("AI analysis prompt includes authoritative parameter contract")
     void testAiAnalysisPromptIncludesParameterContract() {
         CapturingAiProvider aiProvider = new CapturingAiProvider(
@@ -1530,6 +1602,56 @@ public class Phase3VerificationTest {
         @Override
         public byte[] getLastResponseBytes() {
             return response;
+        }
+    }
+
+    private static class ReflectingReplayEngine implements IReplayEngine {
+        private byte[] lastRequestBytes = "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n".getBytes(StandardCharsets.UTF_8);
+        private byte[] lastResponseBytes = "HTTP/1.1 200 OK\r\n\r\nbaseline".getBytes(StandardCharsets.UTF_8);
+
+        @Override
+        public byte[] replayOriginal(HTTPContext context) {
+            return "HTTP/1.1 200 OK\r\n\r\nbaseline".getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public byte[] replayWithMutation(HTTPContext context, String paramName, String newValue) {
+            lastRequestBytes = ("GET /search?" + paramName + "=" + newValue
+                    + " HTTP/1.1\r\nHost: example.test\r\n\r\n").getBytes(StandardCharsets.UTF_8);
+            lastResponseBytes = ("HTTP/1.1 200 OK\r\n\r\n" + newValue).getBytes(StandardCharsets.UTF_8);
+            return lastResponseBytes;
+        }
+
+        @Override
+        public long getLastReplayDurationMs() {
+            return 10;
+        }
+
+        @Override
+        public byte[] getLastRequestBytes() {
+            return lastRequestBytes;
+        }
+
+        @Override
+        public byte[] getLastResponseBytes() {
+            return lastResponseBytes;
+        }
+    }
+
+    private static class SingleProbeRuleEngine implements IProbeRuleEngine {
+        private final ProbeDefinition probe;
+
+        private SingleProbeRuleEngine(ProbeDefinition probe) {
+            this.probe = probe;
+        }
+
+        @Override
+        public List<ProbeDefinition> getProbes(String attackTypeName) {
+            return List.of(probe);
+        }
+
+        @Override
+        public void reload() {
         }
     }
 

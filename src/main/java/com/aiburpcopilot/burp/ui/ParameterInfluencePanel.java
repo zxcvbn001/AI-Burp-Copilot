@@ -70,6 +70,7 @@ public class ParameterInfluencePanel extends JPanel {
         table.setFillsViewportHeight(true);
         UiUtil.applyBurpFont(table);
         UiUtil.setScaledColumnWidths(table, 90, 420, 120, 95, 130, 110, 90);
+        UiUtil.installHistoryDeleteMenu(table, historyService, this::selectedEntry, this::refresh);
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
                 updateDetail();
@@ -227,6 +228,11 @@ public class ParameterInfluencePanel extends JPanel {
         responseViewer.setBytes(null);
         diffArea.setText("");
         reasoningArea.setText("");
+    }
+
+    private com.aiburpcopilot.core.history.HistoryEntry selectedEntry() {
+        VerificationUiSupport.ResultRow row = tableModel.getRowAt(table.getSelectedRow());
+        return row != null ? row.entry() : null;
     }
 
     private String selectedKey() {

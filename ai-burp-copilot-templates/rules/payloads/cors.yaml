@@ -22,15 +22,15 @@ probes:
     valueTypes: [URL, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "https://evil.example"
+      - value: "https://{{randLower:corsOrigin:10}}.example"
         role: TRIGGER
         mutation: REPLACE
         markers:
-          - "evil.example"
+          - "{{randLower:corsOrigin:10}}.example"
     oracle:
       type: KEYWORD
       keywords:
-        - "access-control-allow-origin: https://evil.example"
+        - "access-control-allow-origin: https://{{randLower:corsOrigin:10}}.example"
         - "access-control-allow-credentials: true"
       minConfidence: 0.66
 
@@ -73,15 +73,15 @@ probes:
     valueTypes: [URL, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "https://sub.evil.example"
+      - value: "https://{{randLower:corsSubOrigin:8}}.{{randLower:corsOrigin:10}}.example"
         role: TRIGGER
         mutation: REPLACE
         markers:
-          - "sub.evil.example"
+          - "{{randLower:corsSubOrigin:8}}.{{randLower:corsOrigin:10}}.example"
     oracle:
       type: KEYWORD
       keywords:
-        - "access-control-allow-origin: https://sub.evil.example"
+        - "access-control-allow-origin: https://{{randLower:corsSubOrigin:8}}.{{randLower:corsOrigin:10}}.example"
         - "access-control-allow-credentials: true"
       minConfidence: 0.66
 

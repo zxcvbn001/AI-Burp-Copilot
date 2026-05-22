@@ -51,8 +51,8 @@ probes:
     valueTypes: [STRING, EMAIL, URL, UNKNOWN, NUMERIC]
     requiresLlmReview: true
     payloadPairs:
-      - trueValue: "' AND 1=1--"
-        falseValue: "' AND 1=2--"
+      - trueValue: "' AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}--"
+        falseValue: "' AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}+1--"
         trueMutation: APPEND
         falseMutation: APPEND
     oracle:
@@ -74,8 +74,8 @@ probes:
     valueTypes: [NUMERIC]
     requiresLlmReview: true
     payloadPairs:
-      - trueValue: " AND 1=1"
-        falseValue: " AND 1=2"
+      - trueValue: " AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}"
+        falseValue: " AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}+1"
         trueMutation: APPEND
         falseMutation: APPEND
     oracle:
@@ -97,8 +97,8 @@ probes:
     valueTypes: [STRING, EMAIL, URL, UNKNOWN]
     requiresLlmReview: true
     payloadPairs:
-      - trueValue: "\" AND 1=1--"
-        falseValue: "\" AND 1=2--"
+      - trueValue: "\" AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}--"
+        falseValue: "\" AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}+1--"
         trueMutation: APPEND
         falseMutation: APPEND
     oracle:
@@ -120,8 +120,8 @@ probes:
     valueTypes: [STRING, EMAIL, URL, UNKNOWN]
     requiresLlmReview: true
     payloadPairs:
-      - trueValue: "') AND 1=1--"
-        falseValue: "') AND 1=2--"
+      - trueValue: "') AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}--"
+        falseValue: "') AND {{randNum:sqliA:2}}={{randNum:sqliA:2}}+1--"
         trueMutation: APPEND
         falseMutation: APPEND
     oracle:

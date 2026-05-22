@@ -22,13 +22,13 @@ probes:
     valueTypes: [STRING, UNKNOWN]
     requiresLlmReview: false
     payloads:
-      - value: "ai-burp-copilot-upload-test.txtxx"
+      - value: "{{randLower:uploadName:12}}.txtxx"
         role: TRIGGER
         mutation: REPLACE
     oracle:
       type: KEYWORD
       keywords:
-        - "ai-burp-copilot-upload-test.txtxx"
+        - "{{randLower:uploadName:12}}.txtxx"
         - ".txtxx"
       minConfidence: 0.58
 
@@ -46,7 +46,7 @@ probes:
     valueTypes: [STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "ai-burp-copilot-upload-test.jpg.html"
+      - value: "{{randLower:uploadName:12}}.jpg.html"
         role: TRIGGER
         mutation: REPLACE
     oracle:
@@ -68,7 +68,7 @@ probes:
     valueTypes: [STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "ai-burp-copilot-upload-test.svg"
+      - value: "{{randLower:uploadName:12}}.svg"
         role: TRIGGER
         mutation: REPLACE
     oracle:

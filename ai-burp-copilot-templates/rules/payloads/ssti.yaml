@@ -5,7 +5,7 @@ attackType: SSTI
 goal: CONFIRM_ATTACK_TYPE
 
 probes:
-  - id: ssti_jinja_expression_49
+  - id: ssti_jinja_expression_random
     technique: TEMPLATE_EXPRESSION
     strategy: TEMPLATE_EXPRESSION
     priority: 10
@@ -16,18 +16,18 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, UNKNOWN]
     payloads:
-      - value: "{{7*7}}"
+      - value: "{{{{arithLeft:sstiExpr}}*{{arithRight:sstiExpr}}}}"
         role: TRIGGER
         mutation: APPEND
         markers:
-          - "49"
+          - "{{arithResult:sstiExpr}}"
     oracle:
       type: EXPRESSION_EVALUATION
       requireMarkers:
-        - "49"
+        - "{{arithResult:sstiExpr}}"
       minConfidence: 0.78
 
-  - id: ssti_eruby_expression_49
+  - id: ssti_eruby_expression_random
     technique: TEMPLATE_EXPRESSION
     strategy: TEMPLATE_EXPRESSION
     priority: 20
@@ -38,18 +38,18 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, UNKNOWN]
     payloads:
-      - value: "<%= 7*7 %>"
+      - value: "<%= {{arithLeft:sstiExpr}}*{{arithRight:sstiExpr}} %>"
         role: TRIGGER
         mutation: APPEND
         markers:
-          - "49"
+          - "{{arithResult:sstiExpr}}"
     oracle:
       type: EXPRESSION_EVALUATION
       requireMarkers:
-        - "49"
+        - "{{arithResult:sstiExpr}}"
       minConfidence: 0.74
 
-  - id: ssti_velocity_expression_49
+  - id: ssti_velocity_expression_random
     technique: TEMPLATE_EXPRESSION
     strategy: TEMPLATE_EXPRESSION
     priority: 30
@@ -60,18 +60,18 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, UNKNOWN]
     payloads:
-      - value: "${7*7}"
+      - value: "${{{arithLeft:sstiExpr}}*{{arithRight:sstiExpr}}}"
         role: TRIGGER
         mutation: APPEND
         markers:
-          - "49"
+          - "{{arithResult:sstiExpr}}"
     oracle:
       type: EXPRESSION_EVALUATION
       requireMarkers:
-        - "49"
+        - "{{arithResult:sstiExpr}}"
       minConfidence: 0.74
 
-  - id: ssti_twig_expression_49
+  - id: ssti_twig_expression_random
     technique: TEMPLATE_EXPRESSION
     strategy: TEMPLATE_EXPRESSION
     priority: 40
@@ -82,13 +82,13 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, UNKNOWN]
     payloads:
-      - value: "{{ 7 * 7 }}"
+      - value: "{{{{arithLeft:sstiExpr}} * {{arithRight:sstiExpr}}}}"
         role: TRIGGER
         mutation: APPEND
         markers:
-          - "49"
+          - "{{arithResult:sstiExpr}}"
     oracle:
       type: EXPRESSION_EVALUATION
       requireMarkers:
-        - "49"
+        - "{{arithResult:sstiExpr}}"
       minConfidence: 0.76

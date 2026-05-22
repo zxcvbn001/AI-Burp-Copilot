@@ -17,6 +17,7 @@ import com.aiburpcopilot.core.verification.probe.ProbeOracleEngine;
 import com.aiburpcopilot.core.verification.probe.ProbePayload;
 import com.aiburpcopilot.core.verification.probe.ProbePayloadPair;
 import com.aiburpcopilot.core.verification.probe.ProbeRole;
+import com.aiburpcopilot.core.verification.probe.ProbeVariableRenderer;
 import com.aiburpcopilot.core.verification.safety.DangerousPayloadFilter;
 import com.aiburpcopilot.core.verification.util.RuleKeyUtil;
 import com.aiburpcopilot.core.verification.workflow.VerificationStep;
@@ -179,11 +180,12 @@ public class GenericProbeStep implements VerificationStep {
                 result.setContinueWorkflow(false);
                 break;
             }
+            ProbeDefinition executableProbe = new ProbeVariableRenderer().renderProbe(probe);
             List<ProbeExecution> executions = executeProbe(
                     effectiveReplay,
                     httpContext,
                     candidate.getParameterName(),
-                    probe,
+                    executableProbe,
                     maxReplayRequests - tested,
                     seenExecutions);
             tested += executions.size();
@@ -192,8 +194,8 @@ public class GenericProbeStep implements VerificationStep {
             }
 
             for (ProbeExecution execution : executions) {
-                appendExchange(transcript, exchangeIndex++, probe, execution);
-                result.addExchangeRecord(buildExchangeRecord(context, probe, execution));
+                appendExchange(transcript, exchangeIndex++, executableProbe, execution);
+                result.addExchangeRecord(buildExchangeRecord(context, executableProbe, execution));
             }
 
             ProbeExecution last = executions.get(executions.size() - 1);
@@ -201,15 +203,15 @@ public class GenericProbeStep implements VerificationStep {
             result.setResponseBytes(last.getResponseBytes());
             result.setPayload(last.getValue());
             result.setResponseLength(last.getResponseBytes() != null ? last.getResponseBytes().length : 0);
-            result.setStrategyName(probe.getStrategyName());
-            result.setDedupKey(buildProbeDedupKey(httpContext, candidate, probe));
-            if (probe.getStrategy() != null) {
-                result.setStrategyType(probe.getStrategy());
+            result.setStrategyName(executableProbe.getStrategyName());
+            result.setDedupKey(buildProbeDedupKey(httpContext, candidate, executableProbe));
+            if (executableProbe.getStrategy() != null) {
+                result.setStrategyType(executableProbe.getStrategy());
             }
 
-            OracleResult oracle = oracleEngine.evaluate(probe, baseline, baselineDuration, executions);
+            OracleResult oracle = oracleEngine.evaluate(executableProbe, baseline, baselineDuration, executions);
             markMatchedExchangeRecords(result, oracle);
-            if (probe.isRequiresLlmReview() && !oracle.isLlmAvailable()) {
+            if (executableProbe.isRequiresLlmReview() && !oracle.isLlmAvailable()) {
                 String existingReasoning = oracle.getReasoning();
                 String degradedReasoning = "LLM review unavailable, fallback to local oracle";
                 if (existingReasoning != null && !existingReasoning.isBlank()) {
@@ -232,10 +234,10 @@ public class GenericProbeStep implements VerificationStep {
             }
             if (oracle.isMatched()) {
                 matched++;
-                double weighted = oracle.getConfidence() * probe.getEvidenceWeight();
+                double weighted = oracle.getConfidence() * executableProbe.getEvidenceWeight();
                 combinedConfidence = combineConfidence(combinedConfidence, weighted);
                 oracle.getEvidences().forEach(result::addEvidence);
-                if (probe.isStopOnMatch() && isStrongEnoughToStop(probe, oracle)) {
+                if (executableProbe.isStopOnMatch() && isStrongEnoughToStop(executableProbe, oracle)) {
                     break;
                 }
             }

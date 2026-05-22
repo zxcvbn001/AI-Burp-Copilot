@@ -632,7 +632,54 @@ applicableParamTypes: [QUERY, BODY, PATH]
 
 优先复用已有 oracle。只有已有 oracle 完全不适合时，才考虑扩展代码。
 
-### 8.8 一个极简示例
+### 8.8 运行时随机变量
+
+很多 PoC 里的回显标记、无害 marker、测试文件名后缀不应该写死，否则容易被缓存、历史响应或页面固定内容干扰。
+
+规则支持在下面字段中使用运行时变量：
+
+- `payloads.value`
+- `payloads.markers`
+- `payloadPairs.trueValue`
+- `payloadPairs.falseValue`
+- `oracle.keywords`
+- `oracle.requireMarkers`
+- `oracle.errorKeywords`
+
+示例：
+
+```yaml
+payloads:
+  - value: ";echo {{randAlpha:cmdMarker:12}};"
+    role: TRIGGER
+    mutation: APPEND
+oracle:
+  type: KEYWORD
+  keywords:
+    - "{{randAlpha:cmdMarker:12}}"
+```
+
+执行时，`payloads.value` 和 `oracle.keywords` 中的 `cmdMarker` 会被替换成同一个随机值，因此验证逻辑仍然能准确匹配响应中的真实 marker。
+
+支持的变量：
+
+- `{{rand:name:8}}` / `{{random:name:8}}`：随机字母数字
+- `{{randLower:name:8}}`：随机小写字母，适合标签名、文件名、域名前缀
+- `{{randAlpha:name:8}}`：随机字母
+- `{{randNum:name:6}}`：随机数字
+- `{{randHex:name:8}}`：随机十六进制
+- `{{uuid:name}}`：随机 UUID
+- `{{timestamp:name}}`：当前毫秒时间戳
+- `{{arithLeft:name}}` / `{{arithRight:name}}` / `{{arithResult:name}}`：同一组随机乘法表达式及结果，适合 SSTI 这类表达式验证
+
+建议：
+
+- 需要 oracle 复用的值一定要加 `name`
+- 同一个 probe 内同名变量保持一致
+- 不同 probe 执行之间会重新生成
+- 不要把变量用于 SQL 布尔真假逻辑里的关键语义部分
+
+### 8.9 一个极简示例
 
 ```yaml
 attackType: XSS

@@ -79,6 +79,7 @@ public class VerificationPanel extends JPanel {
         TableColumnModel colModel = table.getColumnModel();
         UiUtil.setScaledMinimumColumnWidths(table, 70, 160, 100, 90, 130, 70, 85, 70, 75, 65);
         colModel.getColumn(8).setCellRenderer(new ConfidenceRenderer());
+        UiUtil.installHistoryDeleteMenu(table, historyService, this::selectedEntry, this::refresh);
 
         exchangeListModel = new DefaultListModel<>();
         exchangeList = new JList<>(exchangeListModel);
@@ -215,6 +216,11 @@ public class VerificationPanel extends JPanel {
         responseViewer.setBytes(null);
         baselineViewer.setBytes(null);
         UiUtil.setTextPreservingView(diffArea, diffText, false);
+    }
+
+    private com.aiburpcopilot.core.history.HistoryEntry selectedEntry() {
+        VerificationUiSupport.ResultRow row = tableModel.getRowAt(table.getSelectedRow());
+        return row != null ? row.entry() : null;
     }
 
     private List<VerificationUiSupport.ResultRow> collectWorkflowRows() {

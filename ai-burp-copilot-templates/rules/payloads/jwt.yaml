@@ -40,7 +40,7 @@ probes:
     valueTypes: [JWT, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "Bearer invalid.invalid.invalid"
+      - value: "Bearer {{randLower:jwtA:8}}.{{randLower:jwtB:8}}.{{randLower:jwtC:8}}"
         role: TRIGGER
         mutation: REPLACE
     oracle:
@@ -60,7 +60,7 @@ probes:
     valueTypes: [JWT, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "Bearer null.null.null"
+      - value: "Bearer null.{{randLower:jwtNullMarker:8}}.null"
         role: TRIGGER
         mutation: REPLACE
     oracle:
@@ -80,7 +80,7 @@ probes:
     valueTypes: [JWT, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "Bearer eyJhbGciOiJIUzI1NiJ9.e30."
+      - value: "Bearer eyJhbGciOiJIUzI1NiJ9.{{randLower:jwtTruncatedMarker:8}}."
         role: TRIGGER
         mutation: REPLACE
     oracle:

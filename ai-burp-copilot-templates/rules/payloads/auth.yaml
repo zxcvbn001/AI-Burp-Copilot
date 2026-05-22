@@ -63,7 +63,7 @@ probes:
     valueTypes: [JWT, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "Bearer invalid-role-token"
+      - value: "Bearer invalid-role-{{randLower:authMarker:10}}"
         role: TRIGGER
         mutation: REPLACE
     oracle:
@@ -84,7 +84,7 @@ probes:
     valueTypes: [JWT, STRING, UNKNOWN]
     requiresLlmReview: true
     payloads:
-      - value: "Basic YWktYnVycC1jb3BpbG90OnRlc3Q="
+      - value: "Basic {{randAlpha:basicMarker:24}}"
         role: TRIGGER
         mutation: REPLACE
     oracle:

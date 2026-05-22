@@ -18,18 +18,18 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, EMAIL, URL, UNKNOWN]
     payloads:
-      - value: "<aaaa>bbbb</aaaaa>"
+      - value: "<{{randLower:xssTag:8}}>{{randLower:xssText:10}}</{{randLower:xssTag:8}}>"
         role: TRIGGER
         mutation: APPEND
         markers:
-          - ">bbbb"
-          - "<aaaa"
+          - ">{{randLower:xssText:10}}"
+          - "<{{randLower:xssTag:8}}"
     oracle:
       type: HTML_REFLECTION
       requireExactPayload: false
       requireUnescaped: true
       requireMarkers:
-        - "<aaaa"
+        - "<{{randLower:xssTag:8}}"
       minConfidence: 0.72
 
   - id: xss_harmless_dom_reflection
@@ -45,17 +45,17 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, EMAIL, URL, UNKNOWN]
     payloads:
-      - value: "\"aaaaabbbbb"
+      - value: "\"{{randLower:xssAttr:14}}"
         role: TRIGGER
         mutation: APPEND
         markers:
-          - "\"aaaaabbbbb"
+          - "\"{{randLower:xssAttr:14}}"
     oracle:
       type: HTML_REFLECTION
       requireExactPayload: false
       requireUnescaped: true
       requireMarkers:
-        - "\"aaaaabbbbb"
+        - "\"{{randLower:xssAttr:14}}"
       minConfidence: 0.72
 
   - id: xss_harmless_context_break_reflection
@@ -71,18 +71,18 @@ probes:
     applicableParamTypes: [QUERY, BODY, PATH]
     valueTypes: [STRING, EMAIL, URL, UNKNOWN]
     payloads:
-      - value: "\"></title><aaaa>bbbb</aaaaa>"
+      - value: "\"></title><{{randLower:xssTag:8}}>{{randLower:xssText:10}}</{{randLower:xssTag:8}}>"
         role: TRIGGER
         mutation: APPEND
         markers:
           - "</title>"
-          - "<aaaa"
-          - ">bbbb"
+          - "<{{randLower:xssTag:8}}"
+          - ">{{randLower:xssText:10}}"
     oracle:
       type: HTML_REFLECTION
       requireExactPayload: false
       requireUnescaped: true
       requireMarkers:
-        - "<aaaa"
+        - "<{{randLower:xssTag:8}}"
         - "</title>"
       minConfidence: 0.76
