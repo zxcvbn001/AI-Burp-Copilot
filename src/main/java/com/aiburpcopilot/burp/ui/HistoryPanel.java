@@ -89,15 +89,16 @@ public class HistoryPanel extends JPanel {
         statusFilter.addActionListener(e -> refresh());
         toolbar.add(statusFilter);
 
-        JButton clearBtn = new JButton("Clear");
+        JButton clearBtn = new JButton("清空数据库");
         clearBtn.addActionListener(e -> clearHistory());
+        clearBtn.setToolTipText("删除当前历史数据库中的所有记录");
         toolbar.add(clearBtn);
 
-        JButton clearFilteredBtn = new JButton("Clear Filtered");
+        JButton clearFilteredBtn = new JButton("清空筛选结果");
         clearFilteredBtn.addActionListener(e -> clearFilteredHistory());
         toolbar.add(clearFilteredBtn);
 
-        JButton exportBtn = new JButton("Export Filtered");
+        JButton exportBtn = new JButton("导出筛选结果");
         exportBtn.addActionListener(e -> exportFilteredHistory());
         toolbar.add(exportBtn);
 
@@ -169,13 +170,21 @@ public class HistoryPanel extends JPanel {
     // ---------- Private ----------
 
     private void clearHistory() {
+        int existing = historyService.size();
         int confirm = JOptionPane.showConfirmDialog(this,
-                "Clear all history records?", "Confirm",
+                "将清空当前历史数据库中的全部记录。\n\n"
+                        + "当前记录数：" + existing + "\n"
+                        + "此操作不可撤销，是否继续？",
+                "确认清空数据库",
                 JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             historyService.clear();
             HistoryEventBus.getInstance().fireHistoryCleared();
             refresh();
+            JOptionPane.showMessageDialog(this,
+                    "历史数据库已清空。",
+                    "清空完成",
+                    JOptionPane.INFORMATION_MESSAGE);
         }
     }
 

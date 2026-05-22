@@ -9,6 +9,7 @@ import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.history.HistoryStorageProbe;
 import com.aiburpcopilot.core.history.HistoryStorageStatus;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.pipeline.HistoryEventBus;
 import com.aiburpcopilot.utils.JsonUtil;
 import com.aiburpcopilot.utils.PluginLogger;
 
@@ -87,6 +88,7 @@ public class SettingsPanel extends JPanel {
     private JLabel historyStorageModeValueLabel;
     private JLabel historyStoragePathValueLabel;
     private JButton testHistoryDbButton;
+    private JButton clearHistoryDbButton;
 
     private JCheckBox verificationEnabled;
     private JTextField verificationMaxRequestsField;
@@ -543,6 +545,15 @@ public class SettingsPanel extends JPanel {
         testHistoryDbButton.addActionListener(e -> testHistoryDatabaseConnection());
         panel.add(testHistoryDbButton, gbc);
 
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("危险操作："), gbc);
+        gbc.gridx = 1;
+        clearHistoryDbButton = new JButton("一键清空历史数据库");
+        clearHistoryDbButton.setToolTipText("删除当前历史数据库中的所有历史记录，不删除配置文件和规则文件");
+        clearHistoryDbButton.addActionListener(e -> clearHistoryDatabase());
+        panel.add(clearHistoryDbButton, gbc);
+
         return panel;
     }
 
@@ -916,6 +927,56 @@ public class SettingsPanel extends JPanel {
             if (testHistoryDbButton != null) {
                 testHistoryDbButton.setEnabled(true);
                 testHistoryDbButton.setText("测试数据库连接");
+            }
+        }
+    }
+
+    private void clearHistoryDatabase() {
+        if (historyService == null) {
+            JOptionPane.showMessageDialog(this,
+                    "历史服务尚未初始化，无法清空数据库。",
+                    "清空失败",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        HistoryStorageStatus status = historyService.getStorageStatus();
+        int existing = historyService.size();
+        String dbPath = status != null && status.getDatabasePath() != null && !status.getDatabasePath().isBlank()
+                ? status.getDatabasePath()
+                : "内存存储或未知路径";
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "将删除当前历史数据库中的全部记录。\n\n"
+                        + "存储模式：" + (status != null ? status.getDescription() : "-") + "\n"
+                        + "数据库路径：" + dbPath + "\n"
+                        + "当前记录数：" + existing + "\n\n"
+                        + "此操作不可撤销，是否继续？",
+                "确认清空历史数据库",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        try {
+            if (clearHistoryDbButton != null) {
+                clearHistoryDbButton.setEnabled(false);
+                clearHistoryDbButton.setText("清空中...");
+            }
+            historyService.clear();
+            HistoryEventBus.getInstance().fireHistoryCleared();
+            refreshHistoryStorageStatus();
+            JOptionPane.showMessageDialog(this,
+                    "历史数据库已清空。\n\n删除记录数：" + existing,
+                    "清空完成",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "清空历史数据库失败：\n" + e.getMessage(),
+                    "清空失败",
+                    JOptionPane.ERROR_MESSAGE);
+        } finally {
+            if (clearHistoryDbButton != null) {
+                clearHistoryDbButton.setEnabled(true);
+                clearHistoryDbButton.setText("一键清空历史数据库");
             }
         }
     }
