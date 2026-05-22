@@ -312,6 +312,10 @@ public class AppConfig {
             this.autoFetchReferencedScripts = autoFetchReferencedScripts;
             this.legacyAutoVerifyRecoveredEndpoints = null;
         }
+        public Boolean getAutoVerifyRecoveredEndpoints() { return legacyAutoVerifyRecoveredEndpoints; }
+        public void setAutoVerifyRecoveredEndpoints(Boolean autoVerifyRecoveredEndpoints) {
+            this.legacyAutoVerifyRecoveredEndpoints = autoVerifyRecoveredEndpoints;
+        }
         public Boolean getLegacyAutoVerifyRecoveredEndpoints() { return legacyAutoVerifyRecoveredEndpoints; }
         public void setLegacyAutoVerifyRecoveredEndpoints(Boolean legacyAutoVerifyRecoveredEndpoints) {
             this.legacyAutoVerifyRecoveredEndpoints = legacyAutoVerifyRecoveredEndpoints;
