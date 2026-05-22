@@ -163,12 +163,14 @@ public class StaticResourceScanner implements IStaticScanner {
         String jsMode = normalizeJsMode(jsConfig);
         if (!jsConfig.isEnabled()) {
             appendScriptResult(result, buildScriptSummary(context.getUrl(), false, -1, "JS AST 分析已关闭", null));
+            publishStaticProgress(context, result);
             return;
         }
 
         if (!jsAnalysisClient.isHealthy()) {
             appendScriptResult(result, buildScriptSummary(context.getUrl(), false, -1,
                     "JS AST 服务不可用: " + jsAnalysisClient.getLastHealthMessage(), null));
+            publishStaticProgress(context, result);
             return;
         }
 
@@ -186,18 +188,21 @@ public class StaticResourceScanner implements IStaticScanner {
                         + ", depth=" + depth);
 
         probeSourceMap(scriptUrl, result);
+        publishStaticProgress(context, result);
 
         JsAnalysisResponse analysis = jsAnalysisClient.analyze(scriptUrl, content, context.getUrl(),
-                progress -> recordJsAstProgress(result, progress));
+                progress -> recordJsAstProgress(context, result, progress));
         if (analysis == null || !analysis.isSuccess()) {
             appendScriptResult(result, buildScriptSummary(scriptUrl, true, 200,
                     "JS AST 分析失败: " + (analysis != null ? analysis.errorMessage() : "empty response"), analysis));
+            publishStaticProgress(context, result);
             return;
         }
 
         appendScriptResult(result, buildScriptSummary(scriptUrl, true, 200, "JS AST 分析完成", analysis));
         mergeCloudAnalysis(scriptUrl, context.getUrl(), analysis, result);
         handleRecoveredEndpoints(context, scriptUrl, analysis, result);
+        publishStaticProgress(context, result);
 
         if (depth >= jsConfig.getMaxRecursiveDepth()) {
             return;
@@ -215,27 +220,32 @@ public class StaticResourceScanner implements IStaticScanner {
                         -1,
                         "引用 JS 已发现，但自动抓取已关闭，未发包抓取",
                         null));
+                publishStaticProgress(context, result);
                 continue;
             }
             var validation = validateStaticChild(childUrl);
             appendScriptResult(result, validation.summary);
+            publishStaticProgress(context, result);
             if (!validation.exists || visitedScripts.contains(childUrl)) {
                 continue;
             }
             probeSourceMap(childUrl, result);
+            publishStaticProgress(context, result);
             JsAnalysisResponse childAnalysis = jsAnalysisClient.analyze(childUrl,
                     new String(validation.responseBody, StandardCharsets.UTF_8),
                     context.getUrl(),
-                    progress -> recordJsAstProgress(result, progress));
+                    progress -> recordJsAstProgress(context, result, progress));
             if (childAnalysis == null || !childAnalysis.isSuccess()) {
                 appendScriptResult(result, buildScriptSummary(childUrl, true, validation.statusCode,
                         "引用 JS AST 分析失败: " + (childAnalysis != null ? childAnalysis.errorMessage() : "empty response"),
                         childAnalysis));
+                publishStaticProgress(context, result);
                 continue;
             }
             appendScriptResult(result, buildScriptSummary(childUrl, true, validation.statusCode, "引用 JS AST 分析完成", childAnalysis));
             mergeCloudAnalysis(childUrl, context.getUrl(), childAnalysis, result);
             handleRecoveredEndpoints(context, childUrl, childAnalysis, result);
+            publishStaticProgress(context, result);
             enrichWithJsAnalysis(context,
                     new String(validation.responseBody, StandardCharsets.UTF_8),
                     result,
@@ -426,7 +436,9 @@ public class StaticResourceScanner implements IStaticScanner {
                 null));
     }
 
-    private void recordJsAstProgress(StaticScanResult result, JsAnalysisApiClient.TaskProgress progress) {
+    private void recordJsAstProgress(HTTPContext context,
+                                     StaticScanResult result,
+                                     JsAnalysisApiClient.TaskProgress progress) {
         if (progress == null) {
             return;
         }
@@ -449,6 +461,25 @@ public class StaticResourceScanner implements IStaticScanner {
                         + ", taskId=" + safe(progress.taskId())
                         + ", script=" + safe(progress.scriptUrl())
                         + ", message=" + safe(progress.message()));
+        publishStaticProgress(context, result);
+    }
+
+    private void publishStaticProgress(HTTPContext context, StaticScanResult result) {
+        if (context == null || result == null || historyService == null || context.getRequestId() == null) {
+            return;
+        }
+        try {
+            context.setStaticScanDetails(result);
+            context.setStaticScanResult(buildSummary(context, result));
+            HistoryEntry existing = historyService.getById(context.getRequestId());
+            HistoryEntry entry = existing != null ? existing : HistoryEntry.fromStaticScan(context);
+            entry.setStaticScanDetails(result);
+            entry.setAiSummary(context.getStaticScanResult());
+            historyService.update(entry);
+            HistoryEventBus.getInstance().fireRefreshNeeded();
+        } catch (Exception e) {
+            log.debug("Failed to publish static analysis progress for: {}", context.getPath(), e);
+        }
     }
 
     private String normalizeJsMode(AppConfig.JsAnalysisConfig jsConfig) {
@@ -1152,77 +1183,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 .append(" | risks=").append(size(result.getCloudRisks()))
                 .append("\n");
 
-        if (notEmpty(result.getCloudFindings())) {
-            summary.append("Cloud findings: ").append(result.getCloudFindings().size()).append("\n");
-            result.getCloudFindings().stream().limit(20).forEach(f ->
-                    summary.append("  - [").append(safe(f.getSeverity())).append("] ")
-                            .append(safe(f.getCategory()))
-                            .append(" / ").append(safe(f.getType()))
-                            .append(" | value=").append(safe(f.getValue()))
-                            .append(" | confidence=").append(formatConfidence(f.getConfidence()))
-                            .append(" | source=").append(safe(f.getSource()))
-                            .append(" | script=").append(shortUrl(f.getSourceScriptUrl()))
-                            .append(" | evidence=").append(safe(oneLine(f.getEvidence())))
-                            .append("\n"));
-        }
-
-        if (notEmpty(result.getCloudApis())) {
-            summary.append("Recovered API candidates: ").append(result.getCloudApis().size()).append("\n");
-            result.getCloudApis().stream().limit(20).forEach(api ->
-                    summary.append("  - ").append(safe(api.getMethod()))
-                            .append(" ").append(safe(firstNonBlank(api.getResolvedUrl(), api.getRawUrl())))
-                            .append(" | raw=").append(safe(api.getRawUrl()))
-                            .append(" | confidence=").append(safe(api.getConfidence()))
-                            .append(" | source=").append(safe(api.getSource()))
-                            .append(" | params=").append(joinList(api.getParams()))
-                            .append(" | notes=").append(joinList(api.getNotes()))
-                            .append("\n"));
-        }
-
-        if (notEmpty(result.getCloudAssets())) {
-            summary.append("Recovered static assets: ").append(result.getCloudAssets().size()).append("\n");
-            result.getCloudAssets().stream().limit(15).forEach(asset ->
-                    summary.append("  - [").append(safe(asset.getType())).append("] ")
-                            .append(safe(firstNonBlank(asset.getResolvedUrl(), asset.getUrl())))
-                            .append(" | chunk=").append(safe(asset.getChunkName()))
-                            .append(" | source=").append(safe(asset.getSource()))
-                            .append("\n"));
-        }
-
-        if (notEmpty(result.getCloudParams())) {
-            summary.append("Recovered params: ").append(result.getCloudParams().size()).append("\n");
-            result.getCloudParams().stream().limit(15).forEach(param ->
-                    summary.append("  - ").append(safe(param.getName()))
-                            .append(" | location=").append(safe(param.getLocation()))
-                            .append(" | api=").append(safe(param.getApi()))
-                            .append(" | source=").append(safe(param.getSource()))
-                            .append("\n"));
-        }
-
-        if (notEmpty(result.getCloudAuthSignals())) {
-            summary.append("Auth signals: ").append(joinList(result.getCloudAuthSignals())).append("\n");
-        }
-
-        if (notEmpty(result.getCloudSecrets())) {
-            summary.append("Secrets: ").append(result.getCloudSecrets().size()).append("\n");
-            result.getCloudSecrets().stream().limit(15).forEach(secret ->
-                    summary.append("  - [").append(safe(secret.getSeverity())).append("] ")
-                            .append(safe(secret.getType()))
-                            .append(" | value=").append(safe(secret.getValue()))
-                            .append(" | confidence=").append(formatConfidence(secret.getConfidence()))
-                            .append(" | source=").append(safe(secret.getSource()))
-                            .append(" | evidence=").append(safe(oneLine(secret.getEvidence())))
-                            .append("\n"));
-        }
-
-        if (notEmpty(result.getCloudRisks())) {
-            summary.append("Risk signals: ").append(result.getCloudRisks().size()).append("\n");
-            result.getCloudRisks().stream().limit(15).forEach(risk ->
-                    summary.append("  - [").append(safe(risk.getSeverity())).append("] ")
-                            .append(safe(risk.getType()))
-                            .append(" | evidence=").append(safe(oneLine(risk.getEvidence())))
-                            .append("\n"));
-        }
+        summary.append("Details: 请在 Endpoints / Sensitive / Scripts / Tasks 表格中查看明细。\n");
 
         if (result.getAnalyzedScripts() != null && !result.getAnalyzedScripts().isEmpty()) {
             summary.append("JS scripts analyzed: ").append(result.getAnalyzedScripts().size()).append("\n");
@@ -1240,27 +1201,18 @@ public class StaticResourceScanner implements IStaticScanner {
         }
 
         if (result.getJsAstTasks() != null && !result.getJsAstTasks().isEmpty()) {
-            summary.append("JS AST tasks: ").append(result.getJsAstTasks().size()).append("\n");
-            for (StaticScanResult.JsAstTaskStatus task : result.getJsAstTasks()) {
-                summary.append("  - [").append(safe(task.getPhase())).append("] ")
-                        .append(safe(task.getStatus()))
-                        .append(" | taskId=").append(safe(task.getTaskId()))
-                        .append(" | script=").append(safe(task.getScriptUrl()))
-                        .append(" | ").append(safe(task.getMessage()))
-                        .append("\n");
-            }
+            StaticScanResult.JsAstTaskStatus latest = result.getJsAstTasks().get(result.getJsAstTasks().size() - 1);
+            summary.append("Latest JS AST task: [").append(safe(latest.getPhase())).append("] ")
+                    .append(safe(latest.getStatus()))
+                    .append(" | taskId=").append(safe(latest.getTaskId()))
+                    .append(" | ").append(safe(latest.getMessage()))
+                    .append("\n");
         }
 
         if (result.getRecoveredEndpoints() != null && !result.getRecoveredEndpoints().isEmpty()) {
             long validCount = result.getRecoveredEndpoints().stream().filter(StaticScanResult.RecoveredEndpoint::isValidated).count();
             summary.append("Recovered endpoints: ").append(result.getRecoveredEndpoints().size())
                     .append(" (validated=").append(validCount).append(")\n");
-            result.getRecoveredEndpoints().stream().limit(12).forEach(endpoint ->
-                    summary.append("  - ").append(endpoint.getMethod()).append(" ").append(endpoint.getUrl())
-                            .append(" | validated=").append(endpoint.isValidated())
-                            .append(" | status=").append(endpoint.getStatusCode())
-                            .append(" | ").append(endpoint.getReason())
-                            .append("\n"));
         }
 
         if (result.getAiReview() != null && !result.getAiReview().isBlank()) {

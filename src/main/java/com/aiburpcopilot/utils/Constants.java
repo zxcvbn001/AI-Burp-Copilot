@@ -102,7 +102,7 @@ public final class Constants {
 
     // ========== Pipeline 相关 ==========
 
-    public static final int PIPELINE_QUEUE_CAPACITY = 1000;
+    public static final int PIPELINE_QUEUE_CAPACITY = 200;
     public static final int PIPELINE_WORKER_COUNT = 2;
 
     // ========== AI 限流 ==========
@@ -117,7 +117,7 @@ public final class Constants {
 
     // ========== 历史记录 ==========
 
-    public static final int HISTORY_DEFAULT_MAX = 10000;
+    public static final int HISTORY_DEFAULT_MAX = 2000;
     public static final int HISTORY_PAGE_SIZE = 50;
 
     // ========== 验证框架 (Phase 2) ==========

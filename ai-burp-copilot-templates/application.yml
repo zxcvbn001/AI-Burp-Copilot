@@ -71,7 +71,7 @@ request:
   concurrency: 5
   maxQueueSize: 1000
 storage:
-  maxHistory: 10000
+  maxHistory: 2000
   cacheTtlSeconds: 3600
   maxCacheEntries: 5000
   historyDbPath: ""

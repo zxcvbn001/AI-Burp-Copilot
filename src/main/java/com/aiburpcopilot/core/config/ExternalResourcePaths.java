@@ -9,13 +9,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class ExternalResourcePaths {
 
     private static final Logger log = LoggerFactory.getLogger(ExternalResourcePaths.class);
 
     private static volatile Path manualHomeDir;
+    private static volatile List<Path> runtimeCandidateRoots = List.of();
 
     private ExternalResourcePaths() {}
 
@@ -67,11 +70,15 @@ public final class ExternalResourcePaths {
     }
 
     private static Path resolveHomeDir() {
+        Path manualTemplateFallback = null;
         if (manualHomeDir != null) {
             Path validatedManual = configuredPath(manualHomeDir.toString());
             if (validatedManual != null) {
-                manualHomeDir = validatedManual;
-                return validatedManual;
+                if (!isTemplateDirectory(validatedManual)) {
+                    manualHomeDir = validatedManual;
+                    return validatedManual;
+                }
+                manualTemplateFallback = validatedManual;
             }
             manualHomeDir = null;
         }
@@ -99,6 +106,15 @@ public final class ExternalResourcePaths {
             }
         }
 
+        Path runtimeCandidatePath = runtimeCandidatePath();
+        if (runtimeCandidatePath != null) {
+            manualHomeDir = runtimeCandidatePath;
+            if (storedPath != null && isTemplateDirectory(storedPath)) {
+                ConfigDirectoryStore.save(runtimeCandidatePath.toString());
+            }
+            return runtimeCandidatePath;
+        }
+
         Path cwdPath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_DIR_NAME).toString());
         if (cwdPath != null) {
             manualHomeDir = cwdPath;
@@ -113,12 +129,43 @@ public final class ExternalResourcePaths {
             return storedPath;
         }
 
+        if (manualTemplateFallback != null) {
+            manualHomeDir = manualTemplateFallback;
+            return manualTemplateFallback;
+        }
+
         Path templatePath = configuredPath(Paths.get("").toAbsolutePath().normalize().resolve(Constants.CONFIG_TEMPLATE_DIR_NAME).toString());
         if (templatePath != null) {
             manualHomeDir = templatePath;
             return templatePath;
         }
         return null;
+    }
+
+    private static Path runtimeCandidatePath() {
+        for (Path root : runtimeCandidateRoots) {
+            Path candidate = configuredRuntimeCandidate(root);
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static Path configuredRuntimeCandidate(Path root) {
+        if (root == null) {
+            return null;
+        }
+        Path normalized = root.toAbsolutePath().normalize();
+        Path direct = configuredPath(normalized.toString());
+        if (direct != null && Constants.CONFIG_DIR_NAME.equals(fileName(direct))) {
+            return direct;
+        }
+        return configuredPath(normalized.resolve(Constants.CONFIG_DIR_NAME).toString());
+    }
+
+    private static String fileName(Path path) {
+        return path != null && path.getFileName() != null ? path.getFileName().toString() : "";
     }
 
     private static boolean isTemplateDirectory(Path path) {
@@ -146,6 +193,34 @@ public final class ExternalResourcePaths {
     public static synchronized void setManualHomeDir(Path homeDir) {
         manualHomeDir = homeDir != null ? homeDir.toAbsolutePath().normalize() : null;
         ConfigDirectoryStore.save(manualHomeDir != null ? manualHomeDir.toString() : "");
+    }
+
+    public static synchronized void setRuntimeCandidateRoots(List<Path> roots) {
+        if (roots == null || roots.isEmpty()) {
+            runtimeCandidateRoots = List.of();
+            return;
+        }
+        Set<Path> normalizedRoots = new LinkedHashSet<>();
+        for (Path root : roots) {
+            if (root == null) {
+                continue;
+            }
+            try {
+                Path normalized = root.toAbsolutePath().normalize();
+                if (Files.isRegularFile(normalized)) {
+                    normalized = normalized.getParent();
+                }
+                if (normalized != null) {
+                    normalizedRoots.add(normalized);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        runtimeCandidateRoots = List.copyOf(normalizedRoots);
+        if (manualHomeDir != null && isTemplateDirectory(manualHomeDir)) {
+            manualHomeDir = null;
+        }
+        log.debug("Runtime config candidate roots: {}", runtimeCandidateRoots);
     }
 
     public static synchronized void setManualConfigFile(Path configDirectoryOrFile) {

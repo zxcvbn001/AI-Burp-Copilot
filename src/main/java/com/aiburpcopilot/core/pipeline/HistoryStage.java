@@ -33,6 +33,10 @@ public class HistoryStage implements IPipelineStage {
         return markCompleted ? "History Final Update" : "History Snapshot";
     }
 
+    boolean isFinalUpdate() {
+        return markCompleted;
+    }
+
     @Override
     public void process(HTTPContext context) {
         try {

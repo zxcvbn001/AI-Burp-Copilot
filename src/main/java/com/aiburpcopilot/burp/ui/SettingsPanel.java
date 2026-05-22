@@ -74,6 +74,7 @@ public class SettingsPanel extends JPanel {
     private JTextField maxHistoryField;
     private JTextField cacheTtlField;
     private JTextField historyDbPathField;
+    private JLabel activeConfigPathValueLabel;
     private JLabel historyStorageModeValueLabel;
     private JLabel historyStoragePathValueLabel;
     private JButton testHistoryDbButton;
@@ -443,6 +444,13 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 0;
         gbc.gridy++;
+        panel.add(new JLabel("当前配置文件："), gbc);
+        gbc.gridx = 1;
+        activeConfigPathValueLabel = new JLabel("-");
+        panel.add(activeConfigPathValueLabel, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("当前存储模式："), gbc);
         gbc.gridx = 1;
         historyStorageModeValueLabel = new JLabel("-");
@@ -762,6 +770,10 @@ public class SettingsPanel extends JPanel {
     private void refreshHistoryStorageStatus() {
         if (historyStorageModeValueLabel == null || historyService == null) {
             return;
+        }
+        Path configPath = configService.getConfigFilePath();
+        if (activeConfigPathValueLabel != null) {
+            activeConfigPathValueLabel.setText(configPath != null ? configPath.toString() : "-");
         }
         HistoryStorageStatus status = historyService.getStorageStatus();
         historyStorageModeValueLabel.setText(status != null ? status.getDescription() : "-");

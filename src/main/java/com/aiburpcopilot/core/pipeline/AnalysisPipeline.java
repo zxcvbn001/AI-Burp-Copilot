@@ -34,6 +34,7 @@ public class AnalysisPipeline implements IPipeline {
 
     private final List<IPipelineStage> stages = new ArrayList<>();
     private final ExecutorService executor;
+    private HistoryStage snapshotStage;
     private volatile boolean running = false;
 
     public AnalysisPipeline() {
@@ -51,7 +52,10 @@ public class AnalysisPipeline implements IPipeline {
                         return t;
                     }
                 },
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                (runnable, executor) -> PluginLogger.getInstance().warn(
+                        PluginLogger.Category.SYSTEM,
+                        "Pipeline",
+                        "Pipeline queue is full; dropping analysis task to avoid blocking Burp.")
         );
     }
 
@@ -69,6 +73,9 @@ public class AnalysisPipeline implements IPipeline {
     @Override
     public void registerStage(IPipelineStage stage) {
         stages.add(stage);
+        if (stage instanceof HistoryStage historyStage && !historyStage.isFinalUpdate()) {
+            snapshotStage = historyStage;
+        }
         log.info("Pipeline stage registered: {}", stage.getName());
         pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "Stage registered: " + stage.getName());
     }
@@ -117,6 +124,10 @@ public class AnalysisPipeline implements IPipeline {
                     pluginLog.debug(PluginLogger.Category.SYSTEM, "Pipeline", "Stage '" + stage.getName() + "' starting...");
                     stage.process(context);
                     long elapsed = System.currentTimeMillis() - start;
+                    if (!(stage instanceof HistoryStage)) {
+                        persistIntermediateSnapshot(context);
+                        HistoryEventBus.getInstance().fireRefreshNeeded();
+                    }
                     log.debug("Stage '{}' completed in {}ms for: {}",
                             stage.getName(), elapsed, context.getPath());
                     pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "Stage '" + stage.getName()
@@ -140,6 +151,18 @@ public class AnalysisPipeline implements IPipeline {
             pluginLog.info(PluginLogger.Category.SYSTEM, "Pipeline", "  " + resultInfo);
         }
         log.debug("Pipeline completed for: {} {}", context.getMethod(), context.getPath());
+    }
+
+    private void persistIntermediateSnapshot(HTTPContext context) {
+        HistoryStage currentSnapshotStage = snapshotStage;
+        if (currentSnapshotStage == null || context == null) {
+            return;
+        }
+        try {
+            currentSnapshotStage.process(context);
+        } catch (Exception e) {
+            log.debug("Intermediate history snapshot failed for: {}", context.getPath(), e);
+        }
     }
 
     private String buildResultInfo(HTTPContext context) {

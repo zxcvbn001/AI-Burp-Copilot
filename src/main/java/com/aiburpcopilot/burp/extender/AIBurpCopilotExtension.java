@@ -9,11 +9,16 @@ import com.aiburpcopilot.core.ai.IAIProvider;
 import com.aiburpcopilot.core.ai.impl.AIProviderFactory;
 import com.aiburpcopilot.core.cache.ICacheService;
 import com.aiburpcopilot.core.cache.impl.MemoryCacheService;
+import com.aiburpcopilot.core.context.AnalysisStatus;
+import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.HTTPContext;
+import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.config.impl.YAMLConfigService;
+import com.aiburpcopilot.core.history.HistoryEntry;
+import com.aiburpcopilot.core.history.HistoryStorageStatus;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.core.history.impl.InMemoryHistoryService;
 import com.aiburpcopilot.core.history.impl.SqliteHistoryService;
@@ -21,6 +26,7 @@ import com.aiburpcopilot.core.pipeline.AIAnalysisStage;
 import com.aiburpcopilot.core.pipeline.AnalysisPipeline;
 import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.core.pipeline.EndpointClassificationStage;
+import com.aiburpcopilot.core.pipeline.HistoryEventBus;
 import com.aiburpcopilot.core.pipeline.HistoryStage;
 import com.aiburpcopilot.core.pipeline.IPipeline;
 import com.aiburpcopilot.core.pipeline.RiskEvaluatorStage;
@@ -65,6 +71,11 @@ import com.aiburpcopilot.utils.Constants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Burp Montoya extension entry point.
  * <p>
@@ -80,6 +91,7 @@ public class AIBurpCopilotExtension implements BurpExtension {
     private final DelegatingManualVerificationService delegatingManualVerificationService =
             new DelegatingManualVerificationService();
     private final DelegatingPipeline delegatingPipeline = new DelegatingPipeline();
+    private final DelegatingHistoryService delegatingHistoryService = new DelegatingHistoryService();
 
     private MontoyaApi api;
     private IConfigService configService;
@@ -106,9 +118,11 @@ public class AIBurpCopilotExtension implements BurpExtension {
         this.api = api;
         api.extension().setName("AI Burp Copilot");
         log.info("Starting AI Burp Copilot v2...");
+        registerRuntimeConfigCandidates(api);
 
         configService = new YAMLConfigService();
-        historyService = createHistoryService();
+        delegatingHistoryService.setDelegate(createHistoryService());
+        historyService = delegatingHistoryService;
         mainTab = new MainTab(
                 api,
                 historyService,
@@ -133,6 +147,7 @@ public class AIBurpCopilotExtension implements BurpExtension {
                     delegatingPipeline.setDelegate(null);
                     delegatingAiProvider.setDelegate(null);
                     delegatingManualVerificationService.setDelegate(new NoopManualVerificationService());
+                    delegatingHistoryService.setDelegate(new InMemoryHistoryService());
                     if (runtimeBundle != null) {
                         runtimeBundle.shutdown();
                         runtimeBundle = null;
@@ -155,11 +170,76 @@ public class AIBurpCopilotExtension implements BurpExtension {
         }
     }
 
+    private void registerRuntimeConfigCandidates(MontoyaApi api) {
+        List<Path> roots = new ArrayList<>();
+
+        addExtensionJarDirectory(api, roots);
+        addBurpUserDirectories(roots);
+        addPathIfPresent(roots, Path.of("").toAbsolutePath().normalize());
+
+        ExternalResourcePaths.setRuntimeCandidateRoots(roots);
+        if (!roots.isEmpty()) {
+            log.info("Runtime config candidate roots registered: {}", roots);
+        }
+    }
+
+    private void addExtensionJarDirectory(MontoyaApi api, List<Path> roots) {
+        try {
+            String filename = api.extension().filename();
+            if (filename == null || filename.isBlank()) {
+                return;
+            }
+            Path extensionPath = Path.of(filename).toAbsolutePath().normalize();
+            Path extensionDir = Files.isDirectory(extensionPath) ? extensionPath : extensionPath.getParent();
+            addPathIfPresent(roots, extensionDir);
+        } catch (Exception e) {
+            log.debug("Unable to resolve extension jar directory", e);
+        }
+    }
+
+    private void addBurpUserDirectories(List<Path> roots) {
+        String userHome = System.getProperty("user.home");
+        if (userHome != null && !userHome.isBlank()) {
+            Path home = Path.of(userHome).toAbsolutePath().normalize();
+            addPathIfPresent(roots, home.resolve("BurpSuite"));
+            addPathIfPresent(roots, home.resolve(".BurpSuite"));
+            addPathIfPresent(roots, home.resolve(".burp"));
+            addPathIfPresent(roots, home);
+        }
+
+        String appData = System.getenv("APPDATA");
+        if (appData != null && !appData.isBlank()) {
+            addPathIfPresent(roots, Path.of(appData).resolve("BurpSuite"));
+        }
+
+        String localAppData = System.getenv("LOCALAPPDATA");
+        if (localAppData != null && !localAppData.isBlank()) {
+            addPathIfPresent(roots, Path.of(localAppData).resolve("BurpSuite"));
+        }
+    }
+
+    private void addPathIfPresent(List<Path> paths, Path path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Path normalized = path.toAbsolutePath().normalize();
+            if (!paths.contains(normalized)) {
+                paths.add(normalized);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     public IPipeline getPipeline() {
         return delegatingPipeline;
     }
 
     private IHistoryService createHistoryService() {
+        if (ExternalResourcePaths.homeDirOrNull() == null) {
+            log.info("Config directory not selected; using in-memory history until runtime is loaded.");
+            return new InMemoryHistoryService();
+        }
         try {
             return new SqliteHistoryService(loadStorageConfigSafely());
         } catch (Exception e) {
@@ -187,6 +267,8 @@ public class AIBurpCopilotExtension implements BurpExtension {
         synchronized (runtimeLock) {
             try {
                 configService.reload();
+                IHistoryService newHistoryService = createHistoryService();
+                delegatingHistoryService.setDelegate(newHistoryService);
                 RuntimeBundle newBundle = createRuntimeBundle();
                 RuntimeBundle oldBundle = runtimeBundle;
                 runtimeBundle = newBundle;
@@ -197,8 +279,13 @@ public class AIBurpCopilotExtension implements BurpExtension {
                 if (oldBundle != null) {
                     oldBundle.shutdown();
                 }
-                log.info("Runtime services loaded from configured directory");
-                api.logging().logToOutput("AI Burp Copilot: runtime services loaded successfully.");
+                HistoryStorageStatus storageStatus = newHistoryService.getStorageStatus();
+                String storageText = storageStatus != null && storageStatus.getDatabasePath() != null
+                        ? storageStatus.getDatabasePath()
+                        : storageStatus != null ? storageStatus.getDescription() : "-";
+                log.info("Runtime services loaded from configured directory; history storage={}", storageText);
+                api.logging().logToOutput("AI Burp Copilot: runtime services loaded successfully. History DB: "
+                        + storageText);
             } catch (Exception e) {
                 log.error("Failed to load runtime services", e);
                 api.logging().logToError("Runtime load failed: " + e.getMessage());
@@ -312,6 +399,90 @@ public class AIBurpCopilotExtension implements BurpExtension {
                     executionEngine.shutdown();
                 }
             }
+        }
+    }
+
+    private static final class DelegatingHistoryService implements IHistoryService {
+        private final IHistoryService fallback = new InMemoryHistoryService();
+        private volatile IHistoryService delegate = fallback;
+
+        private void setDelegate(IHistoryService delegate) {
+            this.delegate = delegate != null ? delegate : fallback;
+            HistoryEventBus.getInstance().fireRefreshNeeded();
+        }
+
+        private IHistoryService current() {
+            return delegate != null ? delegate : fallback;
+        }
+
+        @Override
+        public HistoryStorageStatus getStorageStatus() {
+            return current().getStorageStatus();
+        }
+
+        @Override
+        public void add(HistoryEntry entry) {
+            current().add(entry);
+        }
+
+        @Override
+        public void update(HistoryEntry entry) {
+            current().update(entry);
+        }
+
+        @Override
+        public java.util.List<HistoryEntry> getAll() {
+            return current().getAll();
+        }
+
+        @Override
+        public java.util.List<HistoryEntry> searchAdvanced(String keyword,
+                                                           String site,
+                                                           EndpointType endpointType,
+                                                           RiskLevel riskLevel,
+                                                           AnalysisStatus status,
+                                                           Long timeFrom,
+                                                           Long timeTo,
+                                                           int offset,
+                                                           int limit) {
+            return current().searchAdvanced(keyword, site, endpointType, riskLevel, status, timeFrom, timeTo, offset, limit);
+        }
+
+        @Override
+        public HistoryEntry getById(String requestId) {
+            return current().getById(requestId);
+        }
+
+        @Override
+        public void clear() {
+            current().clear();
+        }
+
+        @Override
+        public int size() {
+            return current().size();
+        }
+
+        @Override
+        public int countAdvanced(String keyword,
+                                 String site,
+                                 EndpointType endpointType,
+                                 RiskLevel riskLevel,
+                                 AnalysisStatus status,
+                                 Long timeFrom,
+                                 Long timeTo) {
+            return current().countAdvanced(keyword, site, endpointType, riskLevel, status, timeFrom, timeTo);
+        }
+
+        @Override
+        public int clearAdvanced(String keyword,
+                                 String site,
+                                 EndpointType endpointType,
+                                 RiskLevel riskLevel,
+                                 AnalysisStatus status,
+                                 Long timeFrom,
+                                 Long timeTo) {
+            return current().clearAdvanced(keyword, site, endpointType, riskLevel, status, timeFrom, timeTo);
         }
     }
 
