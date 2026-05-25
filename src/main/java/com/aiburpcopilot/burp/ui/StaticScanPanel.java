@@ -5,6 +5,7 @@ import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.scanner.staticresource.StaticScanResult;
+import com.aiburpcopilot.utils.PluginLogger;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -52,16 +53,18 @@ public class StaticScanPanel extends JPanel {
     private final JTextArea authSignalArea;
     private final BurpMessageViewer.RequestView requestViewer;
     private final BurpMessageViewer.ResponseView responseViewer;
+    private final MontoyaApi api;
 
     private HistoryEntry currentEntry;
     private String displayedEntryId;
     private boolean refreshing;
 
     public StaticScanPanel(MontoyaApi api, IHistoryService historyService) {
+        this.api = api;
         this.historyService = historyService;
         setLayout(new BorderLayout());
 
-        tableModel = new StaticScanTableModel();
+        tableModel = new StaticScanTableModel(api);
         table = new JTable(tableModel);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -444,7 +447,12 @@ public class StaticScanPanel extends JPanel {
 
     private static class StaticScanTableModel extends AbstractTableModel {
         private final String[] columns = {"时间", "URL", "发现"};
+        private final MontoyaApi api;
         private List<HistoryEntry> entries = List.of();
+
+        private StaticScanTableModel(MontoyaApi api) {
+            this.api = api;
+        }
 
         void setEntries(List<HistoryEntry> entries) {
             this.entries = nonNullList(entries);
@@ -461,39 +469,55 @@ public class StaticScanPanel extends JPanel {
 
         @Override
         public Object getValueAt(int row, int col) {
-            HistoryEntry entry = entries.get(row);
-            if (entry == null) {
+            HistoryEntry entry = getEntryAt(row);
+            if (entry == null || col < 0 || col >= columns.length) {
                 return "";
             }
-            return switch (col) {
-                case 0 -> DATE_FORMAT.format(new Date(entry.getTimestamp()));
-                case 1 -> entry.getUrl();
-                case 2 -> findingSummary(entry);
-                default -> "";
-            };
+            try {
+                return switch (col) {
+                    case 0 -> DATE_FORMAT.format(new Date(entry.getTimestamp()));
+                    case 1 -> safe(entry.getUrl());
+                    case 2 -> findingSummary(entry);
+                    default -> "";
+                };
+            } catch (Exception e) {
+                logFindingColumnError(api, entry, "render", e);
+                return col == 2
+                        ? "发现统计暂不可用: " + e.getClass().getSimpleName()
+                        : "";
+            }
         }
 
-        private static String findingSummary(HistoryEntry entry) {
-            if (entry == null || entry.getStaticScanDetails() == null) {
-                return extractFindingSummary(entry != null ? entry.getAiSummary() : null);
+        private String findingSummary(HistoryEntry entry) {
+            try {
+                if (entry == null || entry.getStaticScanDetails() == null) {
+                    return extractFindingSummary(entry != null ? entry.getAiSummary() : null);
+                }
+                StaticScanResult details = entry.getStaticScanDetails();
+                int endpointFindings = safeSize(details.getEndpointFindings());
+                int sensitiveFindings = safeSize(details.getExposureFindings());
+                int scriptFindings = safeSize(details.getScriptFindings());
+                int rawFindings = safeSize(details.getCloudFindings());
+                int total = endpointFindings + sensitiveFindings + scriptFindings;
+                if (total == 0) {
+                    total = rawFindings + safeSize(details.getCloudSecrets()) + safeSize(details.getCloudRisks());
+                }
+                int apis = safeSize(details.getCloudApis());
+                int scripts = safeSize(details.getCloudAssets());
+                int verifiedApis = validRecoveredEndpointCount(details);
+                return "findings=" + total
+                        + " | endpoints=" + apis
+                        + " | verified=" + verifiedApis
+                        + " | scripts=" + scripts
+                        + " | secrets=" + safeSize(details.getCloudSecrets());
+            } catch (Exception e) {
+                logFindingColumnError(api, entry, "summary", e);
+                String fallback = extractFindingSummary(entry != null ? entry.getAiSummary() : null);
+                if (fallback != null && !fallback.isBlank()) {
+                    return fallback;
+                }
+                return "发现统计暂不可用: " + e.getClass().getSimpleName();
             }
-            StaticScanResult details = entry.getStaticScanDetails();
-            int endpointFindings = size(details.getEndpointFindings());
-            int sensitiveFindings = size(details.getExposureFindings());
-            int scriptFindings = size(details.getScriptFindings());
-            int rawFindings = size(details.getCloudFindings());
-            int total = endpointFindings + sensitiveFindings + scriptFindings;
-            if (total == 0) {
-                total = rawFindings + size(details.getCloudSecrets()) + size(details.getCloudRisks());
-            }
-            int apis = size(details.getCloudApis());
-            int scripts = size(details.getCloudAssets());
-            int verifiedApis = validRecoveredEndpointCount(details);
-            return "findings=" + total
-                    + " | endpoints=" + apis
-                    + " | verified=" + verifiedApis
-                    + " | scripts=" + scripts
-                    + " | secrets=" + size(details.getCloudSecrets());
         }
 
         private static String extractFindingSummary(String summary) {
@@ -508,17 +532,25 @@ public class StaticScanPanel extends JPanel {
             return truncate(summary, 100);
         }
 
-        private static int size(List<?> values) {
-            return values != null ? values.size() : 0;
+        private static int safeSize(List<?> values) {
+            try {
+                return values != null ? (int) values.stream().filter(Objects::nonNull).count() : 0;
+            } catch (Exception e) {
+                return 0;
+            }
         }
 
         private static int validRecoveredEndpointCount(StaticScanResult details) {
             if (details == null || details.getRecoveredEndpoints() == null) {
                 return 0;
             }
-            return (int) details.getRecoveredEndpoints().stream()
-                    .filter(endpoint -> endpoint != null && endpoint.isValidated())
-                    .count();
+            try {
+                return (int) details.getRecoveredEndpoints().stream()
+                        .filter(endpoint -> endpoint != null && endpoint.isValidated())
+                        .count();
+            } catch (Exception e) {
+                return 0;
+            }
         }
 
         private static String truncate(String value, int maxLen) {
@@ -526,6 +558,34 @@ public class StaticScanPanel extends JPanel {
                 return "";
             }
             return value.length() > maxLen ? value.substring(0, maxLen - 3) + "..." : value;
+        }
+
+        private static void logFindingColumnError(MontoyaApi api, HistoryEntry entry, String phase, Exception e) {
+            String message = "AI Burp Copilot: 静态文件分析发现列刷新失败"
+                    + " phase=" + phase
+                    + ", requestId=" + safe(entry != null ? entry.getRequestId() : null)
+                    + ", url=" + safe(entry != null ? entry.getUrl() : null)
+                    + ", error=" + e.getClass().getSimpleName()
+                    + (e.getMessage() != null && !e.getMessage().isBlank() ? ": " + e.getMessage() : "")
+                    + firstStackLocation(e);
+            if (api != null) {
+                try {
+                    api.logging().logToError(message);
+                } catch (Exception ignored) {
+                    System.err.println(message);
+                }
+            } else {
+                System.err.println(message);
+            }
+            PluginLogger.getInstance().error(PluginLogger.Category.SYSTEM, "StaticScanUI", message);
+        }
+
+        private static String firstStackLocation(Exception e) {
+            if (e == null || e.getStackTrace() == null || e.getStackTrace().length == 0) {
+                return "";
+            }
+            StackTraceElement first = e.getStackTrace()[0];
+            return " @ " + first.getClassName() + ":" + first.getLineNumber();
         }
     }
 

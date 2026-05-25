@@ -48,10 +48,17 @@ public class LogPanel extends JPanel {
         private int lastSeenCount = -1;
         private long lastSeenVersion = -1;
         private String displayedEntryKey;
+        private final PluginLogger.Listener logListener;
 
         private CategoryLogView(PluginLogger.Category category) {
             this.category = category;
             setLayout(new BorderLayout());
+            this.logListener = changedCategory -> {
+                if (changedCategory == null || changedCategory == category) {
+                    refresh();
+                }
+            };
+            PluginLogger.getInstance().addListener(logListener);
 
             JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
             toolbar.add(new JLabel("Level:"));
@@ -146,6 +153,12 @@ public class LogPanel extends JPanel {
             refresh();
         }
 
+        @Override
+        public void removeNotify() {
+            PluginLogger.getInstance().removeListener(logListener);
+            super.removeNotify();
+        }
+
         private String buildStatusText(int count) {
             return switch (category) {
                 case SYSTEM -> "\u7cfb\u7edf\u65e5\u5fd7: " + count;
@@ -215,6 +228,9 @@ public class LogPanel extends JPanel {
 
         private void refresh() {
             SwingUtilities.invokeLater(() -> {
+                if (!isDisplayable()) {
+                    return;
+                }
                 int selectedModelRow = table.getSelectedRow() >= 0
                         ? table.convertRowIndexToModel(table.getSelectedRow())
                         : -1;

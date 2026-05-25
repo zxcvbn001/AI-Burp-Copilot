@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -27,6 +28,10 @@ public class PluginLogger {
         TEXT,
         LLM_REQUEST,
         LLM_RESPONSE
+    }
+
+    public interface Listener {
+        void onLogsChanged(Category category);
     }
 
     public record LogEntry(
@@ -60,6 +65,7 @@ public class PluginLogger {
     private long version = 0;
     private final long[] categoryVersions = new long[Category.values().length];
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
     private PluginLogger() {
         this.maxEntries = DEFAULT_MAX_ENTRIES;
@@ -163,6 +169,7 @@ public class PluginLogger {
     }
 
     public void clear(Category category) {
+        Category changedCategory = category;
         lock.writeLock().lock();
         try {
             if (category == null) {
@@ -176,26 +183,49 @@ public class PluginLogger {
                 for (int i = 0; i < categoryVersions.length; i++) {
                     categoryVersions[i]++;
                 }
-                return;
+            } else {
+                List<LogEntry> kept = new ArrayList<>();
+                if (overflow) {
+                    for (int i = 0; i < size; i++) {
+                        LogEntry entry = buffer[(writeIndex + i) % maxEntries];
+                        if (entry != null && entry.category() != category) {
+                            kept.add(entry);
+                        }
+                    }
+                } else {
+                    for (int i = 0; i < size; i++) {
+                        LogEntry entry = buffer[i];
+                        if (entry != null && entry.category() != category) {
+                            kept.add(entry);
+                        }
+                    }
+                }
+                writeIndex = 0;
+                size = 0;
+                overflow = false;
+                for (int i = 0; i < maxEntries; i++) {
+                    buffer[i] = null;
+                }
+                for (LogEntry entry : kept) {
+                    appendUnsafe(entry, false);
+                }
+                version++;
+                categoryVersions[category.ordinal()]++;
             }
-
-            List<LogEntry> kept = getEntries(EnumSet.allOf(Level.class), null).stream()
-                    .filter(entry -> entry.category() != category)
-                    .toList();
-            writeIndex = 0;
-            size = 0;
-            overflow = false;
-            for (int i = 0; i < maxEntries; i++) {
-                buffer[i] = null;
-            }
-            for (LogEntry entry : kept) {
-                appendUnsafe(entry, false);
-            }
-            version++;
-            categoryVersions[category.ordinal()]++;
         } finally {
             lock.writeLock().unlock();
         }
+        notifyListeners(changedCategory);
+    }
+
+    public void addListener(Listener listener) {
+        if (listener != null && !listeners.contains(listener)) {
+            listeners.add(listener);
+        }
+    }
+
+    public void removeListener(Listener listener) {
+        listeners.remove(listener);
     }
 
     public long getVersion(Category category) {
@@ -267,14 +297,16 @@ public class PluginLogger {
     }
 
     private void append(Level level, Category category, String source, String message) {
+        Category actualCategory = category != null ? category : Category.SYSTEM;
         lock.writeLock().lock();
         try {
             appendUnsafe(new LogEntry(Instant.now(), level,
-                    category != null ? category : Category.SYSTEM,
+                    actualCategory,
                     EntryKind.TEXT, source, null, message));
         } finally {
             lock.writeLock().unlock();
         }
+        notifyListeners(actualCategory);
     }
 
     public void llmRequest(String source, String title, String message) {
@@ -287,11 +319,22 @@ public class PluginLogger {
 
     private void appendStructured(Level level, Category category, EntryKind kind,
                                   String source, String title, String message) {
+        Category actualCategory = category != null ? category : Category.SYSTEM;
         lock.writeLock().lock();
         try {
-            appendUnsafe(new LogEntry(Instant.now(), level, category, kind, source, title, message));
+            appendUnsafe(new LogEntry(Instant.now(), level, actualCategory, kind, source, title, message));
         } finally {
             lock.writeLock().unlock();
+        }
+        notifyListeners(actualCategory);
+    }
+
+    private void notifyListeners(Category category) {
+        for (Listener listener : listeners) {
+            try {
+                listener.onLogsChanged(category);
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -322,7 +365,7 @@ public class PluginLogger {
         if (entry == null) {
             return;
         }
-        if (!levelFilter.contains(entry.level())) {
+        if (levelFilter != null && !levelFilter.contains(entry.level())) {
             return;
         }
         if (categoryFilter != null && entry.category() != categoryFilter) {
