@@ -2,6 +2,7 @@ package com.aiburpcopilot.core.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -316,7 +317,9 @@ public class AppConfig {
         public void setAutoVerifyRecoveredEndpoints(Boolean autoVerifyRecoveredEndpoints) {
             this.legacyAutoVerifyRecoveredEndpoints = autoVerifyRecoveredEndpoints;
         }
+        @JsonIgnore
         public Boolean getLegacyAutoVerifyRecoveredEndpoints() { return legacyAutoVerifyRecoveredEndpoints; }
+        @JsonIgnore
         public void setLegacyAutoVerifyRecoveredEndpoints(Boolean legacyAutoVerifyRecoveredEndpoints) {
             this.legacyAutoVerifyRecoveredEndpoints = legacyAutoVerifyRecoveredEndpoints;
         }

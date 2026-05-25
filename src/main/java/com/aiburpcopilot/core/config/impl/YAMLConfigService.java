@@ -1,5 +1,8 @@
 package com.aiburpcopilot.core.config.impl;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.config.IConfigService;
@@ -11,14 +14,21 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.FileNotFoundException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class YAMLConfigService implements IConfigService {
 
     private static final Logger log = LoggerFactory.getLogger(YAMLConfigService.class);
+    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory())
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private Path configDir;
     private Path configFile;
@@ -63,9 +73,8 @@ public class YAMLConfigService implements IConfigService {
             }
 
             String content = Files.readString(configFile, StandardCharsets.UTF_8);
-            Yaml yaml = new Yaml();
-            Object loaded = yaml.loadAs(content, AppConfig.class);
-            if (!(loaded instanceof AppConfig parsedConfig)) {
+            AppConfig parsedConfig = YAML_MAPPER.readValue(content, AppConfig.class);
+            if (parsedConfig == null) {
                 throw new IllegalStateException("Failed to parse config: " + configFile.toAbsolutePath());
             }
 
@@ -86,7 +95,7 @@ public class YAMLConfigService implements IConfigService {
 
     @Override
     public synchronized void save() {
-        refreshConfigLocation();
+        ensureConfigLocation();
         saveInternal();
         notifyListeners();
     }
@@ -110,22 +119,140 @@ public class YAMLConfigService implements IConfigService {
     }
 
     private void saveInternal() {
+        Path tempFile = null;
         try {
-            refreshConfigLocation();
+            ensureConfigLocation();
             if (configDir == null || configFile == null) {
                 throw new IllegalStateException("Config directory is not configured");
             }
+            if (currentConfig == null) {
+                throw new IllegalStateException("Current config is null");
+            }
             Files.createDirectories(configDir);
-            String json = JsonUtil.toPrettyJson(currentConfig);
             Yaml yaml = new Yaml();
-            Object jsonObject = new Yaml().load(json);
-            String yamlOutput = yaml.dumpAsMap(jsonObject);
-            Files.writeString(configFile, yamlOutput, StandardCharsets.UTF_8);
+            Map<String, Object> existingMap = readExistingYamlMap(yaml);
+            Map<String, Object> updatedMap = toConfigMap();
+            if (updatedMap.isEmpty()) {
+                throw new IllegalStateException("Current config serialized to an empty map");
+            }
+            Map<String, Object> merged = mergeMaps(existingMap, updatedMap);
+            String yamlOutput = yaml.dumpAsMap(merged);
+            if (yamlOutput == null || yamlOutput.isBlank()) {
+                throw new IllegalStateException("Generated YAML content is empty");
+            }
+            tempFile = Files.createTempFile(configDir, "application-", ".yml.tmp");
+            Files.writeString(
+                    tempFile,
+                    yamlOutput,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.TRUNCATE_EXISTING);
+            if (!Files.exists(tempFile) || Files.size(tempFile) <= 0) {
+                throw new IllegalStateException("Temporary config file was written as empty");
+            }
+            moveTempFileAtomically(tempFile, configFile);
             log.debug("Configuration saved to: {}", configFile.toAbsolutePath());
         } catch (Exception e) {
             log.error("Failed to save configuration", e);
             throw new IllegalStateException("Unable to save application.yml to configured directory", e);
+        } finally {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (Exception ignored) {
+                }
+            }
         }
+    }
+
+    private void moveTempFileAtomically(Path tempFile, Path targetFile) throws java.io.IOException {
+        try {
+            Files.move(
+                    tempFile,
+                    targetFile,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(tempFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void ensureConfigLocation() {
+        if (configDir == null || configFile == null) {
+            refreshConfigLocation();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readExistingYamlMap(Yaml yaml) {
+        if (configFile == null || !Files.exists(configFile)) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            String existingContent = Files.readString(configFile, StandardCharsets.UTF_8);
+            Object loaded = yaml.load(existingContent);
+            if (loaded instanceof Map<?, ?> map) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    result.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse existing YAML as map, falling back to config-only save: {}", e.getMessage());
+        }
+        return new LinkedHashMap<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toConfigMap() {
+        Object converted = JsonUtil.getMapper().convertValue(currentConfig, LinkedHashMap.class);
+        if (converted instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                result.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return result;
+        }
+        return new LinkedHashMap<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mergeMaps(Map<String, Object> existing, Map<String, Object> updated) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (existing != null) {
+            for (Map.Entry<String, Object> entry : existing.entrySet()) {
+                String key = entry.getKey();
+                if (updated != null && updated.containsKey(key)) {
+                    merged.put(key, mergeValue(entry.getValue(), updated.get(key)));
+                } else {
+                    merged.put(key, entry.getValue());
+                }
+            }
+        }
+        if (updated != null) {
+            for (Map.Entry<String, Object> entry : updated.entrySet()) {
+                if (!merged.containsKey(entry.getKey())) {
+                    merged.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        return merged;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object mergeValue(Object existingValue, Object updatedValue) {
+        if (existingValue instanceof Map<?, ?> existingMap && updatedValue instanceof Map<?, ?> updatedMap) {
+            Map<String, Object> existing = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : existingMap.entrySet()) {
+                existing.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            Map<String, Object> updated = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : updatedMap.entrySet()) {
+                updated.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            return mergeMaps(existing, updated);
+        }
+        return updatedValue;
     }
 
     private void notifyListeners() {
