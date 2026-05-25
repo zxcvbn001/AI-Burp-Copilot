@@ -8,5 +8,9 @@ public interface ISiteDiscoveryService {
 
     List<DiscoveryCandidate> getCandidates(String hostFilter);
 
+    List<DiscoveryCandidate> inferCandidates(String hostFilter);
+
     DiscoveryCandidate validateCandidate(DiscoveryCandidate candidate);
+
+    String describeEndpointStructure(String hostFilter);
 }

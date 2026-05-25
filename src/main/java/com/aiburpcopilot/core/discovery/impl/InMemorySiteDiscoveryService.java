@@ -96,6 +96,18 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
 
     @Override
     public List<DiscoveryCandidate> getCandidates(String hostFilter) {
+        return inferenceCache.values().stream()
+                .flatMap(cache -> cache.candidates().stream())
+                .filter(candidate -> matchesHost(candidate, hostFilter))
+                .map(this::cloneCandidate)
+                .peek(candidate -> candidate.setValidation(cloneValidation(validationCache.get(candidate.getKey()))))
+                .sorted(Comparator.comparingDouble(DiscoveryCandidate::getScore).reversed()
+                        .thenComparing(DiscoveryCandidate::getPath))
+                .toList();
+    }
+
+    @Override
+    public List<DiscoveryCandidate> inferCandidates(String hostFilter) {
         Map<String, HostObservation> grouped = groupObservations(hostFilter);
         Map<String, DiscoveryCandidate> candidates = new LinkedHashMap<>();
         for (HostObservation observation : grouped.values()) {
@@ -106,6 +118,49 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
                 .sorted(Comparator.comparingDouble(DiscoveryCandidate::getScore).reversed()
                         .thenComparing(DiscoveryCandidate::getPath))
                 .toList();
+    }
+
+    @Override
+    public String describeEndpointStructure(String hostFilter) {
+        Map<String, HostObservation> grouped = groupObservations(hostFilter);
+        if (grouped.isEmpty()) {
+            return "暂无可用于结构分析的历史 Endpoint。\n\n说明：静态文件、404/410、未验证的 JS AST 恢复接口不会进入这里。";
+        }
+
+        StringBuilder text = new StringBuilder();
+        for (HostObservation observation : grouped.values()) {
+            text.append(observation.host)
+                    .append(" | 已验证/历史 Endpoint: ")
+                    .append(observation.endpointPaths.size())
+                    .append("\n");
+            Map<String, List<PathObservation>> modules = observation.endpointPaths.values().stream()
+                    .sorted(Comparator.comparing(path -> path.path))
+                    .collect(Collectors.groupingBy(
+                            path -> modulePrefix(path.path),
+                            LinkedHashMap::new,
+                            Collectors.toList()));
+            for (Map.Entry<String, List<PathObservation>> module : modules.entrySet()) {
+                text.append("├─ ").append(module.getKey()).append("\n");
+                for (PathObservation path : module.getValue()) {
+                    text.append("│  ├─ ")
+                            .append(path.methods.isEmpty() ? "GET" : String.join(",", path.methods))
+                            .append(" ")
+                            .append(path.path);
+                    if (!path.statusCodes.isEmpty()) {
+                        text.append(" | status=").append(String.join(",", path.statusCodes));
+                    }
+                    if (!path.parameters.isEmpty()) {
+                        text.append(" | params=").append(String.join(",", path.parameters));
+                    }
+                    if (path.fromJsRecovered) {
+                        text.append(" | source=validated-js-ast");
+                    }
+                    text.append("\n");
+                }
+            }
+            text.append("\n");
+        }
+        return text.toString();
     }
 
     @Override
@@ -498,23 +553,40 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         }
         List<DiscoveryCandidate> copies = new ArrayList<>();
         for (DiscoveryCandidate candidate : source) {
-            DiscoveryCandidate copy = new DiscoveryCandidate();
-            copy.setKey(candidate.getKey());
-            copy.setHost(candidate.getHost());
-            copy.setPath(candidate.getPath());
-            copy.setUrl(candidate.getUrl());
-            copy.setAssetType(candidate.getAssetType());
-            copy.setScore(candidate.getScore());
-            copy.setMethodHint(candidate.getMethodHint());
-            copy.setSourceReason(candidate.getSourceReason());
-            copy.setSupportingObservationCount(candidate.getSupportingObservationCount());
-            copy.setSupportingPaths(candidate.getSupportingPaths());
-            copy.setSupportingParameters(candidate.getSupportingParameters());
-            copy.setSupportingMethods(candidate.getSupportingMethods());
-            copy.setValidation(cloneValidation(candidate.getValidation()));
-            copies.add(copy);
+            copies.add(cloneCandidate(candidate));
         }
         return copies;
+    }
+
+    private DiscoveryCandidate cloneCandidate(DiscoveryCandidate candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        DiscoveryCandidate copy = new DiscoveryCandidate();
+        copy.setKey(candidate.getKey());
+        copy.setHost(candidate.getHost());
+        copy.setPath(candidate.getPath());
+        copy.setUrl(candidate.getUrl());
+        copy.setAssetType(candidate.getAssetType());
+        copy.setScore(candidate.getScore());
+        copy.setMethodHint(candidate.getMethodHint());
+        copy.setSourceReason(candidate.getSourceReason());
+        copy.setSupportingObservationCount(candidate.getSupportingObservationCount());
+        copy.setSupportingPaths(candidate.getSupportingPaths());
+        copy.setSupportingParameters(candidate.getSupportingParameters());
+        copy.setSupportingMethods(candidate.getSupportingMethods());
+        copy.setValidation(cloneValidation(candidate.getValidation()));
+        return copy;
+    }
+
+    private boolean matchesHost(DiscoveryCandidate candidate, String hostFilter) {
+        if (candidate == null) {
+            return false;
+        }
+        return hostFilter == null
+                || hostFilter.isBlank()
+                || "ALL".equalsIgnoreCase(hostFilter)
+                || hostFilter.equals(candidate.getHost());
     }
 
     private Map<String, HostObservation> groupObservations(String hostFilter) {
@@ -884,6 +956,15 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         return Arrays.stream(path.split("/"))
                 .filter(part -> part != null && !part.isBlank())
                 .toList();
+    }
+
+    private String modulePrefix(String path) {
+        List<String> segments = splitSegments(path);
+        if (segments.isEmpty()) {
+            return "/";
+        }
+        int end = Math.min(segments.size(), 3);
+        return "/" + String.join("/", segments.subList(0, end));
     }
 
     private URI parseUri(String url) {

@@ -14,6 +14,7 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -25,6 +26,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
     private final JComboBox<String> hostFilterCombo;
     private final JTable table;
     private final CandidateTableModel tableModel;
+    private final JTextArea structureArea;
     private final JTextArea sourceArea;
     private final JList<DiscoveryAttempt> attemptList;
     private final DefaultListModel<DiscoveryAttempt> attemptListModel;
@@ -36,7 +38,8 @@ public class SitePatternDiscoveryPanel extends JPanel {
 
     private List<DiscoveryCandidate> currentCandidates = List.of();
     private String displayedCandidateKey;
-    private SwingWorker<List<DiscoveryCandidate>, Void> refreshWorker;
+    private SwingWorker<List<DiscoveryCandidate>, Void> inferenceWorker;
+    private SwingWorker<List<DiscoveryCandidate>, DiscoveryCandidate> validationWorker;
 
     public SitePatternDiscoveryPanel(MontoyaApi api, ISiteDiscoveryService discoveryService) {
         this.discoveryService = discoveryService;
@@ -49,13 +52,17 @@ public class SitePatternDiscoveryPanel extends JPanel {
         toolbar.add(new JLabel("站点 Endpoint:"));
         toolbar.add(hostFilterCombo);
 
-        JButton refreshButton = new JButton("刷新 Endpoint 候选");
-        refreshButton.addActionListener(e -> refresh());
-        toolbar.add(refreshButton);
+        JButton inferButton = new JButton("开始 LLM 推理");
+        inferButton.addActionListener(e -> startLlmInference());
+        toolbar.add(inferButton);
 
         JButton validateButton = new JButton("验证当前 Endpoint");
         validateButton.addActionListener(e -> validateSelectedCandidate());
         toolbar.add(validateButton);
+
+        JButton validateAllButton = new JButton("一键验证候选");
+        validateAllButton.addActionListener(e -> validateAllCandidates());
+        toolbar.add(validateAllButton);
 
         summaryLabel = new JLabel("候选: 0");
         toolbar.add(Box.createHorizontalStrut(16));
@@ -70,6 +77,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
         UiUtil.setScaledMinimumColumnWidths(table, 90, 70, 100, 360, 80, 80, 140);
         table.getColumnModel().getColumn(6).setCellRenderer(new JudgmentRenderer());
 
+        structureArea = UiUtil.createMessageArea();
         sourceArea = UiUtil.createMessageArea();
         attemptListModel = new DefaultListModel<>();
         attemptList = new JList<>(attemptListModel);
@@ -86,10 +94,10 @@ public class SitePatternDiscoveryPanel extends JPanel {
         detailTabs.addTab("响应", responseViewer);
         detailTabs.addTab("研判", UiUtil.searchableTextPanel(reviewArea));
 
-        JPanel sourcePanel = new JPanel(new BorderLayout(0, 6));
-        sourcePanel.setBorder(new EmptyBorder(6, 6, 6, 6));
-        sourcePanel.add(new JLabel("规律来源 / 支撑信息"), BorderLayout.NORTH);
-        sourcePanel.add(UiUtil.searchableTextPanel(sourceArea), BorderLayout.CENTER);
+        JTabbedPane leftTabs = new JTabbedPane();
+        UiUtil.applyBurpFont(leftTabs);
+        leftTabs.addTab("接口结构图", UiUtil.searchableTextPanel(structureArea));
+        leftTabs.addTab("规律来源", UiUtil.searchableTextPanel(sourceArea));
 
         JPanel attemptPanel = new JPanel(new BorderLayout(0, 6));
         attemptPanel.setBorder(new EmptyBorder(6, 6, 6, 6));
@@ -97,7 +105,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
         attemptPanel.add(new JScrollPane(attemptList), BorderLayout.CENTER);
         attemptPanel.add(attemptHintLabel, BorderLayout.SOUTH);
 
-        JSplitPane lowerLeft = new JSplitPane(JSplitPane.VERTICAL_SPLIT, sourcePanel, attemptPanel);
+        JSplitPane lowerLeft = new JSplitPane(JSplitPane.VERTICAL_SPLIT, leftTabs, attemptPanel);
         lowerLeft.setResizeWeight(0.45);
         lowerLeft.setDividerLocation(180);
 
@@ -125,18 +133,34 @@ public class SitePatternDiscoveryPanel extends JPanel {
     }
 
     public void refresh() {
-        if (refreshWorker != null && !refreshWorker.isDone()) {
-            return;
-        }
         String previousHost = hostFilterCombo.getSelectedItem() instanceof String value ? value : "ALL";
         String previousKey = selectedCandidateKey();
         reloadHostFilter(previousHost);
         String hostFilter = selectedHostFilter();
-        summaryLabel.setText("候选: " + currentCandidates.size() + " | LLM 推理中...");
-        refreshWorker = new SwingWorker<>() {
+        structureArea.setText(discoveryService.describeEndpointStructure(hostFilter));
+        currentCandidates = discoveryService.getCandidates(hostFilter);
+        tableModel.setRows(currentCandidates);
+        summaryLabel.setText(statusText());
+        restoreSelection(previousKey);
+        if (table.getSelectedRow() < 0 && !currentCandidates.isEmpty()) {
+            table.setRowSelectionInterval(0, 0);
+        } else {
+            updateCandidateDetail();
+        }
+    }
+
+    private void startLlmInference() {
+        if (inferenceWorker != null && !inferenceWorker.isDone()) {
+            summaryLabel.setText(statusText() + " | LLM 推理中...");
+            return;
+        }
+        String previousKey = selectedCandidateKey();
+        String hostFilter = selectedHostFilter();
+        summaryLabel.setText(statusText() + " | LLM 推理中...");
+        inferenceWorker = new SwingWorker<>() {
             @Override
             protected List<DiscoveryCandidate> doInBackground() {
-                return discoveryService.getCandidates(hostFilter);
+                return discoveryService.inferCandidates(hostFilter);
             }
 
             @Override
@@ -148,7 +172,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
                     reviewArea.setText("接口推理失败: " + e.getMessage());
                 }
                 tableModel.setRows(currentCandidates);
-                summaryLabel.setText("候选: " + currentCandidates.size());
+                summaryLabel.setText(statusText());
                 restoreSelection(previousKey);
                 if (table.getSelectedRow() < 0 && !currentCandidates.isEmpty()) {
                     table.setRowSelectionInterval(0, 0);
@@ -157,7 +181,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
                 }
             }
         };
-        refreshWorker.execute();
+        inferenceWorker.execute();
     }
 
     private void reloadHostFilter(String preferred) {
@@ -193,20 +217,78 @@ public class SitePatternDiscoveryPanel extends JPanel {
             @Override
             protected void done() {
                 try {
+                    replaceCandidate(get());
+                } catch (Exception ignored) {
+                }
+                restoreSelection(candidate.getKey());
+                tableModel.setRows(currentCandidates);
+                summaryLabel.setText(statusText());
+                updateCandidateDetail();
+            }
+        }.execute();
+    }
+
+    private void validateAllCandidates() {
+        if (validationWorker != null && !validationWorker.isDone()) {
+            summaryLabel.setText(statusText() + " | 正在批量验证...");
+            return;
+        }
+        List<DiscoveryCandidate> targets = currentCandidates.stream()
+                .filter(candidate -> candidate != null
+                        && (candidate.getValidation() == null
+                        || candidate.getValidation().getStatus() == DiscoveryValidationStatus.NOT_RUN))
+                .toList();
+        if (targets.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "当前没有待验证候选。");
+            return;
+        }
+        String previousKey = selectedCandidateKey();
+        summaryLabel.setText(statusText() + " | 正在批量验证 0/" + targets.size());
+        validationWorker = new SwingWorker<>() {
+            @Override
+            protected List<DiscoveryCandidate> doInBackground() {
+                List<DiscoveryCandidate> validated = new ArrayList<>();
+                int done = 0;
+                for (DiscoveryCandidate target : targets) {
+                    DiscoveryCandidate result = discoveryService.validateCandidate(target);
+                    validated.add(result);
+                    done++;
+                    publish(result);
+                    setProgress((int) Math.round(done * 100.0 / targets.size()));
+                }
+                return validated;
+            }
+
+            @Override
+            protected void process(List<DiscoveryCandidate> chunks) {
+                if (chunks == null || chunks.isEmpty()) {
+                    return;
+                }
+                for (DiscoveryCandidate candidate : chunks) {
+                    replaceCandidate(candidate);
+                }
+                tableModel.setRows(currentCandidates);
+                summaryLabel.setText(statusText() + " | 正在批量验证 " + validatedCount(targets) + "/" + targets.size());
+            }
+
+            @Override
+            protected void done() {
+                try {
                     get();
                 } catch (Exception ignored) {
                 }
                 refresh();
-                restoreSelection(candidate.getKey());
-                summaryLabel.setText("候选: " + currentCandidates.size());
+                restoreSelection(previousKey);
             }
-        }.execute();
+        };
+        validationWorker.execute();
     }
 
     private void updateCandidateDetail() {
         DiscoveryCandidate candidate = tableModel.getRowAt(table.getSelectedRow());
         if (candidate == null) {
             displayedCandidateKey = null;
+            structureArea.setText(discoveryService.describeEndpointStructure(selectedHostFilter()));
             sourceArea.setText("");
             attemptListModel.clear();
             reviewArea.setText("");
@@ -329,6 +411,55 @@ public class SitePatternDiscoveryPanel extends JPanel {
         }
         return "共 " + validation.getAttempts().size() + " 次请求，最终结论："
                 + validation.getJudgment().getDisplayName();
+    }
+
+    private String statusText() {
+        long validated = currentCandidates.stream()
+                .filter(candidate -> candidate != null
+                        && candidate.getValidation() != null
+                        && candidate.getValidation().getStatus() == DiscoveryValidationStatus.COMPLETED)
+                .count();
+        return "候选: " + currentCandidates.size() + " | 已验证: " + validated;
+    }
+
+    private int validatedCount(List<DiscoveryCandidate> targets) {
+        int count = 0;
+        for (DiscoveryCandidate target : targets) {
+            DiscoveryCandidate current = findCurrentCandidate(target.getKey());
+            if (current != null
+                    && current.getValidation() != null
+                    && current.getValidation().getStatus() == DiscoveryValidationStatus.COMPLETED) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void replaceCandidate(DiscoveryCandidate updated) {
+        if (updated == null || updated.getKey() == null) {
+            return;
+        }
+        List<DiscoveryCandidate> updatedRows = new ArrayList<>(currentCandidates);
+        for (int i = 0; i < updatedRows.size(); i++) {
+            DiscoveryCandidate candidate = updatedRows.get(i);
+            if (candidate != null && updated.getKey().equals(candidate.getKey())) {
+                updatedRows.set(i, updated);
+                currentCandidates = List.copyOf(updatedRows);
+                return;
+            }
+        }
+    }
+
+    private DiscoveryCandidate findCurrentCandidate(String key) {
+        if (key == null) {
+            return null;
+        }
+        for (DiscoveryCandidate candidate : currentCandidates) {
+            if (candidate != null && key.equals(candidate.getKey())) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private String selectedHostFilter() {
