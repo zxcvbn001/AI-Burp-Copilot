@@ -374,21 +374,58 @@ public class StaticScanPanel extends JPanel {
             text.append("\n\n[UI] 未读取到结构化静态扫描详情，分组 Tab 将为空。请重新扫描该 JS。");
             return text.toString();
         }
-        text.append("\n\n[UI] 三类结果已加载: endpointFindings=").append(size(details.getEndpointFindings()))
-                .append(", exposureFindings=").append(size(details.getExposureFindings()))
+        text.append("\n\n[UI] JS AST 结果已加载: findings=").append(totalFindingCount(details))
+                .append(", endpointFindings=").append(size(details.getEndpointFindings()))
+                .append(", sensitiveFindings=").append(size(details.getExposureFindings()))
                 .append(", scriptFindings=").append(size(details.getScriptFindings()))
                 .append(", rawFindings=").append(size(details.getCloudFindings()))
                 .append(", apis=").append(size(details.getCloudApis()))
+                .append(", verifiedApis=").append(validRecoveredEndpointCount(details))
                 .append(", assets=").append(size(details.getCloudAssets()))
                 .append(", params=").append(size(details.getCloudParams()))
                 .append(", auth=").append(size(details.getCloudAuthSignals()))
                 .append(", secrets=").append(size(details.getCloudSecrets()))
                 .append(", risks=").append(size(details.getCloudRisks()));
+        StaticScanResult.JsAstTaskStatus latest = latestTask(details);
+        if (latest != null) {
+            text.append("\n[UI] JS AST 进度: [").append(oneLine(latest.getPhase()))
+                    .append("] ").append(oneLine(latest.getStatus()))
+                    .append(" | ").append(oneLine(latest.getMessage()));
+        }
         return text.toString();
     }
 
     private int size(List<?> values) {
         return values != null ? values.size() : 0;
+    }
+
+    private int totalFindingCount(StaticScanResult details) {
+        if (details == null) {
+            return 0;
+        }
+        int grouped = size(details.getEndpointFindings())
+                + size(details.getExposureFindings())
+                + size(details.getScriptFindings());
+        if (grouped > 0) {
+            return grouped;
+        }
+        return size(details.getCloudFindings()) + size(details.getCloudSecrets()) + size(details.getCloudRisks());
+    }
+
+    private int validRecoveredEndpointCount(StaticScanResult details) {
+        if (details == null || details.getRecoveredEndpoints() == null) {
+            return 0;
+        }
+        return (int) details.getRecoveredEndpoints().stream()
+                .filter(StaticScanResult.RecoveredEndpoint::isValidated)
+                .count();
+    }
+
+    private StaticScanResult.JsAstTaskStatus latestTask(StaticScanResult details) {
+        if (details == null || details.getJsAstTasks() == null || details.getJsAstTasks().isEmpty()) {
+            return null;
+        }
+        return details.getJsAstTasks().get(details.getJsAstTasks().size() - 1);
     }
 
     private static class StaticScanTableModel extends AbstractTableModel {

@@ -208,10 +208,10 @@ public class AppConfig {
         private String analyzePath = "/analyze/js";
 
         @JsonProperty("fastMode")
-        private boolean fastMode = true;
+        private boolean fastMode = false;
 
         @JsonProperty("mode")
-        private String mode = "fast";
+        private String mode = "full";
 
         @JsonProperty("submitAsync")
         private boolean submitAsync = true;
@@ -230,6 +230,12 @@ public class AppConfig {
 
         @JsonProperty("writeTimeoutMs")
         private int writeTimeoutMs = 30000;
+
+        @JsonProperty("maxConcurrentAnalyses")
+        private int maxConcurrentAnalyses = 2;
+
+        @JsonProperty("progressPublishIntervalMs")
+        private int progressPublishIntervalMs = 1500;
 
         @JsonProperty("maxReferencedScripts")
         private int maxReferencedScripts = 6;
@@ -283,6 +289,14 @@ public class AppConfig {
         public void setReadTimeoutMs(int readTimeoutMs) { this.readTimeoutMs = readTimeoutMs; }
         public int getWriteTimeoutMs() { return writeTimeoutMs; }
         public void setWriteTimeoutMs(int writeTimeoutMs) { this.writeTimeoutMs = writeTimeoutMs; }
+        public int getMaxConcurrentAnalyses() { return maxConcurrentAnalyses; }
+        public void setMaxConcurrentAnalyses(int maxConcurrentAnalyses) {
+            this.maxConcurrentAnalyses = maxConcurrentAnalyses;
+        }
+        public int getProgressPublishIntervalMs() { return progressPublishIntervalMs; }
+        public void setProgressPublishIntervalMs(int progressPublishIntervalMs) {
+            this.progressPublishIntervalMs = progressPublishIntervalMs;
+        }
         public int getMaxReferencedScripts() { return maxReferencedScripts; }
         public void setMaxReferencedScripts(int maxReferencedScripts) { this.maxReferencedScripts = maxReferencedScripts; }
         public int getMaxRecursiveDepth() { return maxRecursiveDepth; }

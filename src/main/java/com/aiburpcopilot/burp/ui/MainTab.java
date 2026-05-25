@@ -26,6 +26,7 @@ public class MainTab extends JPanel {
     private final ReportExportPanel reportExportPanel;
     private final LogPanel logPanel;
     private final SettingsPanel settingsPanel;
+    private Timer refreshDebounceTimer;
 
     public MainTab(MontoyaApi api,
                    IHistoryService historyService,
@@ -94,14 +95,22 @@ public class MainTab extends JPanel {
 
     private void refreshAllPanels() {
         SwingUtilities.invokeLater(() -> {
-            historyPanel.refresh();
-            endpointPanel.refresh();
-            parameterInfluencePanel.refresh();
-            verificationPanel.refresh();
-            staticScanPanel.refresh();
-            sitePatternDiscoveryPanel.refresh();
-            confirmedVulnerabilityPanel.refresh();
+            if (refreshDebounceTimer == null) {
+                refreshDebounceTimer = new Timer(300, e -> doRefreshAllPanels());
+                refreshDebounceTimer.setRepeats(false);
+            }
+            refreshDebounceTimer.restart();
         });
+    }
+
+    private void doRefreshAllPanels() {
+        historyPanel.refresh();
+        endpointPanel.refresh();
+        parameterInfluencePanel.refresh();
+        verificationPanel.refresh();
+        staticScanPanel.refresh();
+        sitePatternDiscoveryPanel.refresh();
+        confirmedVulnerabilityPanel.refresh();
     }
 
     private void startFallbackRefresh() {

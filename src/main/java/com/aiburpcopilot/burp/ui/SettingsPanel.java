@@ -65,6 +65,8 @@ public class SettingsPanel extends JPanel {
     private JTextField jsAnalysisConnectTimeoutField;
     private JTextField jsAnalysisReadTimeoutField;
     private JTextField jsAnalysisWriteTimeoutField;
+    private JTextField jsAnalysisMaxConcurrentAnalysesField;
+    private JTextField jsAnalysisProgressPublishIntervalField;
     private JTextField jsAnalysisMaxReferencedScriptsField;
     private JTextField jsAnalysisMaxRecursiveDepthField;
     private JTextField jsAnalysisMaxVerifiedEndpointsField;
@@ -387,6 +389,20 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 0;
         gbc.gridy++;
+        panel.add(new JLabel("最大并发分析数："), gbc);
+        gbc.gridx = 1;
+        jsAnalysisMaxConcurrentAnalysesField = new JTextField(20);
+        panel.add(jsAnalysisMaxConcurrentAnalysesField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("进度刷新间隔（毫秒）："), gbc);
+        gbc.gridx = 1;
+        jsAnalysisProgressPublishIntervalField = new JTextField(20);
+        panel.add(jsAnalysisProgressPublishIntervalField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
         panel.add(new JLabel("最多引用脚本数："), gbc);
         gbc.gridx = 1;
         jsAnalysisMaxReferencedScriptsField = new JTextField(20);
@@ -701,6 +717,8 @@ public class SettingsPanel extends JPanel {
         jsAnalysisConnectTimeoutField.setText(String.valueOf(config.getJsAnalysis().getConnectTimeoutMs()));
         jsAnalysisReadTimeoutField.setText(String.valueOf(config.getJsAnalysis().getReadTimeoutMs()));
         jsAnalysisWriteTimeoutField.setText(String.valueOf(config.getJsAnalysis().getWriteTimeoutMs()));
+        jsAnalysisMaxConcurrentAnalysesField.setText(String.valueOf(config.getJsAnalysis().getMaxConcurrentAnalyses()));
+        jsAnalysisProgressPublishIntervalField.setText(String.valueOf(config.getJsAnalysis().getProgressPublishIntervalMs()));
         jsAnalysisMaxReferencedScriptsField.setText(String.valueOf(config.getJsAnalysis().getMaxReferencedScripts()));
         jsAnalysisMaxRecursiveDepthField.setText(String.valueOf(config.getJsAnalysis().getMaxRecursiveDepth()));
         jsAnalysisMaxVerifiedEndpointsField.setText(String.valueOf(config.getJsAnalysis().getMaxVerifiedEndpointsPerScript()));
@@ -781,6 +799,8 @@ public class SettingsPanel extends JPanel {
             config.getJsAnalysis().setConnectTimeoutMs(Integer.parseInt(jsAnalysisConnectTimeoutField.getText().trim()));
             config.getJsAnalysis().setReadTimeoutMs(Integer.parseInt(jsAnalysisReadTimeoutField.getText().trim()));
             config.getJsAnalysis().setWriteTimeoutMs(Integer.parseInt(jsAnalysisWriteTimeoutField.getText().trim()));
+            config.getJsAnalysis().setMaxConcurrentAnalyses(Integer.parseInt(jsAnalysisMaxConcurrentAnalysesField.getText().trim()));
+            config.getJsAnalysis().setProgressPublishIntervalMs(Integer.parseInt(jsAnalysisProgressPublishIntervalField.getText().trim()));
             config.getJsAnalysis().setMaxReferencedScripts(Integer.parseInt(jsAnalysisMaxReferencedScriptsField.getText().trim()));
             config.getJsAnalysis().setMaxRecursiveDepth(Integer.parseInt(jsAnalysisMaxRecursiveDepthField.getText().trim()));
             config.getJsAnalysis().setMaxVerifiedEndpointsPerScript(Integer.parseInt(jsAnalysisMaxVerifiedEndpointsField.getText().trim()));

@@ -38,6 +38,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Semaphore;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class StaticResourceScanner implements IStaticScanner {
@@ -54,6 +58,8 @@ public class StaticResourceScanner implements IStaticScanner {
     private final JsAnalysisApiClient jsAnalysisClient;
     private final MontoyaApi api;
     private final com.aiburpcopilot.core.pipeline.AIAnalysisStage recoveredEndpointAnalysisStage;
+    private final Semaphore jsAnalysisPermits;
+    private final ConcurrentMap<String, Long> lastStaticProgressPublishAt = new ConcurrentHashMap<>();
 
     public StaticResourceScanner(IAIProvider aiProvider,
                                  IPromptService promptService,
@@ -69,7 +75,9 @@ public class StaticResourceScanner implements IStaticScanner {
         this.ruleEngine = new RegexRuleEngine();
         this.historyService = historyService;
         this.endpointClassifier = endpointClassifier;
-        this.jsAnalysisClient = new JsAnalysisApiClient(configService.getConfig().getJsAnalysis());
+        AppConfig.JsAnalysisConfig jsConfig = configService.getConfig().getJsAnalysis();
+        this.jsAnalysisClient = new JsAnalysisApiClient(jsConfig);
+        this.jsAnalysisPermits = new Semaphore(Math.max(1, jsConfig.getMaxConcurrentAnalyses()));
         this.api = api;
         this.recoveredEndpointAnalysisStage = new com.aiburpcopilot.core.pipeline.AIAnalysisStage(
                 aiProvider, promptService, cacheService, configService);
@@ -129,6 +137,7 @@ public class StaticResourceScanner implements IStaticScanner {
             }
 
             context.setStaticScanResult(buildSummary(context, result));
+            clearProgressThrottle(context);
             return result;
         } catch (Exception e) {
             log.error("Static scan failed for: {}", context.getPath(), e);
@@ -136,6 +145,7 @@ public class StaticResourceScanner implements IStaticScanner {
                     + (e.getMessage() != null && !e.getMessage().isBlank() ? ": " + e.getMessage() : "");
             context.setStaticScanResult("静态分析失败: " + detail);
             result.setHasFindings(false);
+            clearProgressThrottle(context);
             return result;
         }
     }
@@ -164,14 +174,14 @@ public class StaticResourceScanner implements IStaticScanner {
         String jsMode = normalizeJsMode(jsConfig);
         if (!jsConfig.isEnabled()) {
             appendScriptResult(result, buildScriptSummary(context.getUrl(), false, -1, "JS AST 分析已关闭", null));
-            publishStaticProgress(context, result);
+            publishStaticProgress(context, result, true);
             return;
         }
 
         if (!jsAnalysisClient.isHealthy()) {
             appendScriptResult(result, buildScriptSummary(context.getUrl(), false, -1,
                     "JS AST 服务不可用: " + jsAnalysisClient.getLastHealthMessage(), null));
-            publishStaticProgress(context, result);
+            publishStaticProgress(context, result, true);
             return;
         }
 
@@ -191,19 +201,20 @@ public class StaticResourceScanner implements IStaticScanner {
         probeSourceMap(scriptUrl, result);
         publishStaticProgress(context, result);
 
-        JsAnalysisResponse analysis = jsAnalysisClient.analyze(scriptUrl, content, context.getUrl(),
+        JsAnalysisResponse analysis = analyzeScriptWithLimit(scriptUrl, content, context.getUrl(),
                 progress -> recordJsAstProgress(context, result, progress));
         if (analysis == null || !analysis.isSuccess()) {
             appendScriptResult(result, buildScriptSummary(scriptUrl, true, 200,
                     "JS AST 分析失败: " + (analysis != null ? analysis.errorMessage() : "empty response"), analysis));
-            publishStaticProgress(context, result);
+            publishStaticProgress(context, result, true);
             return;
         }
 
         appendScriptResult(result, buildScriptSummary(scriptUrl, true, 200, "JS AST 分析完成", analysis));
         mergeCloudAnalysis(scriptUrl, context.getUrl(), analysis, result);
+        recordJsAstFinished(context, result, scriptUrl, analysis, "completed", "JS AST 分析完成");
         handleRecoveredEndpoints(context, scriptUrl, analysis, result);
-        publishStaticProgress(context, result);
+        publishStaticProgress(context, result, true);
 
         if (depth >= jsConfig.getMaxRecursiveDepth()) {
             return;
@@ -221,7 +232,7 @@ public class StaticResourceScanner implements IStaticScanner {
                         -1,
                         "引用 JS 已发现，但自动抓取已关闭，未发包抓取",
                         null));
-                publishStaticProgress(context, result);
+                publishStaticProgress(context, result, true);
                 continue;
             }
             var validation = validateStaticChild(childUrl);
@@ -232,7 +243,7 @@ public class StaticResourceScanner implements IStaticScanner {
             }
             probeSourceMap(childUrl, result);
             publishStaticProgress(context, result);
-            JsAnalysisResponse childAnalysis = jsAnalysisClient.analyze(childUrl,
+            JsAnalysisResponse childAnalysis = analyzeScriptWithLimit(childUrl,
                     new String(validation.responseBody, StandardCharsets.UTF_8),
                     context.getUrl(),
                     progress -> recordJsAstProgress(context, result, progress));
@@ -240,13 +251,14 @@ public class StaticResourceScanner implements IStaticScanner {
                 appendScriptResult(result, buildScriptSummary(childUrl, true, validation.statusCode,
                         "引用 JS AST 分析失败: " + (childAnalysis != null ? childAnalysis.errorMessage() : "empty response"),
                         childAnalysis));
-                publishStaticProgress(context, result);
+                publishStaticProgress(context, result, true);
                 continue;
             }
             appendScriptResult(result, buildScriptSummary(childUrl, true, validation.statusCode, "引用 JS AST 分析完成", childAnalysis));
             mergeCloudAnalysis(childUrl, context.getUrl(), childAnalysis, result);
+            recordJsAstFinished(context, result, childUrl, childAnalysis, "completed", "引用 JS AST 分析完成");
             handleRecoveredEndpoints(context, childUrl, childAnalysis, result);
-            publishStaticProgress(context, result);
+            publishStaticProgress(context, result, true);
             enrichWithJsAnalysis(context,
                     new String(validation.responseBody, StandardCharsets.UTF_8),
                     result,
@@ -418,6 +430,55 @@ public class StaticResourceScanner implements IStaticScanner {
         result.getAnalyzedScripts().add(script);
     }
 
+    private JsAnalysisResponse analyzeScriptWithLimit(String scriptUrl,
+                                                       String content,
+                                                       String baseUrl,
+                                                       Consumer<JsAnalysisApiClient.TaskProgress> progressConsumer) {
+        boolean acquired = false;
+        try {
+            jsAnalysisPermits.acquire();
+            acquired = true;
+            return jsAnalysisClient.analyze(scriptUrl, content, baseUrl, progressConsumer);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            JsAnalysisResponse response = new JsAnalysisResponse();
+            response.setSuccess(false);
+            JsAnalysisResponse.Error error = new JsAnalysisResponse.Error();
+            error.setMessage("JS AST 分析等待并发许可时被中断");
+            response.setError(error);
+            return response;
+        } finally {
+            if (acquired) {
+                jsAnalysisPermits.release();
+            }
+        }
+    }
+
+    private void recordJsAstFinished(HTTPContext context,
+                                     StaticScanResult result,
+                                     String scriptUrl,
+                                     JsAnalysisResponse analysis,
+                                     String status,
+                                     String prefix) {
+        if (result == null || analysis == null) {
+            return;
+        }
+        if (result.getJsAstTasks() == null) {
+            result.setJsAstTasks(new ArrayList<>());
+        }
+        StaticScanResult.JsAstTaskStatus finished = new StaticScanResult.JsAstTaskStatus();
+        finished.setScriptUrl(firstNonBlank(analysis.getUrl(), scriptUrl));
+        finished.setTaskId(analysis.getTaskId());
+        finished.setPhase("COMPLETED");
+        finished.setStatus(status);
+        finished.setMessage(prefix + " | findings=" + totalFindingCount(analysis)
+                + " | endpoints=" + endpointApis(analysis).size()
+                + " | secrets=" + exposureSecrets(analysis).size()
+                + " | scripts=" + scriptAssets(analysis).size());
+        result.getJsAstTasks().add(finished);
+        publishStaticProgress(context, result, true);
+    }
+
     private void probeSourceMap(String scriptUrl, StaticScanResult result) {
         if (scriptUrl == null || scriptUrl.isBlank() || scriptUrl.endsWith(".map")) {
             return;
@@ -448,6 +509,10 @@ public class StaticResourceScanner implements IStaticScanner {
         if (result.getJsAstTasks() == null) {
             result.setJsAstTasks(new ArrayList<>());
         }
+        if (isDuplicateTaskProgress(result, progress)) {
+            publishStaticProgress(context, result);
+            return;
+        }
         StaticScanResult.JsAstTaskStatus status = new StaticScanResult.JsAstTaskStatus();
         status.setScriptUrl(progress.scriptUrl());
         status.setTaskId(progress.taskId());
@@ -467,8 +532,27 @@ public class StaticResourceScanner implements IStaticScanner {
         publishStaticProgress(context, result);
     }
 
+    private boolean isDuplicateTaskProgress(StaticScanResult result, JsAnalysisApiClient.TaskProgress progress) {
+        List<StaticScanResult.JsAstTaskStatus> tasks = result.getJsAstTasks();
+        if (tasks == null || tasks.isEmpty() || progress == null) {
+            return false;
+        }
+        StaticScanResult.JsAstTaskStatus latest = tasks.get(tasks.size() - 1);
+        return safeEquals(latest.getTaskId(), progress.taskId())
+                && safeEquals(latest.getPhase(), progress.phase())
+                && safeEquals(latest.getStatus(), progress.status())
+                && safeEquals(latest.getMessage(), progress.message());
+    }
+
     private void publishStaticProgress(HTTPContext context, StaticScanResult result) {
+        publishStaticProgress(context, result, false);
+    }
+
+    private void publishStaticProgress(HTTPContext context, StaticScanResult result, boolean force) {
         if (context == null || result == null || historyService == null || context.getRequestId() == null) {
+            return;
+        }
+        if (!force && !shouldPublishProgress(context.getRequestId())) {
             return;
         }
         try {
@@ -485,9 +569,22 @@ public class StaticResourceScanner implements IStaticScanner {
         }
     }
 
+    private boolean shouldPublishProgress(String requestId) {
+        long now = System.currentTimeMillis();
+        long interval = Math.max(500, configService.getConfig().getJsAnalysis().getProgressPublishIntervalMs());
+        Long previous = lastStaticProgressPublishAt.putIfAbsent(requestId, now);
+        if (previous == null) {
+            return true;
+        }
+        if (now - previous < interval) {
+            return false;
+        }
+        return lastStaticProgressPublishAt.replace(requestId, previous, now);
+    }
+
     private String normalizeJsMode(AppConfig.JsAnalysisConfig jsConfig) {
         if (jsConfig == null) {
-            return "fast";
+            return "full";
         }
         String mode = jsConfig.getMode();
         if (mode != null) {
@@ -497,6 +594,12 @@ public class StaticResourceScanner implements IStaticScanner {
             }
         }
         return jsConfig.isFastMode() ? "fast" : "full";
+    }
+
+    private void clearProgressThrottle(HTTPContext context) {
+        if (context != null && context.getRequestId() != null) {
+            lastStaticProgressPublishAt.remove(context.getRequestId());
+        }
     }
 
     private List<JsAnalysisResponse.ApiResult> endpointApis(JsAnalysisResponse analysis) {
@@ -1188,11 +1291,25 @@ public class StaticResourceScanner implements IStaticScanner {
                 .append(" | enabled=").append(jsConfig.isEnabled())
                 .append("\n");
 
-        summary.append("Cloud overview: findings=").append(size(result.getCloudFindings()))
-                .append(" | apis=").append(size(result.getCloudApis()))
-                .append(" | assets=").append(size(result.getCloudAssets()))
+        int endpointFindings = size(result.getEndpointFindings());
+        int sensitiveFindings = size(result.getExposureFindings());
+        int scriptFindings = size(result.getScriptFindings());
+        int rawFindings = size(result.getCloudFindings());
+        int totalFindings = endpointFindings + sensitiveFindings + scriptFindings;
+        if (totalFindings == 0) {
+            totalFindings = rawFindings + size(result.getCloudSecrets()) + size(result.getCloudRisks());
+        }
+        summary.append("JS AST summary: findings=").append(totalFindings)
+                .append(" | endpointFindings=").append(endpointFindings)
+                .append(" | sensitiveFindings=").append(sensitiveFindings)
+                .append(" | scriptFindings=").append(scriptFindings)
+                .append(" | rawFindings=").append(rawFindings)
+                .append("\n");
+        summary.append("Recovered: endpoints=").append(size(result.getCloudApis()))
+                .append(" | verifiedEndpoints=").append(validRecoveredEndpointCount(result))
+                .append(" | scripts=").append(size(result.getCloudAssets()))
                 .append(" | params=").append(size(result.getCloudParams()))
-                .append(" | auth=").append(size(result.getCloudAuthSignals()))
+                .append(" | authSignals=").append(size(result.getCloudAuthSignals()))
                 .append(" | secrets=").append(size(result.getCloudSecrets()))
                 .append(" | risks=").append(size(result.getCloudRisks()))
                 .append("\n");
@@ -1216,7 +1333,7 @@ public class StaticResourceScanner implements IStaticScanner {
 
         if (result.getJsAstTasks() != null && !result.getJsAstTasks().isEmpty()) {
             StaticScanResult.JsAstTaskStatus latest = result.getJsAstTasks().get(result.getJsAstTasks().size() - 1);
-            summary.append("Latest JS AST task: [").append(safe(latest.getPhase())).append("] ")
+            summary.append("JS AST progress: [").append(safe(latest.getPhase())).append("] ")
                     .append(safe(latest.getStatus()))
                     .append(" | taskId=").append(safe(latest.getTaskId()))
                     .append(" | ").append(safe(latest.getMessage()))
@@ -1235,8 +1352,36 @@ public class StaticResourceScanner implements IStaticScanner {
         return summary.toString();
     }
 
+    private int validRecoveredEndpointCount(StaticScanResult result) {
+        if (result == null || result.getRecoveredEndpoints() == null) {
+            return 0;
+        }
+        return (int) result.getRecoveredEndpoints().stream()
+                .filter(StaticScanResult.RecoveredEndpoint::isValidated)
+                .count();
+    }
+
+    private int totalFindingCount(JsAnalysisResponse analysis) {
+        if (analysis == null) {
+            return 0;
+        }
+        int grouped = endpointFindings(analysis).size()
+                + exposureFindings(analysis).size()
+                + scriptFindings(analysis).size();
+        if (grouped > 0) {
+            return grouped;
+        }
+        return (analysis.getFindings() != null ? analysis.getFindings().size() : 0)
+                + exposureSecrets(analysis).size()
+                + (analysis.getRisk() != null ? analysis.getRisk().size() : 0);
+    }
+
     private int size(List<?> values) {
         return values != null ? values.size() : 0;
+    }
+
+    private boolean safeEquals(String left, String right) {
+        return left == null ? right == null : left.equals(right);
     }
 
     private String formatConfidence(Double confidence) {

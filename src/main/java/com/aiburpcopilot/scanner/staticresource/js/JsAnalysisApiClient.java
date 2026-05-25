@@ -175,6 +175,13 @@ public class JsAnalysisApiClient {
                 if (result == null) {
                     return errorResponse("JS AST async task completed with empty result");
                 }
+                result.setTaskId(task.getId());
+                result.setStatus(status);
+                if (result.getUrl() == null || result.getUrl().isBlank()) {
+                    result.setUrl(initial.getUrl() != null && !initial.getUrl().isBlank()
+                            ? initial.getUrl()
+                            : fallbackScriptUrl);
+                }
                 notifyProgress(progressConsumer, new TaskProgress(
                         result.getUrl() != null && !result.getUrl().isBlank()
                                 ? result.getUrl()
@@ -188,6 +195,15 @@ public class JsAnalysisApiClient {
             }
             if ("failed".equals(status)) {
                 JsAnalysisResponse result = task.getResult();
+                if (result != null) {
+                    result.setTaskId(task.getId());
+                    result.setStatus(status);
+                    if (result.getUrl() == null || result.getUrl().isBlank()) {
+                        result.setUrl(initial.getUrl() != null && !initial.getUrl().isBlank()
+                                ? initial.getUrl()
+                                : fallbackScriptUrl);
+                    }
+                }
                 notifyProgress(progressConsumer, new TaskProgress(
                         initial.getUrl() != null && !initial.getUrl().isBlank() ? initial.getUrl() : fallbackScriptUrl,
                         task.getId(),

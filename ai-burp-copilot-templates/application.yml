@@ -53,14 +53,16 @@ jsAnalysis:
   apiKeyHeader: x-api-key
   healthPath: /health
   analyzePath: /analyze/js
-  fastMode: true
-  mode: fast
+  fastMode: false
+  mode: full
   submitAsync: true
   taskPollIntervalMs: 1000
   taskTimeoutMs: 60000
   connectTimeoutMs: 8000
   readTimeoutMs: 30000
   writeTimeoutMs: 30000
+  maxConcurrentAnalyses: 2
+  progressPublishIntervalMs: 1500
   maxReferencedScripts: 6
   maxRecursiveDepth: 1
   maxVerifiedEndpointsPerScript: 12
