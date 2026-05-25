@@ -9,6 +9,7 @@ import com.aiburpcopilot.core.config.IConfigService;
 import com.aiburpcopilot.core.history.HistoryStorageProbe;
 import com.aiburpcopilot.core.history.HistoryStorageStatus;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.core.pipeline.HistoryEventBus;
 import com.aiburpcopilot.utils.JsonUtil;
 import com.aiburpcopilot.utils.PluginLogger;
@@ -982,6 +983,7 @@ public class SettingsPanel extends JPanel {
                 clearHistoryDbButton.setText("清空中...");
             }
             historyService.clear();
+            EndpointDedupStage.clearAllSeen();
             HistoryEventBus.getInstance().fireHistoryCleared();
             refreshHistoryStorageStatus();
             JOptionPane.showMessageDialog(this,

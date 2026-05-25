@@ -46,6 +46,7 @@ public class LogPanel extends JPanel {
         private final JLabel statusLabel;
 
         private int lastSeenCount = -1;
+        private long lastSeenVersion = -1;
         private String displayedEntryKey;
 
         private CategoryLogView(PluginLogger.Category category) {
@@ -78,6 +79,7 @@ public class LogPanel extends JPanel {
             clearBtn.addActionListener(e -> {
                 PluginLogger.getInstance().clear(category);
                 lastSeenCount = -1;
+                lastSeenVersion = -1;
                 refresh();
             });
             toolbar.add(clearBtn);
@@ -133,8 +135,8 @@ public class LogPanel extends JPanel {
 
             Timer timer = new Timer(REFRESH_INTERVAL_MS, e -> {
                 if (!pauseCb.isSelected()) {
-                    int currentSize = PluginLogger.getInstance().getSize(category);
-                    if (currentSize != lastSeenCount) {
+                    long currentVersion = PluginLogger.getInstance().getVersion(category);
+                    if (currentVersion != lastSeenVersion) {
                         refresh();
                     }
                 }
@@ -219,6 +221,7 @@ public class LogPanel extends JPanel {
                 List<PluginLogger.LogEntry> entries = PluginLogger.getInstance()
                         .getEntries(parseLevelFilter(), category);
                 lastSeenCount = PluginLogger.getInstance().getSize(category);
+                lastSeenVersion = PluginLogger.getInstance().getVersion(category);
                 statusLabel.setText(buildStatusText(lastSeenCount));
                 tableModel.setEntries(entries);
 

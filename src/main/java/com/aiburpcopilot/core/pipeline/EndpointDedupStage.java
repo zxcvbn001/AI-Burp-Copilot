@@ -13,7 +13,13 @@ import java.util.stream.Collectors;
 
 public class EndpointDedupStage implements IPipelineStage {
 
+    private static final Set<EndpointDedupStage> INSTANCES = ConcurrentHashMap.newKeySet();
+
     private final Set<String> seen = ConcurrentHashMap.newKeySet();
+
+    public EndpointDedupStage() {
+        INSTANCES.add(this);
+    }
 
     @Override
     public String getName() {
@@ -56,6 +62,22 @@ public class EndpointDedupStage implements IPipelineStage {
                 + "|" + origin
                 + "|" + templatedPath
                 + "|" + params;
+    }
+
+    public void clearSeen() {
+        seen.clear();
+    }
+
+    public int seenSize() {
+        return seen.size();
+    }
+
+    public static void clearAllSeen() {
+        for (EndpointDedupStage instance : INSTANCES) {
+            instance.clearSeen();
+        }
+        PluginLogger.getInstance().info(PluginLogger.Category.SYSTEM,
+                "Dedup", "Endpoint dedup state cleared");
     }
 
     private static String uriTemplate(String path) {

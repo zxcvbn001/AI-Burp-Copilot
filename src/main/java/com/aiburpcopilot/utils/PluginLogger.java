@@ -57,6 +57,8 @@ public class PluginLogger {
     private int writeIndex = 0;
     private int size = 0;
     private boolean overflow = false;
+    private long version = 0;
+    private final long[] categoryVersions = new long[Category.values().length];
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     private PluginLogger() {
@@ -170,6 +172,10 @@ public class PluginLogger {
                 for (int i = 0; i < maxEntries; i++) {
                     buffer[i] = null;
                 }
+                version++;
+                for (int i = 0; i < categoryVersions.length; i++) {
+                    categoryVersions[i]++;
+                }
                 return;
             }
 
@@ -183,10 +189,24 @@ public class PluginLogger {
                 buffer[i] = null;
             }
             for (LogEntry entry : kept) {
-                appendUnsafe(entry);
+                appendUnsafe(entry, false);
             }
+            version++;
+            categoryVersions[category.ordinal()]++;
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    public long getVersion(Category category) {
+        lock.readLock().lock();
+        try {
+            if (category == null) {
+                return version;
+            }
+            return categoryVersions[category.ordinal()];
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
@@ -276,12 +296,22 @@ public class PluginLogger {
     }
 
     private void appendUnsafe(LogEntry entry) {
+        appendUnsafe(entry, true);
+    }
+
+    private void appendUnsafe(LogEntry entry, boolean bumpVersion) {
         buffer[writeIndex] = entry;
         writeIndex = (writeIndex + 1) % maxEntries;
         if (size < maxEntries) {
             size++;
         } else {
             overflow = true;
+        }
+        if (bumpVersion) {
+            version++;
+            if (entry != null && entry.category() != null) {
+                categoryVersions[entry.category().ordinal()]++;
+            }
         }
     }
 

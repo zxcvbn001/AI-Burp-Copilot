@@ -6,6 +6,7 @@ import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.history.HistoryExportService;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.pipeline.EndpointDedupStage;
 import com.aiburpcopilot.core.pipeline.HistoryEventBus;
 
 import javax.swing.*;
@@ -179,6 +180,7 @@ public class HistoryPanel extends JPanel {
                 JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
             historyService.clear();
+            EndpointDedupStage.clearAllSeen();
             HistoryEventBus.getInstance().fireHistoryCleared();
             refresh();
             JOptionPane.showMessageDialog(this,

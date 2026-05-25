@@ -952,6 +952,39 @@ public class Phase3VerificationTest {
 
     @Test
     @Order(36)
+    @DisplayName("Endpoint dedup can be reset after history clear")
+    void testEndpointDedupResetAfterHistoryClear() {
+        HTTPContext first = new HTTPContext();
+        first.setMethod("GET");
+        first.setUrl("http://example.com/reset-dedup?id=1");
+        first.setPath("/reset-dedup");
+        first.addParameter(new ParameterContext("id", "1", ParameterType.QUERY));
+
+        HTTPContext duplicate = new HTTPContext();
+        duplicate.setMethod("GET");
+        duplicate.setUrl("http://example.com/reset-dedup?id=2");
+        duplicate.setPath("/reset-dedup");
+        duplicate.addParameter(new ParameterContext("id", "2", ParameterType.QUERY));
+
+        HTTPContext afterClear = new HTTPContext();
+        afterClear.setMethod("GET");
+        afterClear.setUrl("http://example.com/reset-dedup?id=3");
+        afterClear.setPath("/reset-dedup");
+        afterClear.addParameter(new ParameterContext("id", "3", ParameterType.QUERY));
+
+        EndpointDedupStage stage = new EndpointDedupStage();
+        stage.process(first);
+        stage.process(duplicate);
+        assertEquals(com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED, duplicate.getAnalysisStatus());
+
+        EndpointDedupStage.clearAllSeen();
+        stage.process(afterClear);
+
+        assertNotEquals(com.aiburpcopilot.core.context.AnalysisStatus.SKIPPED, afterClear.getAnalysisStatus());
+    }
+
+    @Test
+    @Order(36)
     @DisplayName("Endpoint dedup collapses numeric URI templates")
     void testEndpointDedupUriTemplate() {
         HTTPContext first = new HTTPContext();
