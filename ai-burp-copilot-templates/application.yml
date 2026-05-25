@@ -55,6 +55,7 @@ jsAnalysis:
   analyzePath: /analyze/js
   fastMode: false
   mode: full
+  responseMode: compact
   submitAsync: true
   taskPollIntervalMs: 1000
   taskTimeoutMs: 60000

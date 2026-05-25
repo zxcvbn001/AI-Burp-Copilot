@@ -60,6 +60,7 @@ public class SettingsPanel extends JPanel {
     private JTextField jsAnalysisAnalyzePathField;
     private JCheckBox jsAnalysisFastModeEnabled;
     private JTextField jsAnalysisModeField;
+    private JTextField jsAnalysisResponseModeField;
     private JCheckBox jsAnalysisSubmitAsyncEnabled;
     private JTextField jsAnalysisTaskPollIntervalField;
     private JTextField jsAnalysisTaskTimeoutField;
@@ -345,6 +346,13 @@ public class SettingsPanel extends JPanel {
         gbc.gridx = 1;
         jsAnalysisModeField = new JTextField(20);
         panel.add(jsAnalysisModeField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(new JLabel("响应模式："), gbc);
+        gbc.gridx = 1;
+        jsAnalysisResponseModeField = new JTextField(20);
+        panel.add(jsAnalysisResponseModeField, gbc);
 
         gbc.gridx = 0;
         gbc.gridy++;
@@ -712,6 +720,7 @@ public class SettingsPanel extends JPanel {
         }
         jsAnalysisModeField.setText(jsMode);
         jsAnalysisFastModeEnabled.setSelected("fast".equals(jsMode));
+        jsAnalysisResponseModeField.setText(normalizeJsResponseMode(config.getJsAnalysis().getResponseMode()));
         jsAnalysisSubmitAsyncEnabled.setSelected(config.getJsAnalysis().isSubmitAsync());
         jsAnalysisTaskPollIntervalField.setText(String.valueOf(config.getJsAnalysis().getTaskPollIntervalMs()));
         jsAnalysisTaskTimeoutField.setText(String.valueOf(config.getJsAnalysis().getTaskTimeoutMs()));
@@ -761,6 +770,16 @@ public class SettingsPanel extends JPanel {
                 : "";
     }
 
+    private String normalizeJsResponseMode(String responseMode) {
+        if (responseMode != null) {
+            String normalized = responseMode.trim().toLowerCase();
+            if ("full".equals(normalized) || "compact".equals(normalized)) {
+                return normalized;
+            }
+        }
+        return "compact";
+    }
+
     private void saveSettings() {
         try {
             AppConfig config = configService.getConfig();
@@ -794,6 +813,7 @@ public class SettingsPanel extends JPanel {
             }
             config.getJsAnalysis().setMode(requestedMode);
             config.getJsAnalysis().setFastMode("fast".equals(requestedMode));
+            config.getJsAnalysis().setResponseMode(normalizeJsResponseMode(jsAnalysisResponseModeField.getText()));
             config.getJsAnalysis().setSubmitAsync(jsAnalysisSubmitAsyncEnabled.isSelected());
             config.getJsAnalysis().setTaskPollIntervalMs(Integer.parseInt(jsAnalysisTaskPollIntervalField.getText().trim()));
             config.getJsAnalysis().setTaskTimeoutMs(Integer.parseInt(jsAnalysisTaskTimeoutField.getText().trim()));

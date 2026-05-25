@@ -86,11 +86,13 @@ public class JsAnalysisApiClient {
         boolean fastMode = "fast".equals(mode);
         payload.put("fast_mode", fastMode);
         payload.put("mode", mode);
+        payload.put("response_mode", normalizeResponseMode(config.getResponseMode()));
         payload.put("async", config.isSubmitAsync());
-        log.info("JS AST request payload summary: url={}, base_url={}, mode={}, fast_mode={}, async={}, contentLength={}",
+        log.info("JS AST request payload summary: url={}, base_url={}, mode={}, response_mode={}, fast_mode={}, async={}, contentLength={}",
                 url,
                 payload.get("base_url"),
                 mode,
+                payload.get("response_mode"),
                 fastMode,
                 config.isSubmitAsync(),
                 content != null ? content.length() : 0);
@@ -121,6 +123,16 @@ public class JsAnalysisApiClient {
             }
         }
         return fastMode ? "fast" : "full";
+    }
+
+    private String normalizeResponseMode(String responseMode) {
+        if (responseMode != null) {
+            String normalized = responseMode.trim().toLowerCase(Locale.ROOT);
+            if ("full".equals(normalized) || "compact".equals(normalized)) {
+                return normalized;
+            }
+        }
+        return "compact";
     }
 
     private JsAnalysisResponse awaitTaskResult(JsAnalysisResponse initial,

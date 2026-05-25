@@ -213,6 +213,9 @@ public class AppConfig {
         @JsonProperty("mode")
         private String mode = "full";
 
+        @JsonProperty("responseMode")
+        private String responseMode = "compact";
+
         @JsonProperty("submitAsync")
         private boolean submitAsync = true;
 
@@ -277,6 +280,8 @@ public class AppConfig {
         public void setFastMode(boolean fastMode) { this.fastMode = fastMode; }
         public String getMode() { return mode; }
         public void setMode(String mode) { this.mode = mode; }
+        public String getResponseMode() { return responseMode; }
+        public void setResponseMode(String responseMode) { this.responseMode = responseMode; }
         public boolean isSubmitAsync() { return submitAsync; }
         public void setSubmitAsync(boolean submitAsync) { this.submitAsync = submitAsync; }
         public int getTaskPollIntervalMs() { return taskPollIntervalMs; }
