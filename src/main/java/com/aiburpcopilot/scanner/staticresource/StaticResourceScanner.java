@@ -23,6 +23,7 @@ import com.aiburpcopilot.scanner.staticresource.js.JsAnalysisApiClient;
 import com.aiburpcopilot.scanner.staticresource.js.JsAnalysisResponse;
 import com.aiburpcopilot.utils.HttpUtil;
 import com.aiburpcopilot.utils.InternalTrafficMarker;
+import com.aiburpcopilot.utils.JsonUtil;
 import com.aiburpcopilot.utils.PluginLogger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -504,23 +505,26 @@ public class StaticResourceScanner implements IStaticScanner {
     private void recordJsAstProgress(HTTPContext context,
                                      StaticScanResult result,
                                      JsAnalysisApiClient.TaskProgress progress) {
-        if (progress == null) {
+        if (progress == null || result == null) {
             return;
         }
-        if (result.getJsAstTasks() == null) {
-            result.setJsAstTasks(new ArrayList<>());
+        StaticScanResult.JsAstTaskStatus status;
+        synchronized (result) {
+            if (result.getJsAstTasks() == null) {
+                result.setJsAstTasks(new ArrayList<>());
+            }
+            if (isDuplicateTaskProgress(result, progress)) {
+                publishStaticProgress(context, result);
+                return;
+            }
+            status = new StaticScanResult.JsAstTaskStatus();
+            status.setScriptUrl(progress.scriptUrl());
+            status.setTaskId(progress.taskId());
+            status.setPhase(progress.phase());
+            status.setStatus(progress.status());
+            status.setMessage(progress.message());
+            result.getJsAstTasks().add(status);
         }
-        if (isDuplicateTaskProgress(result, progress)) {
-            publishStaticProgress(context, result);
-            return;
-        }
-        StaticScanResult.JsAstTaskStatus status = new StaticScanResult.JsAstTaskStatus();
-        status.setScriptUrl(progress.scriptUrl());
-        status.setTaskId(progress.taskId());
-        status.setPhase(progress.phase());
-        status.setStatus(progress.status());
-        status.setMessage(progress.message());
-        result.getJsAstTasks().add(status);
 
         PluginLogger.getInstance().info(
                 PluginLogger.Category.SYSTEM,
@@ -566,16 +570,34 @@ public class StaticResourceScanner implements IStaticScanner {
             return;
         }
         try {
-            context.setStaticScanDetails(result);
-            context.setStaticScanResult(buildSummary(context, result));
+            StaticScanResult snapshot = snapshotResult(result);
+            context.setStaticScanDetails(snapshot);
+            context.setStaticScanResult(buildSummary(context, snapshot));
             HistoryEntry existing = historyService.getById(context.getRequestId());
             HistoryEntry entry = existing != null ? existing : HistoryEntry.fromStaticScan(context);
-            entry.setStaticScanDetails(result);
+            entry.setStaticScanDetails(snapshot);
             entry.setAiSummary(context.getStaticScanResult());
             historyService.update(entry);
             HistoryEventBus.getInstance().fireRefreshNeeded();
         } catch (Exception e) {
-            log.debug("Failed to publish static analysis progress for: {}", context.getPath(), e);
+            String detail = e.getClass().getSimpleName()
+                    + (e.getMessage() != null && !e.getMessage().isBlank() ? ": " + e.getMessage() : "")
+                    + firstStackLocation(e);
+            log.warn("Failed to publish static analysis progress for {}: {}", context.getPath(), detail);
+            PluginLogger.getInstance().warn(
+                    PluginLogger.Category.SYSTEM,
+                    "JS-AST",
+                    "状态更新失败: " + detail);
+        }
+    }
+
+    private StaticScanResult snapshotResult(StaticScanResult result) {
+        if (result == null) {
+            return null;
+        }
+        synchronized (result) {
+            StaticScanResult snapshot = JsonUtil.fromJsonSafe(JsonUtil.toJson(result), StaticScanResult.class);
+            return snapshot != null ? snapshot : result;
         }
     }
 

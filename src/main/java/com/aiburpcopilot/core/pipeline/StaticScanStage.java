@@ -6,6 +6,7 @@ import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.IHistoryService;
 import com.aiburpcopilot.scanner.staticresource.IStaticScanner;
 import com.aiburpcopilot.scanner.staticresource.StaticScanResult;
+import com.aiburpcopilot.utils.JsonUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,12 +40,13 @@ public class StaticScanStage implements IPipelineStage {
     @Override
     public void process(HTTPContext context) {
         StaticScanResult result = staticScanner.scan(context);
-        context.setStaticScanDetails(result);
-        attachStructuredResult(context, result);
+        StaticScanResult snapshot = snapshotResult(result);
+        context.setStaticScanDetails(snapshot);
+        attachStructuredResult(context, snapshot);
 
-        if (result.isHasFindings()) {
+        if (snapshot != null && snapshot.isHasFindings()) {
             log.info("Static scan found {} issues for: {}",
-                    result.getFindings() != null ? result.getFindings().size() : 0,
+                    snapshot.getFindings() != null ? snapshot.getFindings().size() : 0,
                     context.getPath());
         }
     }
@@ -59,6 +61,14 @@ public class StaticScanStage implements IPipelineStage {
             existing.setAiSummary(context.getStaticScanResult());
             historyService.update(existing);
         }
+    }
+
+    private StaticScanResult snapshotResult(StaticScanResult result) {
+        if (result == null) {
+            return null;
+        }
+        StaticScanResult snapshot = JsonUtil.fromJsonSafe(JsonUtil.toJson(result), StaticScanResult.class);
+        return snapshot != null ? snapshot : result;
     }
 
     @Override
