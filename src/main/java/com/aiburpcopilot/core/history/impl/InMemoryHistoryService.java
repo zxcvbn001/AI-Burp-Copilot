@@ -3,9 +3,11 @@ package com.aiburpcopilot.core.history.impl;
 import com.aiburpcopilot.core.context.AnalysisStatus;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.RiskLevel;
+import com.aiburpcopilot.core.discovery.DiscoveryCandidate;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.HistoryStorageStatus;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.report.ReportExportTaskRecord;
 import com.aiburpcopilot.utils.Constants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +24,8 @@ public class InMemoryHistoryService implements IHistoryService {
     private static final Logger log = LoggerFactory.getLogger(InMemoryHistoryService.class);
 
     private final List<HistoryEntry> entries = new CopyOnWriteArrayList<>();
+    private final List<DiscoveryCandidate> discoveryCandidates = new CopyOnWriteArrayList<>();
+    private final List<ReportExportTaskRecord> reportExportTasks = new CopyOnWriteArrayList<>();
     private final int maxEntries;
 
     public InMemoryHistoryService() {
@@ -180,6 +184,62 @@ public class InMemoryHistoryService implements IHistoryService {
                 null);
     }
 
+    @Override
+    public void saveDiscoveryCandidate(String host, DiscoveryCandidate candidate) {
+        if (candidate == null || candidate.getKey() == null || candidate.getKey().isBlank()) {
+            return;
+        }
+        for (int index = 0; index < discoveryCandidates.size(); index++) {
+            DiscoveryCandidate existing = discoveryCandidates.get(index);
+            if (existing != null && candidate.getKey().equals(existing.getKey())) {
+                discoveryCandidates.set(index, candidate.copy());
+                return;
+            }
+        }
+        discoveryCandidates.add(0, candidate.copy());
+    }
+
+    @Override
+    public List<DiscoveryCandidate> listDiscoveryCandidates(String hostFilter) {
+        return discoveryCandidates.stream()
+                .filter(candidate -> hostFilter == null
+                        || hostFilter.isBlank()
+                        || "ALL".equalsIgnoreCase(hostFilter)
+                        || hostFilter.equals(candidate.getHost()))
+                .map(DiscoveryCandidate::copy)
+                .toList();
+    }
+
+    @Override
+    public void clearDiscoveryCandidates(String hostFilter) {
+        discoveryCandidates.removeIf(candidate -> hostFilter == null
+                || hostFilter.isBlank()
+                || "ALL".equalsIgnoreCase(hostFilter)
+                || hostFilter.equals(candidate.getHost()));
+    }
+
+    @Override
+    public void saveReportExportTask(ReportExportTaskRecord taskRecord) {
+        if (taskRecord == null || taskRecord.getTaskId() == null || taskRecord.getTaskId().isBlank()) {
+            return;
+        }
+        for (int index = 0; index < reportExportTasks.size(); index++) {
+            ReportExportTaskRecord existing = reportExportTasks.get(index);
+            if (existing != null && taskRecord.getTaskId().equals(existing.getTaskId())) {
+                reportExportTasks.set(index, copyTaskRecord(taskRecord));
+                return;
+            }
+        }
+        reportExportTasks.add(0, copyTaskRecord(taskRecord));
+    }
+
+    @Override
+    public List<ReportExportTaskRecord> listReportExportTasks() {
+        return reportExportTasks.stream()
+                .map(this::copyTaskRecord)
+                .toList();
+    }
+
     // ---------- Private ----------
 
     private boolean matchesKeyword(HistoryEntry entry, String keyword) {
@@ -205,5 +265,23 @@ public class InMemoryHistoryService implements IHistoryService {
             return false;
         }
         return timeTo == null || timestamp <= timeTo;
+    }
+
+    private ReportExportTaskRecord copyTaskRecord(ReportExportTaskRecord source) {
+        ReportExportTaskRecord copy = new ReportExportTaskRecord();
+        copy.setTaskId(source.getTaskId());
+        copy.setCreatedAt(source.getCreatedAt());
+        copy.setUpdatedAt(source.getUpdatedAt());
+        copy.setHost(source.getHost());
+        copy.setItemCount(source.getItemCount());
+        copy.setOutputPath(source.getOutputPath());
+        copy.setStatus(source.getStatus());
+        copy.setPercent(source.getPercent());
+        copy.setStage(source.getStage());
+        copy.setMessage(source.getMessage());
+        copy.setCompletedPath(source.getCompletedPath());
+        copy.setError(source.getError());
+        copy.setLogs(source.getLogs());
+        return copy;
     }
 }

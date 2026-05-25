@@ -68,4 +68,20 @@ public class DiscoveryValidation {
     public void setAttempts(List<DiscoveryAttempt> attempts) {
         this.attempts = attempts != null ? attempts : new ArrayList<>();
     }
+
+    public DiscoveryValidation copy() {
+        DiscoveryValidation copy = new DiscoveryValidation();
+        copy.setStatus(status);
+        copy.setJudgment(judgment);
+        copy.setReasoning(reasoning);
+        copy.setFinalStatusCode(finalStatusCode);
+        copy.setContentType(contentType);
+        copy.setValidatedAt(validatedAt);
+        List<DiscoveryAttempt> copiedAttempts = new ArrayList<>();
+        for (DiscoveryAttempt attempt : attempts) {
+            copiedAttempts.add(attempt != null ? attempt.copy() : null);
+        }
+        copy.setAttempts(copiedAttempts);
+        return copy;
+    }
 }

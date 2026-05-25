@@ -1,5 +1,8 @@
 package com.aiburpcopilot.burp.ui;
 
+import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.report.ReportExportTaskRecord;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
@@ -10,17 +13,20 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.UUID;
 
 public class ReportExportPanel extends JPanel {
 
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss");
 
+    private final IHistoryService historyService;
     private final ExportTaskTableModel tableModel;
     private final JTable table;
     private final JTextArea detailArea;
     private ExportTaskHandle displayedHandle;
 
-    public ReportExportPanel() {
+    public ReportExportPanel(IHistoryService historyService) {
+        this.historyService = historyService;
         setLayout(new BorderLayout());
         setBorder(new EmptyBorder(10, 10, 10, 10));
 
@@ -45,10 +51,11 @@ public class ReportExportPanel extends JPanel {
                 UiUtil.searchableTextPanel(detailArea));
         splitPane.setResizeWeight(0.45);
         add(splitPane, BorderLayout.CENTER);
+        loadPersistedTasks();
     }
 
     public ExportTaskHandle createTask(String host, int itemCount, Path outputPath) {
-        ExportTaskHandle handle = new ExportTaskHandle(host, itemCount, outputPath);
+        ExportTaskHandle handle = new ExportTaskHandle(historyService, host, itemCount, outputPath);
         SwingUtilities.invokeLater(() -> {
             tableModel.addTask(handle);
             int row = tableModel.indexOf(handle);
@@ -57,6 +64,17 @@ public class ReportExportPanel extends JPanel {
             }
         });
         return handle;
+    }
+
+    private void loadPersistedTasks() {
+        if (historyService == null) {
+            return;
+        }
+        List<ReportExportTaskRecord> records = historyService.listReportExportTasks();
+        for (ReportExportTaskRecord record : records) {
+            tableModel.addTaskSilently(new ExportTaskHandle(historyService, record));
+        }
+        tableModel.refresh();
     }
 
     private void updateDetail() {
@@ -72,7 +90,9 @@ public class ReportExportPanel extends JPanel {
     }
 
     public static final class ExportTaskHandle {
-        private final long createdAt = System.currentTimeMillis();
+        private final IHistoryService historyService;
+        private final String taskId;
+        private final long createdAt;
         private final String host;
         private final int itemCount;
         private final Path outputPath;
@@ -84,13 +104,34 @@ public class ReportExportPanel extends JPanel {
         private volatile Path completedPath;
         private volatile String error;
 
-        private ExportTaskHandle(String host, int itemCount, Path outputPath) {
+        private ExportTaskHandle(IHistoryService historyService, String host, int itemCount, Path outputPath) {
+            this.historyService = historyService;
+            this.taskId = UUID.randomUUID().toString();
+            this.createdAt = System.currentTimeMillis();
             this.host = host;
             this.itemCount = itemCount;
             this.outputPath = outputPath;
             addLog("Task created");
+            persist();
         }
 
+        private ExportTaskHandle(IHistoryService historyService, ReportExportTaskRecord record) {
+            this.historyService = historyService;
+            this.taskId = record.getTaskId();
+            this.createdAt = record.getCreatedAt();
+            this.host = record.getHost();
+            this.itemCount = record.getItemCount();
+            this.outputPath = record.getOutputPath() != null ? Path.of(record.getOutputPath()) : null;
+            this.status = record.getStatus();
+            this.percent = record.getPercent();
+            this.stage = record.getStage();
+            this.message = record.getMessage();
+            this.completedPath = record.getCompletedPath() != null ? Path.of(record.getCompletedPath()) : null;
+            this.error = record.getError();
+            this.logs.addAll(record.getLogs());
+        }
+
+        public String taskId() { return taskId; }
         public long createdAt() { return createdAt; }
         public String host() { return host; }
         public int itemCount() { return itemCount; }
@@ -108,6 +149,7 @@ public class ReportExportPanel extends JPanel {
             this.percent = percent;
             this.message = message;
             addLog("[" + stage + "] " + message + " (" + percent + "%)");
+            persist();
         }
 
         public void markCompleted(Path completedPath) {
@@ -117,6 +159,7 @@ public class ReportExportPanel extends JPanel {
             this.message = "Report ready";
             this.completedPath = completedPath;
             addLog("Report ready: " + completedPath);
+            persist();
         }
 
         public void markFailed(String error) {
@@ -125,6 +168,7 @@ public class ReportExportPanel extends JPanel {
             this.error = error;
             this.message = error != null ? error : "Export failed";
             addLog("Export failed: " + this.message);
+            persist();
         }
 
         public String detailText() {
@@ -152,6 +196,27 @@ public class ReportExportPanel extends JPanel {
         private void addLog(String log) {
             logs.add(TIME_FORMAT.format(new Date()) + " " + log);
         }
+
+        private void persist() {
+            if (historyService == null) {
+                return;
+            }
+            ReportExportTaskRecord record = new ReportExportTaskRecord();
+            record.setTaskId(taskId);
+            record.setCreatedAt(createdAt);
+            record.setUpdatedAt(System.currentTimeMillis());
+            record.setHost(host);
+            record.setItemCount(itemCount);
+            record.setOutputPath(outputPath != null ? outputPath.toString() : null);
+            record.setStatus(status);
+            record.setPercent(percent);
+            record.setStage(stage);
+            record.setMessage(message);
+            record.setCompletedPath(completedPath != null ? completedPath.toString() : null);
+            record.setError(error);
+            record.setLogs(logs);
+            historyService.saveReportExportTask(record);
+        }
     }
 
     private static final class ExportTaskTableModel extends AbstractTableModel {
@@ -161,6 +226,10 @@ public class ReportExportPanel extends JPanel {
         void addTask(ExportTaskHandle handle) {
             rows.add(0, handle);
             fireTableDataChanged();
+        }
+
+        void addTaskSilently(ExportTaskHandle handle) {
+            rows.add(handle);
         }
 
         int indexOf(ExportTaskHandle handle) {

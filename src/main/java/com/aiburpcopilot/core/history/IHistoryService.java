@@ -3,6 +3,8 @@ package com.aiburpcopilot.core.history;
 import com.aiburpcopilot.core.context.AnalysisStatus;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.RiskLevel;
+import com.aiburpcopilot.core.discovery.DiscoveryCandidate;
+import com.aiburpcopilot.core.report.ReportExportTaskRecord;
 
 import java.util.List;
 
@@ -124,4 +126,21 @@ public interface IHistoryService {
                       AnalysisStatus status,
                       Long timeFrom,
                       Long timeTo);
+
+    default void saveDiscoveryCandidate(String host, DiscoveryCandidate candidate) {
+    }
+
+    default List<DiscoveryCandidate> listDiscoveryCandidates(String hostFilter) {
+        return List.of();
+    }
+
+    default void clearDiscoveryCandidates(String hostFilter) {
+    }
+
+    default void saveReportExportTask(ReportExportTaskRecord taskRecord) {
+    }
+
+    default List<ReportExportTaskRecord> listReportExportTasks() {
+        return List.of();
+    }
 }

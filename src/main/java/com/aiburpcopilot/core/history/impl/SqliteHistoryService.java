@@ -4,12 +4,14 @@ import com.aiburpcopilot.core.config.AppConfig;
 import com.aiburpcopilot.core.config.ExternalResourcePaths;
 import com.aiburpcopilot.core.context.AnalysisResult;
 import com.aiburpcopilot.core.context.AnalysisStatus;
+import com.aiburpcopilot.core.discovery.DiscoveryCandidate;
 import com.aiburpcopilot.core.context.EndpointActionType;
 import com.aiburpcopilot.core.context.EndpointType;
 import com.aiburpcopilot.core.context.RiskLevel;
 import com.aiburpcopilot.core.history.HistoryEntry;
 import com.aiburpcopilot.core.history.HistoryStorageStatus;
 import com.aiburpcopilot.core.history.IHistoryService;
+import com.aiburpcopilot.core.report.ReportExportTaskRecord;
 import com.aiburpcopilot.core.verification.model.VerificationResult;
 import com.aiburpcopilot.scanner.staticresource.StaticScanResult;
 import com.aiburpcopilot.utils.Constants;
@@ -180,6 +182,167 @@ public class SqliteHistoryService implements IHistoryService {
                 HistoryStorageStatus.Mode.SQLITE,
                 "SQLite",
                 dbPath != null ? dbPath.toAbsolutePath().toString() : null);
+    }
+
+    @Override
+    public synchronized void saveDiscoveryCandidate(String host, DiscoveryCandidate candidate) {
+        if (candidate == null || candidate.getKey() == null || candidate.getKey().isBlank()) {
+            return;
+        }
+        String sql = """
+                INSERT INTO discovery_candidates (
+                    candidate_key, host, path, url, asset_type, score, method_hint, source_reason,
+                    supporting_observation_count, supporting_paths_json, supporting_parameters_json,
+                    supporting_methods_json, validation_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(candidate_key) DO UPDATE SET
+                    host=excluded.host,
+                    path=excluded.path,
+                    url=excluded.url,
+                    asset_type=excluded.asset_type,
+                    score=excluded.score,
+                    method_hint=excluded.method_hint,
+                    source_reason=excluded.source_reason,
+                    supporting_observation_count=excluded.supporting_observation_count,
+                    supporting_paths_json=excluded.supporting_paths_json,
+                    supporting_parameters_json=excluded.supporting_parameters_json,
+                    supporting_methods_json=excluded.supporting_methods_json,
+                    validation_json=excluded.validation_json,
+                    updated_at=excluded.updated_at
+                """;
+        try (Connection connection = openConnection();
+             PreparedStatement ps = connection.prepareStatement(sql)) {
+            int index = 1;
+            ps.setString(index++, candidate.getKey());
+            ps.setString(index++, candidate.getHost());
+            ps.setString(index++, candidate.getPath());
+            ps.setString(index++, candidate.getUrl());
+            ps.setString(index++, candidate.getAssetType() != null ? candidate.getAssetType().name() : null);
+            ps.setDouble(index++, candidate.getScore());
+            ps.setString(index++, candidate.getMethodHint());
+            ps.setString(index++, candidate.getSourceReason());
+            ps.setInt(index++, candidate.getSupportingObservationCount());
+            ps.setString(index++, JsonUtil.toJson(candidate.getSupportingPaths()));
+            ps.setString(index++, JsonUtil.toJson(candidate.getSupportingParameters()));
+            ps.setString(index++, JsonUtil.toJson(candidate.getSupportingMethods()));
+            ps.setString(index++, JsonUtil.toJson(candidate.getValidation()));
+            ps.setLong(index++, System.currentTimeMillis());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to persist discovery candidate", e);
+        }
+    }
+
+    @Override
+    public synchronized List<DiscoveryCandidate> listDiscoveryCandidates(String hostFilter) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT candidate_key, host, path, url, asset_type, score, method_hint, source_reason,
+                       supporting_observation_count, supporting_paths_json, supporting_parameters_json,
+                       supporting_methods_json, validation_json
+                FROM discovery_candidates
+                WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        if (hostFilter != null && !hostFilter.isBlank() && !"ALL".equalsIgnoreCase(hostFilter)) {
+            sql.append(" AND host = ?");
+            params.add(hostFilter);
+        }
+        sql.append(" ORDER BY updated_at DESC, score DESC");
+        try (Connection connection = openConnection();
+             PreparedStatement ps = connection.prepareStatement(sql.toString())) {
+            bindParams(ps, params);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<DiscoveryCandidate> rows = new ArrayList<>();
+                while (rs.next()) {
+                    rows.add(mapDiscoveryCandidate(rs));
+                }
+                return rows;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to query discovery candidates", e);
+        }
+    }
+
+    @Override
+    public synchronized void clearDiscoveryCandidates(String hostFilter) {
+        String sql = "DELETE FROM discovery_candidates";
+        List<Object> params = new ArrayList<>();
+        if (hostFilter != null && !hostFilter.isBlank() && !"ALL".equalsIgnoreCase(hostFilter)) {
+            sql += " WHERE host = ?";
+            params.add(hostFilter);
+        }
+        try (Connection connection = openConnection();
+             PreparedStatement ps = connection.prepareStatement(sql)) {
+            bindParams(ps, params);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to clear discovery candidates", e);
+        }
+    }
+
+    @Override
+    public synchronized void saveReportExportTask(ReportExportTaskRecord taskRecord) {
+        if (taskRecord == null || taskRecord.getTaskId() == null || taskRecord.getTaskId().isBlank()) {
+            return;
+        }
+        String sql = """
+                INSERT INTO report_export_tasks (
+                    task_id, created_at, updated_at, host, item_count, output_path, status,
+                    percent, stage, message, completed_path, error, logs_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    updated_at=excluded.updated_at,
+                    host=excluded.host,
+                    item_count=excluded.item_count,
+                    output_path=excluded.output_path,
+                    status=excluded.status,
+                    percent=excluded.percent,
+                    stage=excluded.stage,
+                    message=excluded.message,
+                    completed_path=excluded.completed_path,
+                    error=excluded.error,
+                    logs_json=excluded.logs_json
+                """;
+        try (Connection connection = openConnection();
+             PreparedStatement ps = connection.prepareStatement(sql)) {
+            int index = 1;
+            ps.setString(index++, taskRecord.getTaskId());
+            ps.setLong(index++, taskRecord.getCreatedAt());
+            ps.setLong(index++, taskRecord.getUpdatedAt());
+            ps.setString(index++, taskRecord.getHost());
+            ps.setInt(index++, taskRecord.getItemCount());
+            ps.setString(index++, taskRecord.getOutputPath());
+            ps.setString(index++, taskRecord.getStatus());
+            ps.setInt(index++, taskRecord.getPercent());
+            ps.setString(index++, taskRecord.getStage());
+            ps.setString(index++, taskRecord.getMessage());
+            ps.setString(index++, taskRecord.getCompletedPath());
+            ps.setString(index++, taskRecord.getError());
+            ps.setString(index++, JsonUtil.toJson(taskRecord.getLogs()));
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to persist report export task", e);
+        }
+    }
+
+    @Override
+    public synchronized List<ReportExportTaskRecord> listReportExportTasks() {
+        try (Connection connection = openConnection();
+             PreparedStatement ps = connection.prepareStatement("""
+                     SELECT task_id, created_at, updated_at, host, item_count, output_path, status,
+                            percent, stage, message, completed_path, error, logs_json
+                     FROM report_export_tasks
+                     ORDER BY created_at DESC
+                     """);
+             ResultSet rs = ps.executeQuery()) {
+            List<ReportExportTaskRecord> rows = new ArrayList<>();
+            while (rs.next()) {
+                rows.add(mapReportExportTask(rs));
+            }
+            return rows;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to query report export tasks", e);
+        }
     }
 
     private String summarySelect(String suffix) {
@@ -422,6 +585,44 @@ public class SqliteHistoryService implements IHistoryService {
         execute("CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history_entries(timestamp DESC)");
         execute("CREATE INDEX IF NOT EXISTS idx_history_url ON history_entries(url)");
         execute("CREATE INDEX IF NOT EXISTS idx_history_path ON history_entries(path)");
+        execute("""
+                CREATE TABLE IF NOT EXISTS discovery_candidates (
+                    candidate_key TEXT PRIMARY KEY,
+                    host TEXT,
+                    path TEXT,
+                    url TEXT,
+                    asset_type TEXT,
+                    score REAL,
+                    method_hint TEXT,
+                    source_reason TEXT,
+                    supporting_observation_count INTEGER,
+                    supporting_paths_json TEXT,
+                    supporting_parameters_json TEXT,
+                    supporting_methods_json TEXT,
+                    validation_json TEXT,
+                    updated_at INTEGER
+                )
+                """);
+        execute("CREATE INDEX IF NOT EXISTS idx_discovery_candidates_host ON discovery_candidates(host)");
+        execute("CREATE INDEX IF NOT EXISTS idx_discovery_candidates_updated ON discovery_candidates(updated_at DESC)");
+        execute("""
+                CREATE TABLE IF NOT EXISTS report_export_tasks (
+                    task_id TEXT PRIMARY KEY,
+                    created_at INTEGER,
+                    updated_at INTEGER,
+                    host TEXT,
+                    item_count INTEGER,
+                    output_path TEXT,
+                    status TEXT,
+                    percent INTEGER,
+                    stage TEXT,
+                    message TEXT,
+                    completed_path TEXT,
+                    error TEXT,
+                    logs_json TEXT
+                )
+                """);
+        execute("CREATE INDEX IF NOT EXISTS idx_report_export_tasks_created ON report_export_tasks(created_at DESC)");
         log.info("SQLite history initialized at {}", dbPath);
     }
 
@@ -523,6 +724,50 @@ public class SqliteHistoryService implements IHistoryService {
 
     private StaticScanResult readStaticScanResult(String json) {
         return json != null && !json.isBlank() ? JsonUtil.fromJsonSafe(json, StaticScanResult.class) : null;
+    }
+
+    private DiscoveryCandidate mapDiscoveryCandidate(ResultSet rs) throws SQLException {
+        DiscoveryCandidate candidate = new DiscoveryCandidate();
+        candidate.setKey(rs.getString("candidate_key"));
+        candidate.setHost(rs.getString("host"));
+        candidate.setPath(rs.getString("path"));
+        candidate.setUrl(rs.getString("url"));
+        String assetType = rs.getString("asset_type");
+        if (assetType != null && !assetType.isBlank()) {
+            try {
+                candidate.setAssetType(com.aiburpcopilot.core.discovery.DiscoveryAssetType.valueOf(assetType));
+            } catch (Exception ignored) {
+            }
+        }
+        candidate.setScore(rs.getDouble("score"));
+        candidate.setMethodHint(rs.getString("method_hint"));
+        candidate.setSourceReason(rs.getString("source_reason"));
+        candidate.setSupportingObservationCount(rs.getInt("supporting_observation_count"));
+        candidate.setSupportingPaths(readList(rs.getString("supporting_paths_json")));
+        candidate.setSupportingParameters(readList(rs.getString("supporting_parameters_json")));
+        candidate.setSupportingMethods(readList(rs.getString("supporting_methods_json")));
+        var validation = JsonUtil.fromJsonSafe(rs.getString("validation_json"),
+                com.aiburpcopilot.core.discovery.DiscoveryValidation.class);
+        candidate.setValidation(validation);
+        return candidate;
+    }
+
+    private ReportExportTaskRecord mapReportExportTask(ResultSet rs) throws SQLException {
+        ReportExportTaskRecord task = new ReportExportTaskRecord();
+        task.setTaskId(rs.getString("task_id"));
+        task.setCreatedAt(rs.getLong("created_at"));
+        task.setUpdatedAt(rs.getLong("updated_at"));
+        task.setHost(rs.getString("host"));
+        task.setItemCount(rs.getInt("item_count"));
+        task.setOutputPath(rs.getString("output_path"));
+        task.setStatus(rs.getString("status"));
+        task.setPercent(rs.getInt("percent"));
+        task.setStage(rs.getString("stage"));
+        task.setMessage(rs.getString("message"));
+        task.setCompletedPath(rs.getString("completed_path"));
+        task.setError(rs.getString("error"));
+        task.setLogs(readList(rs.getString("logs_json")));
+        return task;
     }
 
     @FunctionalInterface

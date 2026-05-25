@@ -74,4 +74,17 @@ public class DiscoveryAttempt {
     public void setContentType(String contentType) {
         this.contentType = contentType;
     }
+
+    public DiscoveryAttempt copy() {
+        DiscoveryAttempt copy = new DiscoveryAttempt();
+        copy.setSequence(sequence);
+        copy.setMethod(method);
+        copy.setStatusCode(statusCode);
+        copy.setRequestBytes(requestBytes != null ? requestBytes.clone() : null);
+        copy.setResponseBytes(responseBytes != null ? responseBytes.clone() : null);
+        copy.setSignalMatched(signalMatched);
+        copy.setSummary(summary);
+        copy.setContentType(contentType);
+        return copy;
+    }
 }

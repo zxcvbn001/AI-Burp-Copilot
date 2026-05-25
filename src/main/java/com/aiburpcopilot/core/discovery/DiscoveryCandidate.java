@@ -122,4 +122,22 @@ public class DiscoveryCandidate {
     public void setValidation(DiscoveryValidation validation) {
         this.validation = validation != null ? validation : new DiscoveryValidation();
     }
+
+    public DiscoveryCandidate copy() {
+        DiscoveryCandidate copy = new DiscoveryCandidate();
+        copy.setKey(key);
+        copy.setHost(host);
+        copy.setPath(path);
+        copy.setUrl(url);
+        copy.setAssetType(assetType);
+        copy.setScore(score);
+        copy.setMethodHint(methodHint);
+        copy.setSourceReason(sourceReason);
+        copy.setSupportingObservationCount(supportingObservationCount);
+        copy.setSupportingPaths(supportingPaths);
+        copy.setSupportingParameters(supportingParameters);
+        copy.setSupportingMethods(supportingMethods);
+        copy.setValidation(validation != null ? validation.copy() : new DiscoveryValidation());
+        return copy;
+    }
 }

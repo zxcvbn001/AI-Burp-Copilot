@@ -96,11 +96,15 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
 
     @Override
     public List<DiscoveryCandidate> getCandidates(String hostFilter) {
-        return inferenceCache.values().stream()
-                .flatMap(cache -> cache.candidates().stream())
-                .filter(candidate -> matchesHost(candidate, hostFilter))
+        List<DiscoveryCandidate> persisted = historyService.listDiscoveryCandidates(hostFilter);
+        return persisted.stream()
                 .map(this::cloneCandidate)
-                .peek(candidate -> candidate.setValidation(cloneValidation(validationCache.get(candidate.getKey()))))
+                .peek(candidate -> {
+                    DiscoveryValidation cachedValidation = validationCache.get(candidate.getKey());
+                    if (cachedValidation != null) {
+                        candidate.setValidation(cloneValidation(cachedValidation));
+                    }
+                })
                 .sorted(Comparator.comparingDouble(DiscoveryCandidate::getScore).reversed()
                         .thenComparing(DiscoveryCandidate::getPath))
                 .toList();
@@ -114,7 +118,13 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
             inferEndpointCandidatesWithLlm(observation, candidates);
         }
         return candidates.values().stream()
-                .peek(candidate -> candidate.setValidation(cloneValidation(validationCache.get(candidate.getKey()))))
+                .peek(candidate -> {
+                    DiscoveryValidation cachedValidation = validationCache.get(candidate.getKey());
+                    if (cachedValidation != null) {
+                        candidate.setValidation(cloneValidation(cachedValidation));
+                    }
+                    historyService.saveDiscoveryCandidate(candidate.getHost(), candidate);
+                })
                 .sorted(Comparator.comparingDouble(DiscoveryCandidate::getScore).reversed()
                         .thenComparing(DiscoveryCandidate::getPath))
                 .toList();
@@ -172,11 +182,13 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         validation.setStatus(DiscoveryValidationStatus.RUNNING);
         candidate.setValidation(validation);
         validationCache.put(candidate.getKey(), cloneValidation(validation));
+        historyService.saveDiscoveryCandidate(candidate.getHost(), candidate);
 
         try {
             DiscoveryValidation completed = doValidate(candidate);
             candidate.setValidation(completed);
             validationCache.put(candidate.getKey(), cloneValidation(completed));
+            historyService.saveDiscoveryCandidate(candidate.getHost(), candidate);
             return candidate;
         } catch (Exception e) {
             log.warn("Discovery validation failed for {}: {}", candidate.getUrl(), e.getMessage());
@@ -187,6 +199,7 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
             failed.setValidatedAt(Instant.now().toEpochMilli());
             candidate.setValidation(failed);
             validationCache.put(candidate.getKey(), cloneValidation(failed));
+            historyService.saveDiscoveryCandidate(candidate.getHost(), candidate);
             return candidate;
         }
     }
@@ -559,24 +572,7 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
     }
 
     private DiscoveryCandidate cloneCandidate(DiscoveryCandidate candidate) {
-        if (candidate == null) {
-            return null;
-        }
-        DiscoveryCandidate copy = new DiscoveryCandidate();
-        copy.setKey(candidate.getKey());
-        copy.setHost(candidate.getHost());
-        copy.setPath(candidate.getPath());
-        copy.setUrl(candidate.getUrl());
-        copy.setAssetType(candidate.getAssetType());
-        copy.setScore(candidate.getScore());
-        copy.setMethodHint(candidate.getMethodHint());
-        copy.setSourceReason(candidate.getSourceReason());
-        copy.setSupportingObservationCount(candidate.getSupportingObservationCount());
-        copy.setSupportingPaths(candidate.getSupportingPaths());
-        copy.setSupportingParameters(candidate.getSupportingParameters());
-        copy.setSupportingMethods(candidate.getSupportingMethods());
-        copy.setValidation(cloneValidation(candidate.getValidation()));
-        return copy;
+        return candidate != null ? candidate.copy() : null;
     }
 
     private boolean matchesHost(DiscoveryCandidate candidate, String hostFilter) {
@@ -825,31 +821,7 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
     }
 
     private DiscoveryValidation cloneValidation(DiscoveryValidation original) {
-        if (original == null) {
-            return new DiscoveryValidation();
-        }
-        DiscoveryValidation copy = new DiscoveryValidation();
-        copy.setStatus(original.getStatus());
-        copy.setJudgment(original.getJudgment());
-        copy.setReasoning(original.getReasoning());
-        copy.setFinalStatusCode(original.getFinalStatusCode());
-        copy.setContentType(original.getContentType());
-        copy.setValidatedAt(original.getValidatedAt());
-        List<DiscoveryAttempt> copiedAttempts = new ArrayList<>();
-        for (DiscoveryAttempt attempt : original.getAttempts()) {
-            DiscoveryAttempt cloned = new DiscoveryAttempt();
-            cloned.setSequence(attempt.getSequence());
-            cloned.setMethod(attempt.getMethod());
-            cloned.setStatusCode(attempt.getStatusCode());
-            cloned.setRequestBytes(attempt.getRequestBytes());
-            cloned.setResponseBytes(attempt.getResponseBytes());
-            cloned.setSignalMatched(attempt.isSignalMatched());
-            cloned.setSummary(attempt.getSummary());
-            cloned.setContentType(attempt.getContentType());
-            copiedAttempts.add(cloned);
-        }
-        copy.setAttempts(copiedAttempts);
-        return copy;
+        return original != null ? original.copy() : new DiscoveryValidation();
     }
 
     private boolean looksLikeJson(String bodyText) {

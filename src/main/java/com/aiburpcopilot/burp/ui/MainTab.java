@@ -48,7 +48,7 @@ public class MainTab extends JPanel {
                 new FilePromptService(),
                 configService);
         this.sitePatternDiscoveryPanel = new SitePatternDiscoveryPanel(api, siteDiscoveryService);
-        this.reportExportPanel = new ReportExportPanel();
+        this.reportExportPanel = new ReportExportPanel(historyService);
         this.confirmedVulnerabilityPanel = new ConfirmedVulnerabilityPanel(
                 api, historyService, aiProvider, configService, reportExportPanel);
         this.logPanel = new LogPanel();
