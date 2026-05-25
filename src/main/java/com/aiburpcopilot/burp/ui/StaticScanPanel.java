@@ -15,6 +15,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 public class StaticScanPanel extends JPanel {
 
@@ -65,7 +66,7 @@ public class StaticScanPanel extends JPanel {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         UiUtil.applyBurpFont(table);
-        UiUtil.setScaledColumnWidths(table, 85, 75, 380, 560);
+        UiUtil.setScaledColumnWidths(table, 85, 420, 600);
         UiUtil.installHistoryDeleteMenu(table, historyService, this::selectedEntry, this::refresh);
 
         table.getSelectionModel().addListSelectionListener(e -> {
@@ -150,6 +151,7 @@ public class StaticScanPanel extends JPanel {
             try {
                 List<HistoryEntry> staticResources = historyService.searchAdvanced(
                                 null, null, EndpointType.STATIC_RESOURCE, null, null, null, null, 0, 200).stream()
+                        .filter(Objects::nonNull)
                         .filter(entry -> entry.getAiSummary() != null
                                 && !entry.getAiSummary().startsWith("静态文件扫描已跳过"))
                         .toList();
@@ -182,7 +184,8 @@ public class StaticScanPanel extends JPanel {
             return;
         }
         for (int i = 0; i < entries.size(); i++) {
-            if (preserveId.equals(entries.get(i).getRequestId())) {
+            HistoryEntry entry = entries.get(i);
+            if (entry != null && preserveId.equals(entry.getRequestId())) {
                 table.setRowSelectionInterval(i, i);
                 return;
             }
@@ -365,7 +368,12 @@ public class StaticScanPanel extends JPanel {
         if (details == null || details.getCloudAuthSignals() == null || details.getCloudAuthSignals().isEmpty()) {
             return "";
         }
-        return String.join("\n", details.getCloudAuthSignals());
+        return details.getCloudAuthSignals().stream()
+                .filter(signal -> signal != null && !signal.isBlank())
+                .toList()
+                .stream()
+                .reduce((left, right) -> left + "\n" + right)
+                .orElse("");
     }
 
     private String buildSummaryText(HistoryEntry entry, StaticScanResult details) {
@@ -417,7 +425,7 @@ public class StaticScanPanel extends JPanel {
             return 0;
         }
         return (int) details.getRecoveredEndpoints().stream()
-                .filter(StaticScanResult.RecoveredEndpoint::isValidated)
+                .filter(endpoint -> endpoint != null && endpoint.isValidated())
                 .count();
     }
 
@@ -425,15 +433,21 @@ public class StaticScanPanel extends JPanel {
         if (details == null || details.getJsAstTasks() == null || details.getJsAstTasks().isEmpty()) {
             return null;
         }
-        return details.getJsAstTasks().get(details.getJsAstTasks().size() - 1);
+        for (int i = details.getJsAstTasks().size() - 1; i >= 0; i--) {
+            StaticScanResult.JsAstTaskStatus task = details.getJsAstTasks().get(i);
+            if (task != null) {
+                return task;
+            }
+        }
+        return null;
     }
 
     private static class StaticScanTableModel extends AbstractTableModel {
-        private final String[] columns = {"时间", "方法", "URL", "发现"};
+        private final String[] columns = {"时间", "URL", "发现"};
         private List<HistoryEntry> entries = List.of();
 
         void setEntries(List<HistoryEntry> entries) {
-            this.entries = entries != null ? entries : List.of();
+            this.entries = nonNullList(entries);
             fireTableDataChanged();
         }
 
@@ -448,11 +462,13 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int row, int col) {
             HistoryEntry entry = entries.get(row);
+            if (entry == null) {
+                return "";
+            }
             return switch (col) {
                 case 0 -> DATE_FORMAT.format(new Date(entry.getTimestamp()));
-                case 1 -> entry.getMethod();
-                case 2 -> entry.getUrl();
-                case 3 -> findingSummary(entry);
+                case 1 -> entry.getUrl();
+                case 2 -> findingSummary(entry);
                 default -> "";
             };
         }
@@ -501,7 +517,7 @@ public class StaticScanPanel extends JPanel {
                 return 0;
             }
             return (int) details.getRecoveredEndpoints().stream()
-                    .filter(StaticScanResult.RecoveredEndpoint::isValidated)
+                    .filter(endpoint -> endpoint != null && endpoint.isValidated())
                     .count();
         }
 
@@ -518,7 +534,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.CloudFinding> findings = List.of();
 
         void setFindings(List<StaticScanResult.CloudFinding> findings) {
-            this.findings = findings != null ? findings : List.of();
+            this.findings = nonNullList(findings);
             fireTableDataChanged();
         }
 
@@ -529,6 +545,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudFinding finding = findings.get(rowIndex);
+            if (finding == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> finding.getCategory();
                 case 1 -> finding.getType();
@@ -549,8 +568,8 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.RecoveredEndpoint> recoveredEndpoints = List.of();
 
         void setApis(List<StaticScanResult.CloudApi> apis, List<StaticScanResult.RecoveredEndpoint> recoveredEndpoints) {
-            this.apis = apis != null ? apis : List.of();
-            List<StaticScanResult.RecoveredEndpoint> source = recoveredEndpoints != null ? recoveredEndpoints : List.of();
+            this.apis = nonNullList(apis);
+            List<StaticScanResult.RecoveredEndpoint> source = nonNullList(recoveredEndpoints);
             List<StaticScanResult.RecoveredEndpoint> matched = new ArrayList<>(this.apis.size());
             for (StaticScanResult.CloudApi api : this.apis) {
                 matched.add(findRecovered(api, source));
@@ -593,6 +612,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudApi api = apis.get(rowIndex);
+            if (api == null) {
+                return "";
+            }
             StaticScanResult.RecoveredEndpoint recovered = getRecoveredAt(rowIndex);
             return switch (columnIndex) {
                 case 0 -> api.getMethod();
@@ -676,7 +698,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.CloudAsset> assets = List.of();
 
         void setAssets(List<StaticScanResult.CloudAsset> assets) {
-            this.assets = assets != null ? assets : List.of();
+            this.assets = nonNullList(assets);
             fireTableDataChanged();
         }
 
@@ -687,6 +709,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudAsset asset = assets.get(rowIndex);
+            if (asset == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> asset.getType();
                 case 1 -> asset.getUrl();
@@ -704,7 +729,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.CloudParam> params = List.of();
 
         void setParams(List<StaticScanResult.CloudParam> params) {
-            this.params = params != null ? params : List.of();
+            this.params = nonNullList(params);
             fireTableDataChanged();
         }
 
@@ -715,6 +740,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudParam param = params.get(rowIndex);
+            if (param == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> param.getName();
                 case 1 -> param.getLocation();
@@ -731,7 +759,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.CloudSecret> secrets = List.of();
 
         void setSecrets(List<StaticScanResult.CloudSecret> secrets) {
-            this.secrets = secrets != null ? secrets : List.of();
+            this.secrets = nonNullList(secrets);
             fireTableDataChanged();
         }
 
@@ -742,6 +770,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudSecret secret = secrets.get(rowIndex);
+            if (secret == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> secret.getType();
                 case 1 -> secret.getValue();
@@ -760,7 +791,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.CloudRisk> risks = List.of();
 
         void setRisks(List<StaticScanResult.CloudRisk> risks) {
-            this.risks = risks != null ? risks : List.of();
+            this.risks = nonNullList(risks);
             fireTableDataChanged();
         }
 
@@ -771,6 +802,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudRisk risk = risks.get(rowIndex);
+            if (risk == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> risk.getType();
                 case 1 -> risk.getSeverity();
@@ -786,7 +820,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.AnalyzedScript> scripts = List.of();
 
         void setScripts(List<StaticScanResult.AnalyzedScript> scripts) {
-            this.scripts = scripts != null ? scripts : List.of();
+            this.scripts = nonNullList(scripts);
             fireTableDataChanged();
         }
 
@@ -797,6 +831,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.AnalyzedScript script = scripts.get(rowIndex);
+            if (script == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> script.getUrl();
                 case 1 -> script.isValidated();
@@ -815,7 +852,7 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.JsAstTaskStatus> tasks = List.of();
 
         void setTasks(List<StaticScanResult.JsAstTaskStatus> tasks) {
-            this.tasks = tasks != null ? tasks : List.of();
+            this.tasks = nonNullList(tasks);
             fireTableDataChanged();
         }
 
@@ -826,6 +863,9 @@ public class StaticScanPanel extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.JsAstTaskStatus task = tasks.get(rowIndex);
+            if (task == null) {
+                return "";
+            }
             return switch (columnIndex) {
                 case 0 -> task.getPhase();
                 case 1 -> task.getStatus();
@@ -838,7 +878,12 @@ public class StaticScanPanel extends JPanel {
     }
 
     private static String join(List<String> values) {
-        return values != null && !values.isEmpty() ? String.join(", ", values) : "";
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return String.join(", ", values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .toList());
     }
 
     private static String formatConfidence(Double confidence) {
@@ -911,5 +956,9 @@ public class StaticScanPanel extends JPanel {
 
     private static String safe(String value) {
         return value != null ? value : "";
+    }
+
+    private static <T> List<T> nonNullList(List<T> values) {
+        return values != null ? values.stream().filter(Objects::nonNull).toList() : List.of();
     }
 }

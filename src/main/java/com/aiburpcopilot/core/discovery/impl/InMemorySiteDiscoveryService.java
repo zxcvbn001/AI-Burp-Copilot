@@ -228,6 +228,11 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
         attempt.setMethod(method);
         byte[] requestBytes = buildRawRequest(candidate.getUrl(), method);
         attempt.setRequestBytes(requestBytes);
+        if (requestBytes == null || requestBytes.length == 0) {
+            attempt.setStatusCode(-1);
+            attempt.setSummary("Request bytes unavailable");
+            return attempt;
+        }
 
         if (api == null) {
             attempt.setStatusCode(-1);

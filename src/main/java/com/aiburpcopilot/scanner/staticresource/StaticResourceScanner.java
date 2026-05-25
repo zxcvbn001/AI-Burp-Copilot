@@ -142,7 +142,8 @@ public class StaticResourceScanner implements IStaticScanner {
         } catch (Exception e) {
             log.error("Static scan failed for: {}", context.getPath(), e);
             String detail = e.getClass().getSimpleName()
-                    + (e.getMessage() != null && !e.getMessage().isBlank() ? ": " + e.getMessage() : "");
+                    + (e.getMessage() != null && !e.getMessage().isBlank() ? ": " + e.getMessage() : "")
+                    + firstStackLocation(e);
             context.setStaticScanResult("静态分析失败: " + detail);
             result.setHasFindings(false);
             clearProgressThrottle(context);
@@ -391,7 +392,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 reason.append(" | baseUrl=").append(api.getBaseUrl());
             }
             if (api.getNotes() != null && !api.getNotes().isEmpty()) {
-                reason.append(" | notes=").append(String.join(",", api.getNotes()));
+                reason.append(" | notes=").append(joinList(api.getNotes()));
             }
         }
         return reason.toString();
@@ -537,7 +538,16 @@ public class StaticResourceScanner implements IStaticScanner {
         if (tasks == null || tasks.isEmpty() || progress == null) {
             return false;
         }
-        StaticScanResult.JsAstTaskStatus latest = tasks.get(tasks.size() - 1);
+        StaticScanResult.JsAstTaskStatus latest = null;
+        for (int i = tasks.size() - 1; i >= 0; i--) {
+            latest = tasks.get(i);
+            if (latest != null) {
+                break;
+            }
+        }
+        if (latest == null) {
+            return false;
+        }
         return safeEquals(latest.getTaskId(), progress.taskId())
                 && safeEquals(latest.getPhase(), progress.phase())
                 && safeEquals(latest.getStatus(), progress.status())
@@ -1118,13 +1128,16 @@ public class StaticResourceScanner implements IStaticScanner {
         List<String> attackSurface = new ArrayList<>();
         attackSurface.add("JS 恢复接口");
         if (jsAnalysis.getAuth() != null && !jsAnalysis.getAuth().isEmpty()) {
-            attackSurface.add("认证头信号: " + String.join(", ", jsAnalysis.getAuth()));
+            attackSurface.add("认证头信号: " + joinList(jsAnalysis.getAuth()));
         }
         result.setAttackSurface(attackSurface);
 
         List<String> possibleVulns = new ArrayList<>();
         if (jsAnalysis.getRisk() != null) {
             for (JsAnalysisResponse.RiskResult risk : jsAnalysis.getRisk()) {
+                if (risk == null) {
+                    continue;
+                }
                 if (risk.getType() != null && !risk.getType().isBlank()) {
                     possibleVulns.add(risk.getType());
                 }
@@ -1193,6 +1206,11 @@ public class StaticResourceScanner implements IStaticScanner {
             }
             byte[] markedRequest = InternalTrafficMarker.ensureMarked(replay.requestBytes);
             replay.requestBytes = markedRequest;
+            if (markedRequest == null || markedRequest.length == 0) {
+                replay.reason = "Request bytes unavailable";
+                replay.summary = buildScriptSummary(absoluteUrl, false, replay.statusCode, replay.reason, null);
+                return replay;
+            }
 
             burp.api.montoya.http.HttpService service = burp.api.montoya.http.HttpService.httpService(
                     uri.getHost(),
@@ -1235,6 +1253,14 @@ public class StaticResourceScanner implements IStaticScanner {
         }
         byte[] raw = bytes.getBytes();
         return raw != null ? raw : new byte[0];
+    }
+
+    private String firstStackLocation(Exception e) {
+        if (e == null || e.getStackTrace() == null || e.getStackTrace().length == 0) {
+            return "";
+        }
+        StackTraceElement first = e.getStackTrace()[0];
+        return " @ " + first.getClassName() + ":" + first.getLineNumber();
     }
 
     private boolean judgeExistence(int statusCode, byte[] responseBytes, String url, boolean staticFile) {
@@ -1340,16 +1366,20 @@ public class StaticResourceScanner implements IStaticScanner {
         }
 
         if (result.getJsAstTasks() != null && !result.getJsAstTasks().isEmpty()) {
-            StaticScanResult.JsAstTaskStatus latest = result.getJsAstTasks().get(result.getJsAstTasks().size() - 1);
-            summary.append("JS AST progress: [").append(safe(latest.getPhase())).append("] ")
-                    .append(safe(latest.getStatus()))
-                    .append(" | taskId=").append(safe(latest.getTaskId()))
-                    .append(" | ").append(safe(latest.getMessage()))
-                    .append("\n");
+            StaticScanResult.JsAstTaskStatus latest = latestTask(result);
+            if (latest != null) {
+                summary.append("JS AST progress: [").append(safe(latest.getPhase())).append("] ")
+                        .append(safe(latest.getStatus()))
+                        .append(" | taskId=").append(safe(latest.getTaskId()))
+                        .append(" | ").append(safe(latest.getMessage()))
+                        .append("\n");
+            }
         }
 
         if (result.getRecoveredEndpoints() != null && !result.getRecoveredEndpoints().isEmpty()) {
-            long validCount = result.getRecoveredEndpoints().stream().filter(StaticScanResult.RecoveredEndpoint::isValidated).count();
+            long validCount = result.getRecoveredEndpoints().stream()
+                    .filter(endpoint -> endpoint != null && endpoint.isValidated())
+                    .count();
             summary.append("Recovered endpoints: ").append(result.getRecoveredEndpoints().size())
                     .append(" (validated=").append(validCount).append(")\n");
         }
@@ -1365,8 +1395,21 @@ public class StaticResourceScanner implements IStaticScanner {
             return 0;
         }
         return (int) result.getRecoveredEndpoints().stream()
-                .filter(StaticScanResult.RecoveredEndpoint::isValidated)
+                .filter(endpoint -> endpoint != null && endpoint.isValidated())
                 .count();
+    }
+
+    private StaticScanResult.JsAstTaskStatus latestTask(StaticScanResult result) {
+        if (result == null || result.getJsAstTasks() == null || result.getJsAstTasks().isEmpty()) {
+            return null;
+        }
+        for (int i = result.getJsAstTasks().size() - 1; i >= 0; i--) {
+            StaticScanResult.JsAstTaskStatus task = result.getJsAstTasks().get(i);
+            if (task != null) {
+                return task;
+            }
+        }
+        return null;
     }
 
     private int totalFindingCount(JsAnalysisResponse analysis) {
@@ -1400,7 +1443,10 @@ public class StaticResourceScanner implements IStaticScanner {
         if (values == null || values.isEmpty()) {
             return "-";
         }
-        return String.join(", ", values);
+        List<String> nonBlank = values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .toList();
+        return nonBlank.isEmpty() ? "-" : String.join(", ", nonBlank);
     }
 
     private String firstNonBlank(String first, String second) {
