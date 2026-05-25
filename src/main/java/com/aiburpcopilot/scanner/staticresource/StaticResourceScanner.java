@@ -1211,7 +1211,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 replay.summary = buildScriptSummary(absoluteUrl, false, replay.statusCode, replay.reason, null);
                 return replay;
             }
-            replay.responseBytes = response.response().toByteArray().getBytes();
+            replay.responseBytes = safeBytes(response.response().toByteArray());
             if (replay.responseBytes == null || replay.responseBytes.length == 0) {
                 replay.reason = "Response bytes empty";
                 replay.summary = buildScriptSummary(absoluteUrl, false, replay.statusCode, replay.reason, null);
@@ -1227,6 +1227,14 @@ public class StaticResourceScanner implements IStaticScanner {
             replay.summary = buildScriptSummary(absoluteUrl, false, replay.statusCode, replay.reason, null);
             return replay;
         }
+    }
+
+    private byte[] safeBytes(burp.api.montoya.core.ByteArray bytes) {
+        if (bytes == null) {
+            return new byte[0];
+        }
+        byte[] raw = bytes.getBytes();
+        return raw != null ? raw : new byte[0];
     }
 
     private boolean judgeExistence(int statusCode, byte[] responseBytes, String url, boolean staticFile) {

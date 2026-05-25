@@ -452,9 +452,57 @@ public class StaticScanPanel extends JPanel {
                 case 0 -> DATE_FORMAT.format(new Date(entry.getTimestamp()));
                 case 1 -> entry.getMethod();
                 case 2 -> entry.getUrl();
-                case 3 -> truncate(entry.getAiSummary(), 100);
+                case 3 -> findingSummary(entry);
                 default -> "";
             };
+        }
+
+        private static String findingSummary(HistoryEntry entry) {
+            if (entry == null || entry.getStaticScanDetails() == null) {
+                return extractFindingSummary(entry != null ? entry.getAiSummary() : null);
+            }
+            StaticScanResult details = entry.getStaticScanDetails();
+            int endpointFindings = size(details.getEndpointFindings());
+            int sensitiveFindings = size(details.getExposureFindings());
+            int scriptFindings = size(details.getScriptFindings());
+            int rawFindings = size(details.getCloudFindings());
+            int total = endpointFindings + sensitiveFindings + scriptFindings;
+            if (total == 0) {
+                total = rawFindings + size(details.getCloudSecrets()) + size(details.getCloudRisks());
+            }
+            int apis = size(details.getCloudApis());
+            int scripts = size(details.getCloudAssets());
+            int verifiedApis = validRecoveredEndpointCount(details);
+            return "findings=" + total
+                    + " | endpoints=" + apis
+                    + " | verified=" + verifiedApis
+                    + " | scripts=" + scripts
+                    + " | secrets=" + size(details.getCloudSecrets());
+        }
+
+        private static String extractFindingSummary(String summary) {
+            if (summary == null || summary.isBlank()) {
+                return "";
+            }
+            for (String line : summary.split("\\R")) {
+                if (line.startsWith("JS AST summary:") || line.startsWith("Cloud overview:")) {
+                    return truncate(line, 100);
+                }
+            }
+            return truncate(summary, 100);
+        }
+
+        private static int size(List<?> values) {
+            return values != null ? values.size() : 0;
+        }
+
+        private static int validRecoveredEndpointCount(StaticScanResult details) {
+            if (details == null || details.getRecoveredEndpoints() == null) {
+                return 0;
+            }
+            return (int) details.getRecoveredEndpoints().stream()
+                    .filter(StaticScanResult.RecoveredEndpoint::isValidated)
+                    .count();
         }
 
         private static String truncate(String value, int maxLen) {

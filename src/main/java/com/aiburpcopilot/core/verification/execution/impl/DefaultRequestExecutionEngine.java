@@ -233,7 +233,7 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
             if (requestResponse == null || !requestResponse.hasResponse()) {
                 return null;
             }
-            byte[] responseBytes = requestResponse.response().toByteArray().getBytes();
+            byte[] responseBytes = safeBytes(requestResponse.response().toByteArray());
             log.debug("Montoya response: {} bytes from {}", responseBytes.length, targetUri);
             return responseBytes;
         } catch (Exception e) {
@@ -241,6 +241,14 @@ public class DefaultRequestExecutionEngine implements IRequestExecutionEngine {
                     request.getUrl(), e.getMessage());
             return null;
         }
+    }
+
+    private byte[] safeBytes(burp.api.montoya.core.ByteArray bytes) {
+        if (bytes == null) {
+            return new byte[0];
+        }
+        byte[] raw = bytes.getBytes();
+        return raw != null ? raw : new byte[0];
     }
 
     @Override

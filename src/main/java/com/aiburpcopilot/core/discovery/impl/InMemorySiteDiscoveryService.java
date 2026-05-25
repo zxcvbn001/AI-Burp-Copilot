@@ -257,7 +257,7 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
                 return attempt;
             }
 
-            byte[] responseBytes = result.response().toByteArray().getBytes();
+            byte[] responseBytes = safeBytes(result.response().toByteArray());
             attempt.setResponseBytes(responseBytes);
             ParsedResponse parsed = parseResponse(responseBytes);
             attempt.setStatusCode(parsed.statusCode);
@@ -270,6 +270,14 @@ public class InMemorySiteDiscoveryService implements ISiteDiscoveryService {
             attempt.setSummary("Request failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return attempt;
         }
+    }
+
+    private byte[] safeBytes(ByteArray bytes) {
+        if (bytes == null) {
+            return new byte[0];
+        }
+        byte[] raw = bytes.getBytes();
+        return raw != null ? raw : new byte[0];
     }
 
     private ValidationAssessment assess(DiscoveryCandidate candidate, List<DiscoveryAttempt> attempts) {

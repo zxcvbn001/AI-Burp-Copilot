@@ -37,8 +37,8 @@ public final class HttpContextFactory {
             }
         });
 
-        context.setRequestBody(request.body().getBytes());
-        context.setRawRequest(request.toByteArray().getBytes());
+        context.setRequestBody(safeBytes(request.body()));
+        context.setRawRequest(safeBytes(request.toByteArray()));
         extractParameters(context, request);
 
         if (response != null) {
@@ -48,15 +48,23 @@ public final class HttpContextFactory {
                     .findFirst()
                     .ifPresent(h -> context.setResponseContentType(h.value()));
 
-            context.setResponseBody(response.body().getBytes());
+            context.setResponseBody(safeBytes(response.body()));
             byte[] truncatedBody = SecurityUtil.truncateResponseBody(context.getResponseBody());
             if (truncatedBody != context.getResponseBody()) {
                 context.setResponseBody(truncatedBody);
             }
-            context.setRawResponse(response.toByteArray().getBytes());
+            context.setRawResponse(safeBytes(response.toByteArray()));
         }
 
         return context;
+    }
+
+    private static byte[] safeBytes(burp.api.montoya.core.ByteArray bytes) {
+        if (bytes == null) {
+            return new byte[0];
+        }
+        byte[] raw = bytes.getBytes();
+        return raw != null ? raw : new byte[0];
     }
 
     private static void extractParameters(HTTPContext context, HttpRequest request) {
