@@ -409,9 +409,9 @@ public class StaticResourceScanner implements IStaticScanner {
         script.setValidated(validated);
         script.setStatusCode(statusCode);
         script.setReason(reason);
-        script.setApiCount(analysis != null && analysis.getApis() != null ? analysis.getApis().size() : 0);
-        script.setSecretCount(analysis != null && analysis.getSecrets() != null ? analysis.getSecrets().size() : 0);
-        script.setRiskCount(analysis != null && analysis.getRisk() != null ? analysis.getRisk().size() : 0);
+        script.setApiCount(apiCount(analysis));
+        script.setSecretCount(secretCount(analysis));
+        script.setRiskCount(riskCount(analysis));
         script.setFindingCount(totalFindingCount(analysis));
         if (analysis != null && analysis.getAssets() != null && !analysis.getAssets().isEmpty()) {
             script.setReason(reason + " | assets=" + analysis.getAssets().size());
@@ -1480,6 +1480,9 @@ public class StaticResourceScanner implements IStaticScanner {
         if (analysis == null) {
             return 0;
         }
+        if (analysis.getSummary() != null && analysis.getSummary().getFindingCount() > 0) {
+            return analysis.getSummary().getFindingCount();
+        }
         int grouped = endpointFindings(analysis).size()
                 + exposureFindings(analysis).size()
                 + scriptFindings(analysis).size();
@@ -1489,6 +1492,36 @@ public class StaticResourceScanner implements IStaticScanner {
         return (analysis.getFindings() != null ? analysis.getFindings().size() : 0)
                 + exposureSecrets(analysis).size()
                 + (analysis.getRisk() != null ? analysis.getRisk().size() : 0);
+    }
+
+    private int apiCount(JsAnalysisResponse analysis) {
+        if (analysis == null) {
+            return 0;
+        }
+        if (analysis.getSummary() != null && analysis.getSummary().getApiCount() > 0) {
+            return analysis.getSummary().getApiCount();
+        }
+        return endpointApis(analysis).size();
+    }
+
+    private int secretCount(JsAnalysisResponse analysis) {
+        if (analysis == null) {
+            return 0;
+        }
+        if (analysis.getSummary() != null && analysis.getSummary().getSecretCount() > 0) {
+            return analysis.getSummary().getSecretCount();
+        }
+        return exposureSecrets(analysis).size();
+    }
+
+    private int riskCount(JsAnalysisResponse analysis) {
+        if (analysis == null) {
+            return 0;
+        }
+        if (analysis.getSummary() != null && analysis.getSummary().getRiskCount() > 0) {
+            return analysis.getSummary().getRiskCount();
+        }
+        return analysis.getRisk() != null ? analysis.getRisk().size() : 0;
     }
 
     private int size(List<?> values) {

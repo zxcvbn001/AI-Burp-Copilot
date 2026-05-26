@@ -12,9 +12,11 @@ public class JsAnalysisResponse {
     private String url;
     private Error error;
     @JsonProperty("task_id")
+    @JsonAlias({"taskId", "id"})
     private String taskId;
     private String status;
     @JsonProperty("status_url")
+    @JsonAlias("statusUrl")
     private String statusUrl;
     private Task task;
     private List<ApiResult> apis = new ArrayList<>();
@@ -33,9 +35,19 @@ public class JsAnalysisResponse {
     public void setUrl(String url) { this.url = url; }
     public Error getError() { return error; }
     public void setError(Error error) { this.error = error; }
-    public String getTaskId() { return taskId; }
+    public String getTaskId() {
+        if (taskId != null && !taskId.isBlank()) {
+            return taskId;
+        }
+        return task != null ? task.getId() : null;
+    }
     public void setTaskId(String taskId) { this.taskId = taskId; }
-    public String getStatus() { return status; }
+    public String getStatus() {
+        if (status != null && !status.isBlank()) {
+            return status;
+        }
+        return task != null ? task.getStatus() : null;
+    }
     public void setStatus(String status) { this.status = status; }
     public String getStatusUrl() { return statusUrl; }
     public void setStatusUrl(String statusUrl) { this.statusUrl = statusUrl; }

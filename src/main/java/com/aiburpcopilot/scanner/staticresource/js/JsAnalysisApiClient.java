@@ -145,7 +145,13 @@ public class JsAnalysisApiClient {
             return initial;
         }
         if (initial.getTaskId() == null || initial.getTaskId().isBlank()) {
-            return initial;
+            notifyProgress(progressConsumer, new TaskProgress(
+                    initial.getUrl() != null && !initial.getUrl().isBlank() ? initial.getUrl() : fallbackScriptUrl,
+                    null,
+                    "FAILED",
+                    firstNonBlank(initial.getStatus(), "missing-task-id"),
+                    "JS AST async submission did not return task id"));
+            return errorResponse("JS AST async submission did not return task id");
         }
 
         String statusPath = initial.getStatusUrl();
@@ -250,6 +256,10 @@ public class JsAnalysisApiClient {
                 lastStatus,
                 "JS AST async task timed out"));
         return errorResponse("JS AST async task timed out, last status: " + lastStatus);
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
     }
 
     private JsAnalysisResponse executePost(String path, Map<String, Object> payload) {
