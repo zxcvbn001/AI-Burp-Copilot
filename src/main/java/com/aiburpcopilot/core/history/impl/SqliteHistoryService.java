@@ -31,6 +31,65 @@ public class SqliteHistoryService implements IHistoryService {
 
     private static final Logger log = LoggerFactory.getLogger(SqliteHistoryService.class);
     private static final String DB_NAME = "history.db";
+    private static final List<ColumnDefinition> HISTORY_COLUMNS = List.of(
+            new ColumnDefinition("request_id", "TEXT PRIMARY KEY"),
+            new ColumnDefinition("timestamp", "INTEGER NOT NULL"),
+            new ColumnDefinition("method", "TEXT"),
+            new ColumnDefinition("url", "TEXT"),
+            new ColumnDefinition("path", "TEXT"),
+            new ColumnDefinition("status_code", "INTEGER"),
+            new ColumnDefinition("content_type", "TEXT"),
+            new ColumnDefinition("endpoint_type", "TEXT"),
+            new ColumnDefinition("endpoint_action_type", "TEXT"),
+            new ColumnDefinition("risk_level", "TEXT"),
+            new ColumnDefinition("analysis_status", "TEXT"),
+            new ColumnDefinition("ai_summary", "TEXT"),
+            new ColumnDefinition("attack_surface_json", "TEXT"),
+            new ColumnDefinition("possible_vulnerabilities_json", "TEXT"),
+            new ColumnDefinition("high_value_params_json", "TEXT"),
+            new ColumnDefinition("recommended_tests_json", "TEXT"),
+            new ColumnDefinition("parameter_count", "INTEGER"),
+            new ColumnDefinition("response_body_size", "INTEGER"),
+            new ColumnDefinition("ai_call_duration_ms", "INTEGER"),
+            new ColumnDefinition("request_body", "TEXT"),
+            new ColumnDefinition("response_body", "TEXT"),
+            new ColumnDefinition("raw_request_b64", "TEXT"),
+            new ColumnDefinition("raw_response_b64", "TEXT"),
+            new ColumnDefinition("high_value_param_details_json", "TEXT"),
+            new ColumnDefinition("verification_results_json", "TEXT"),
+            new ColumnDefinition("static_scan_details_json", "TEXT")
+    );
+    private static final List<ColumnDefinition> DISCOVERY_COLUMNS = List.of(
+            new ColumnDefinition("candidate_key", "TEXT PRIMARY KEY"),
+            new ColumnDefinition("host", "TEXT"),
+            new ColumnDefinition("path", "TEXT"),
+            new ColumnDefinition("url", "TEXT"),
+            new ColumnDefinition("asset_type", "TEXT"),
+            new ColumnDefinition("score", "REAL"),
+            new ColumnDefinition("method_hint", "TEXT"),
+            new ColumnDefinition("source_reason", "TEXT"),
+            new ColumnDefinition("supporting_observation_count", "INTEGER"),
+            new ColumnDefinition("supporting_paths_json", "TEXT"),
+            new ColumnDefinition("supporting_parameters_json", "TEXT"),
+            new ColumnDefinition("supporting_methods_json", "TEXT"),
+            new ColumnDefinition("validation_json", "TEXT"),
+            new ColumnDefinition("updated_at", "INTEGER")
+    );
+    private static final List<ColumnDefinition> REPORT_TASK_COLUMNS = List.of(
+            new ColumnDefinition("task_id", "TEXT PRIMARY KEY"),
+            new ColumnDefinition("created_at", "INTEGER"),
+            new ColumnDefinition("updated_at", "INTEGER"),
+            new ColumnDefinition("host", "TEXT"),
+            new ColumnDefinition("item_count", "INTEGER"),
+            new ColumnDefinition("output_path", "TEXT"),
+            new ColumnDefinition("status", "TEXT"),
+            new ColumnDefinition("percent", "INTEGER"),
+            new ColumnDefinition("stage", "TEXT"),
+            new ColumnDefinition("message", "TEXT"),
+            new ColumnDefinition("completed_path", "TEXT"),
+            new ColumnDefinition("error", "TEXT"),
+            new ColumnDefinition("logs_json", "TEXT")
+    );
     private static volatile boolean driverRegistered;
 
     private final Path dbPath;
@@ -402,14 +461,10 @@ public class SqliteHistoryService implements IHistoryService {
                     raw_response_b64=excluded.raw_response_b64,
                     high_value_param_details_json=excluded.high_value_param_details_json,
                     verification_results_json=excluded.verification_results_json,
-                    static_scan_details_json=CASE
-                        WHEN excluded.static_scan_details_json IS NULL
-                             OR excluded.static_scan_details_json = ''
-                             OR excluded.static_scan_details_json = 'null'
-                             OR excluded.static_scan_details_json = '{}'
-                        THEN history_entries.static_scan_details_json
-                        ELSE excluded.static_scan_details_json
-                    END
+                    static_scan_details_json=COALESCE(
+                        NULLIF(NULLIF(NULLIF(excluded.static_scan_details_json, ''), 'null'), '{}'),
+                        static_scan_details_json
+                    )
                 """;
         try (Connection connection = openConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -573,78 +628,70 @@ public class SqliteHistoryService implements IHistoryService {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to create history db directory", e);
         }
-        execute("""
-                CREATE TABLE IF NOT EXISTS history_entries (
-                    request_id TEXT PRIMARY KEY,
-                    timestamp INTEGER NOT NULL,
-                    method TEXT,
-                    url TEXT,
-                    path TEXT,
-                    status_code INTEGER,
-                    content_type TEXT,
-                    endpoint_type TEXT,
-                    endpoint_action_type TEXT,
-                    risk_level TEXT,
-                    analysis_status TEXT,
-                    ai_summary TEXT,
-                    attack_surface_json TEXT,
-                    possible_vulnerabilities_json TEXT,
-                    high_value_params_json TEXT,
-                    recommended_tests_json TEXT,
-                    parameter_count INTEGER,
-                    response_body_size INTEGER,
-                    ai_call_duration_ms INTEGER,
-                    request_body TEXT,
-                    response_body TEXT,
-                    raw_request_b64 TEXT,
-                    raw_response_b64 TEXT,
-                    high_value_param_details_json TEXT,
-                    verification_results_json TEXT,
-                    static_scan_details_json TEXT
-                )
-                """);
+        createTableIfMissing("history_entries", HISTORY_COLUMNS);
+        migrateMissingColumns("history_entries", HISTORY_COLUMNS);
         execute("CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history_entries(timestamp DESC)");
         execute("CREATE INDEX IF NOT EXISTS idx_history_url ON history_entries(url)");
         execute("CREATE INDEX IF NOT EXISTS idx_history_path ON history_entries(path)");
-        execute("""
-                CREATE TABLE IF NOT EXISTS discovery_candidates (
-                    candidate_key TEXT PRIMARY KEY,
-                    host TEXT,
-                    path TEXT,
-                    url TEXT,
-                    asset_type TEXT,
-                    score REAL,
-                    method_hint TEXT,
-                    source_reason TEXT,
-                    supporting_observation_count INTEGER,
-                    supporting_paths_json TEXT,
-                    supporting_parameters_json TEXT,
-                    supporting_methods_json TEXT,
-                    validation_json TEXT,
-                    updated_at INTEGER
-                )
-                """);
+
+        createTableIfMissing("discovery_candidates", DISCOVERY_COLUMNS);
+        migrateMissingColumns("discovery_candidates", DISCOVERY_COLUMNS);
         execute("CREATE INDEX IF NOT EXISTS idx_discovery_candidates_host ON discovery_candidates(host)");
         execute("CREATE INDEX IF NOT EXISTS idx_discovery_candidates_updated ON discovery_candidates(updated_at DESC)");
-        execute("""
-                CREATE TABLE IF NOT EXISTS report_export_tasks (
-                    task_id TEXT PRIMARY KEY,
-                    created_at INTEGER,
-                    updated_at INTEGER,
-                    host TEXT,
-                    item_count INTEGER,
-                    output_path TEXT,
-                    status TEXT,
-                    percent INTEGER,
-                    stage TEXT,
-                    message TEXT,
-                    completed_path TEXT,
-                    error TEXT,
-                    logs_json TEXT
-                )
-                """);
+
+        createTableIfMissing("report_export_tasks", REPORT_TASK_COLUMNS);
+        migrateMissingColumns("report_export_tasks", REPORT_TASK_COLUMNS);
         execute("CREATE INDEX IF NOT EXISTS idx_report_export_tasks_created ON report_export_tasks(created_at DESC)");
         log.info("SQLite history initialized at {}", dbPath);
+    }
+
+    private void createTableIfMissing(String tableName, List<ColumnDefinition> columns) {
+        StringBuilder sql = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
+                .append(tableName)
+                .append(" (");
+        for (int i = 0; i < columns.size(); i++) {
+            ColumnDefinition column = columns.get(i);
+            if (i > 0) {
+                sql.append(", ");
+            }
+            sql.append(column.name()).append(' ').append(column.definition());
+        }
+        sql.append(')');
+        execute(sql.toString());
+    }
+
+    private void migrateMissingColumns(String tableName, List<ColumnDefinition> expectedColumns) {
+        List<String> existingColumns = existingColumns(tableName);
+        for (ColumnDefinition column : expectedColumns) {
+            if (existingColumns.contains(column.name())) {
+                continue;
+            }
+            if (column.definition().toUpperCase().contains("PRIMARY KEY")) {
+                throw new IllegalStateException("SQLite schema mismatch: table " + tableName
+                        + " is missing primary key column " + column.name()
+                        + ". Please export/delete the broken database and restart.");
+            }
+            String migrationDefinition = column.definition()
+                    .replaceAll("(?i)\\s+NOT\\s+NULL", "")
+                    .trim();
+            execute("ALTER TABLE " + tableName + " ADD COLUMN " + column.name() + " " + migrationDefinition);
+            log.info("SQLite history migrated table {}: added column {}", tableName, column.name());
+        }
+    }
+
+    private List<String> existingColumns(String tableName) {
+        String sql = "PRAGMA table_info(" + tableName + ")";
+        try (Connection connection = openConnection();
+             Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery(sql)) {
+            List<String> columns = new ArrayList<>();
+            while (rs.next()) {
+                columns.add(rs.getString("name"));
+            }
+            return columns;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to inspect SQLite table schema: " + tableName, e);
+        }
     }
 
     private void execute(String sql) {
@@ -652,8 +699,16 @@ public class SqliteHistoryService implements IHistoryService {
              Statement statement = connection.createStatement()) {
             statement.execute(sql);
         } catch (SQLException e) {
-            throw new IllegalStateException("Failed to execute history SQL", e);
+            throw new IllegalStateException("Failed to execute history SQL: " + compactSql(sql), e);
         }
+    }
+
+    private String compactSql(String sql) {
+        if (sql == null) {
+            return "";
+        }
+        String compacted = sql.replaceAll("\\s+", " ").trim();
+        return compacted.length() <= 500 ? compacted : compacted.substring(0, 500) + "...";
     }
 
     private Connection openConnection() throws SQLException {
@@ -694,6 +749,9 @@ public class SqliteHistoryService implements IHistoryService {
 
     private String enumName(Enum<?> value) {
         return value != null ? value.name() : null;
+    }
+
+    private record ColumnDefinition(String name, String definition) {
     }
 
     private <E extends Enum<E>> E enumValue(Class<E> enumClass, String value, E fallback) {
