@@ -175,9 +175,8 @@ public class StaticScanPanel extends JPanel {
 
     public void refresh() {
         String preserveId = currentEntry != null ? currentEntry.getRequestId() : null;
-        int selectedTab = detailTabs.getSelectedIndex();
-        int selectedResultTab = resultTabs.getSelectedIndex();
         SwingUtilities.invokeLater(() -> {
+            int selectedTab = detailTabs.getSelectedIndex();
             refreshing = true;
             try {
                 List<HistoryEntry> staticResources = historyService.searchAdvanced(
@@ -190,9 +189,6 @@ public class StaticScanPanel extends JPanel {
                 restoreSelection(staticResources, preserveId);
                 if (selectedTab >= 0 && selectedTab < detailTabs.getTabCount()) {
                     detailTabs.setSelectedIndex(selectedTab);
-                }
-                if (selectedResultTab >= 0 && selectedResultTab < resultTabs.getTabCount()) {
-                    resultTabs.setSelectedIndex(selectedResultTab);
                 }
             } finally {
                 refreshing = false;
