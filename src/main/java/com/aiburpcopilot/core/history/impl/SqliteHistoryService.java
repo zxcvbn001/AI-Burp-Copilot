@@ -418,9 +418,10 @@ public class SqliteHistoryService implements IHistoryService {
                     NULL AS request_body, NULL AS response_body,
                     NULL AS raw_request_b64, NULL AS raw_response_b64,
                     high_value_param_details_json, verification_results_json,
-                    """ + staticScanDetailsColumn + """
+                    %s
                 FROM history_entries
-                """ + suffix;
+                %s
+                """.formatted(staticScanDetailsColumn, suffix);
     }
 
     private void upsert(HistoryEntry entry) {

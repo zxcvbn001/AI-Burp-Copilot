@@ -138,6 +138,7 @@ class HistoryPersistenceExtensionTest {
 
         HistoryEntry loaded = historyService.getById("migrated-1");
         assertEquals(1, loaded.getStaticScanDetails().getCloudSummary().getFindingCount());
+        assertEquals(1, historyService.getAll().size());
     }
 
     private DiscoveryCandidate sampleCandidate() {
