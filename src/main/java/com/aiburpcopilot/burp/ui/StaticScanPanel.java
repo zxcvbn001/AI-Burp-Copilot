@@ -216,6 +216,10 @@ public class StaticScanPanel extends JPanel {
         for (int i = 0; i < entries.size(); i++) {
             HistoryEntry entry = entries.get(i);
             if (entry != null && preserveId.equals(entry.getRequestId())) {
+                HistoryEntry selected = selectedEntry();
+                if (selected != null && preserveId.equals(selected.getRequestId())) {
+                    return;
+                }
                 table.setRowSelectionInterval(i, i);
                 return;
             }
@@ -430,8 +434,11 @@ public class StaticScanPanel extends JPanel {
         }
         int viewRow = sourceTable.convertRowIndexToView(modelRow);
         if (viewRow >= 0) {
+            int selectedRow = sourceTable.getSelectedRow();
+            if (selectedRow >= 0 && sourceTable.convertRowIndexToModel(selectedRow) == modelRow) {
+                return true;
+            }
             sourceTable.setRowSelectionInterval(viewRow, viewRow);
-            sourceTable.scrollRectToVisible(sourceTable.getCellRect(viewRow, 0, true));
             return true;
         }
         return false;
