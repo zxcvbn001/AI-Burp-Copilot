@@ -22,6 +22,7 @@ public class StaticScanResult {
     private List<CloudFinding> endpointFindings;
     private List<CloudFinding> exposureFindings;
     private List<CloudFinding> scriptFindings;
+    private CloudSummary cloudSummary;
 
     public StaticScanResult() {
         this.hasFindings = false;
@@ -59,6 +60,8 @@ public class StaticScanResult {
     public void setExposureFindings(List<CloudFinding> exposureFindings) { this.exposureFindings = exposureFindings; }
     public List<CloudFinding> getScriptFindings() { return scriptFindings; }
     public void setScriptFindings(List<CloudFinding> scriptFindings) { this.scriptFindings = scriptFindings; }
+    public CloudSummary getCloudSummary() { return cloudSummary; }
+    public void setCloudSummary(CloudSummary cloudSummary) { this.cloudSummary = cloudSummary; }
 
     public static class Finding {
         private String ruleName;
@@ -102,6 +105,7 @@ public class StaticScanResult {
         private int apiCount;
         private int secretCount;
         private int riskCount;
+        private int findingCount;
 
         public String getUrl() { return url; }
         public void setUrl(String url) { this.url = url; }
@@ -117,6 +121,8 @@ public class StaticScanResult {
         public void setSecretCount(int secretCount) { this.secretCount = secretCount; }
         public int getRiskCount() { return riskCount; }
         public void setRiskCount(int riskCount) { this.riskCount = riskCount; }
+        public int getFindingCount() { return findingCount; }
+        public void setFindingCount(int findingCount) { this.findingCount = findingCount; }
     }
 
     public static class RecoveredEndpoint {
@@ -319,5 +325,60 @@ public class StaticScanResult {
         public void setSeverity(String severity) { this.severity = severity; }
         public String getEvidence() { return evidence; }
         public void setEvidence(String evidence) { this.evidence = evidence; }
+    }
+
+    public static class CloudSummary {
+        private int apiCount;
+        private int assetCount;
+        private int paramCount;
+        private int authCount;
+        private int secretCount;
+        private int riskCount;
+        private int findingCount;
+        private int endpointCount;
+        private int exposureCount;
+        private int scriptCount;
+        private boolean llmEnabled;
+        private int llmReviewedCount;
+        private int llmConfirmedCount;
+        private int llmRejectedCount;
+        private int llmFindingReviewedCount;
+        private int llmFindingConfirmedCount;
+        private int llmFindingRejectedCount;
+
+        public int getApiCount() { return apiCount; }
+        public void setApiCount(int apiCount) { this.apiCount = apiCount; }
+        public int getAssetCount() { return assetCount; }
+        public void setAssetCount(int assetCount) { this.assetCount = assetCount; }
+        public int getParamCount() { return paramCount; }
+        public void setParamCount(int paramCount) { this.paramCount = paramCount; }
+        public int getAuthCount() { return authCount; }
+        public void setAuthCount(int authCount) { this.authCount = authCount; }
+        public int getSecretCount() { return secretCount; }
+        public void setSecretCount(int secretCount) { this.secretCount = secretCount; }
+        public int getRiskCount() { return riskCount; }
+        public void setRiskCount(int riskCount) { this.riskCount = riskCount; }
+        public int getFindingCount() { return findingCount; }
+        public void setFindingCount(int findingCount) { this.findingCount = findingCount; }
+        public int getEndpointCount() { return endpointCount; }
+        public void setEndpointCount(int endpointCount) { this.endpointCount = endpointCount; }
+        public int getExposureCount() { return exposureCount; }
+        public void setExposureCount(int exposureCount) { this.exposureCount = exposureCount; }
+        public int getScriptCount() { return scriptCount; }
+        public void setScriptCount(int scriptCount) { this.scriptCount = scriptCount; }
+        public boolean isLlmEnabled() { return llmEnabled; }
+        public void setLlmEnabled(boolean llmEnabled) { this.llmEnabled = llmEnabled; }
+        public int getLlmReviewedCount() { return llmReviewedCount; }
+        public void setLlmReviewedCount(int llmReviewedCount) { this.llmReviewedCount = llmReviewedCount; }
+        public int getLlmConfirmedCount() { return llmConfirmedCount; }
+        public void setLlmConfirmedCount(int llmConfirmedCount) { this.llmConfirmedCount = llmConfirmedCount; }
+        public int getLlmRejectedCount() { return llmRejectedCount; }
+        public void setLlmRejectedCount(int llmRejectedCount) { this.llmRejectedCount = llmRejectedCount; }
+        public int getLlmFindingReviewedCount() { return llmFindingReviewedCount; }
+        public void setLlmFindingReviewedCount(int llmFindingReviewedCount) { this.llmFindingReviewedCount = llmFindingReviewedCount; }
+        public int getLlmFindingConfirmedCount() { return llmFindingConfirmedCount; }
+        public void setLlmFindingConfirmedCount(int llmFindingConfirmedCount) { this.llmFindingConfirmedCount = llmFindingConfirmedCount; }
+        public int getLlmFindingRejectedCount() { return llmFindingRejectedCount; }
+        public void setLlmFindingRejectedCount(int llmFindingRejectedCount) { this.llmFindingRejectedCount = llmFindingRejectedCount; }
     }
 }

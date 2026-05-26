@@ -412,6 +412,7 @@ public class StaticResourceScanner implements IStaticScanner {
         script.setApiCount(analysis != null && analysis.getApis() != null ? analysis.getApis().size() : 0);
         script.setSecretCount(analysis != null && analysis.getSecrets() != null ? analysis.getSecrets().size() : 0);
         script.setRiskCount(analysis != null && analysis.getRisk() != null ? analysis.getRisk().size() : 0);
+        script.setFindingCount(totalFindingCount(analysis));
         if (analysis != null && analysis.getAssets() != null && !analysis.getAssets().isEmpty()) {
             script.setReason(reason + " | assets=" + analysis.getAssets().size());
         }
@@ -656,7 +657,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 && analysis.getGroups().getEndpoints().getFindings() != null) {
             return analysis.getGroups().getEndpoints().getFindings();
         }
-        return filterFindingsByGroup(analysis.getFindings(), "api");
+        return filterFindingsByGroup(analysis.getFindings(), "endpoint");
     }
 
     private List<JsAnalysisResponse.AssetResult> scriptAssets(JsAnalysisResponse analysis) {
@@ -697,7 +698,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 && analysis.getGroups().getScripts().getFindings() != null) {
             return analysis.getGroups().getScripts().getFindings();
         }
-        return filterFindingsByGroup(analysis.getFindings(), "asset", "webpack");
+        return filterFindingsByGroup(analysis.getFindings(), "script");
     }
 
     private List<JsAnalysisResponse.SecretResult> exposureSecrets(JsAnalysisResponse analysis) {
@@ -722,38 +723,43 @@ public class StaticResourceScanner implements IStaticScanner {
                 && analysis.getGroups().getExposures().getFindings() != null) {
             return analysis.getGroups().getExposures().getFindings();
         }
-        return filterFindingsByGroup(analysis.getFindings(), "secret", "risk", "string", "identifier", "call");
+        return filterFindingsByGroup(analysis.getFindings(), "exposure");
     }
 
     private List<JsAnalysisResponse.FindingResult> filterFindingsByGroup(List<JsAnalysisResponse.FindingResult> findings,
-                                                                         String... sources) {
+                                                                         String group) {
         if (findings == null || findings.isEmpty()) {
             return List.of();
-        }
-        Set<String> allowedSources = new LinkedHashSet<>();
-        for (String source : sources) {
-            if (source != null) {
-                allowedSources.add(source.toLowerCase(Locale.ROOT));
-            }
         }
         List<JsAnalysisResponse.FindingResult> filtered = new ArrayList<>();
         for (JsAnalysisResponse.FindingResult finding : findings) {
             if (finding == null) {
                 continue;
             }
-            String source = finding.getSource() != null
-                    ? finding.getSource().trim().toLowerCase(Locale.ROOT)
-                    : "";
-            String category = finding.getCategory() != null
-                    ? finding.getCategory().trim().toLowerCase(Locale.ROOT)
-                    : "";
-            if (allowedSources.contains(source)
-                    || ("webpack".equals(source) && allowedSources.contains("webpack"))
-                    || (category.contains("webpack") && allowedSources.contains("webpack"))) {
+            if (belongsToFindingGroup(finding, group)) {
                 filtered.add(finding);
             }
         }
         return filtered;
+    }
+
+    private boolean belongsToFindingGroup(JsAnalysisResponse.FindingResult finding, String group) {
+        String source = normalizeLower(finding != null ? finding.getSource() : null);
+        String category = normalizeLower(finding != null ? finding.getCategory() : null);
+        if ("endpoint".equals(group)) {
+            return "api".equals(source) || "api 信息".equals(category);
+        }
+        if ("script".equals(group)) {
+            return "asset".equals(source) || "webpack模块".equals(category) || category.contains("webpack");
+        }
+        if (!"exposure".equals(group)) {
+            return false;
+        }
+        return !belongsToFindingGroup(finding, "endpoint") && !belongsToFindingGroup(finding, "script");
+    }
+
+    private String normalizeLower(String value) {
+        return value != null ? value.trim().toLowerCase(Locale.ROOT) : "";
     }
 
     private void mergeCloudAnalysis(String sourceScriptUrl,
@@ -763,6 +769,7 @@ public class StaticResourceScanner implements IStaticScanner {
         if (analysis == null) {
             return;
         }
+        mergeCloudSummary(analysis, result);
         mergeCloudApis(sourceScriptUrl, baseUrl, analysis, result);
         mergeCloudAssets(sourceScriptUrl, baseUrl, analysis, result);
         mergeCloudParams(sourceScriptUrl, analysis, result);
@@ -772,6 +779,38 @@ public class StaticResourceScanner implements IStaticScanner {
         mergeGroupedFindings(sourceScriptUrl, analysis, result);
         mergeCloudFindings(sourceScriptUrl, analysis, result);
         result.setHasFindings(hasCloudAnalysis(result));
+    }
+
+    private void mergeCloudSummary(JsAnalysisResponse analysis, StaticScanResult result) {
+        if (analysis == null || result == null || analysis.getSummary() == null) {
+            return;
+        }
+        JsAnalysisResponse.Summary summary = analysis.getSummary();
+        StaticScanResult.CloudSummary cloudSummary = result.getCloudSummary();
+        if (cloudSummary == null) {
+            cloudSummary = new StaticScanResult.CloudSummary();
+            result.setCloudSummary(cloudSummary);
+        }
+        cloudSummary.setApiCount(cloudSummary.getApiCount() + summary.getApiCount());
+        cloudSummary.setAssetCount(cloudSummary.getAssetCount() + summary.getAssetCount());
+        cloudSummary.setParamCount(cloudSummary.getParamCount() + summary.getParamCount());
+        cloudSummary.setAuthCount(cloudSummary.getAuthCount() + summary.getAuthCount());
+        cloudSummary.setSecretCount(cloudSummary.getSecretCount() + summary.getSecretCount());
+        cloudSummary.setRiskCount(cloudSummary.getRiskCount() + summary.getRiskCount());
+        cloudSummary.setFindingCount(cloudSummary.getFindingCount() + summary.getFindingCount());
+        cloudSummary.setEndpointCount(cloudSummary.getEndpointCount() + summary.getEndpointCount());
+        cloudSummary.setExposureCount(cloudSummary.getExposureCount() + summary.getExposureCount());
+        cloudSummary.setScriptCount(cloudSummary.getScriptCount() + summary.getScriptCount());
+        JsAnalysisResponse.LlmSummary llm = summary.getLlm();
+        if (llm != null) {
+            cloudSummary.setLlmEnabled(cloudSummary.isLlmEnabled() || llm.isEnabled());
+            cloudSummary.setLlmReviewedCount(cloudSummary.getLlmReviewedCount() + llm.getReviewedCount());
+            cloudSummary.setLlmConfirmedCount(cloudSummary.getLlmConfirmedCount() + llm.getConfirmedCount());
+            cloudSummary.setLlmRejectedCount(cloudSummary.getLlmRejectedCount() + llm.getRejectedCount());
+            cloudSummary.setLlmFindingReviewedCount(cloudSummary.getLlmFindingReviewedCount() + llm.getFindingReviewedCount());
+            cloudSummary.setLlmFindingConfirmedCount(cloudSummary.getLlmFindingConfirmedCount() + llm.getFindingConfirmedCount());
+            cloudSummary.setLlmFindingRejectedCount(cloudSummary.getLlmFindingRejectedCount() + llm.getFindingRejectedCount());
+        }
     }
 
     private void mergeCloudApis(String sourceScriptUrl,

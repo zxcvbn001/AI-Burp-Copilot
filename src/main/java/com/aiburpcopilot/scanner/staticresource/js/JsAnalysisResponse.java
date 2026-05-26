@@ -24,6 +24,7 @@ public class JsAnalysisResponse {
     private List<SecretResult> secrets = new ArrayList<>();
     private List<RiskResult> risk = new ArrayList<>();
     private List<FindingResult> findings = new ArrayList<>();
+    private Summary summary;
     private Groups groups;
 
     public boolean isSuccess() { return success; }
@@ -54,6 +55,8 @@ public class JsAnalysisResponse {
     public void setRisk(List<RiskResult> risk) { this.risk = risk != null ? risk : new ArrayList<>(); }
     public List<FindingResult> getFindings() { return findings; }
     public void setFindings(List<FindingResult> findings) { this.findings = findings != null ? findings : new ArrayList<>(); }
+    public Summary getSummary() { return summary; }
+    public void setSummary(Summary summary) { this.summary = summary; }
     public Groups getGroups() { return groups; }
     public void setGroups(Groups groups) { this.groups = groups; }
 
@@ -87,6 +90,68 @@ public class JsAnalysisResponse {
         private String message;
         public String getMessage() { return message; }
         public void setMessage(String message) { this.message = message; }
+    }
+
+    public static class Summary {
+        private int apiCount;
+        private int assetCount;
+        private int paramCount;
+        private int authCount;
+        private int secretCount;
+        private int riskCount;
+        private int findingCount;
+        private int endpointCount;
+        private int exposureCount;
+        private int scriptCount;
+        private LlmSummary llm;
+
+        public int getApiCount() { return apiCount; }
+        public void setApiCount(int apiCount) { this.apiCount = apiCount; }
+        public int getAssetCount() { return assetCount; }
+        public void setAssetCount(int assetCount) { this.assetCount = assetCount; }
+        public int getParamCount() { return paramCount; }
+        public void setParamCount(int paramCount) { this.paramCount = paramCount; }
+        public int getAuthCount() { return authCount; }
+        public void setAuthCount(int authCount) { this.authCount = authCount; }
+        public int getSecretCount() { return secretCount; }
+        public void setSecretCount(int secretCount) { this.secretCount = secretCount; }
+        public int getRiskCount() { return riskCount; }
+        public void setRiskCount(int riskCount) { this.riskCount = riskCount; }
+        public int getFindingCount() { return findingCount; }
+        public void setFindingCount(int findingCount) { this.findingCount = findingCount; }
+        public int getEndpointCount() { return endpointCount; }
+        public void setEndpointCount(int endpointCount) { this.endpointCount = endpointCount; }
+        public int getExposureCount() { return exposureCount; }
+        public void setExposureCount(int exposureCount) { this.exposureCount = exposureCount; }
+        public int getScriptCount() { return scriptCount; }
+        public void setScriptCount(int scriptCount) { this.scriptCount = scriptCount; }
+        public LlmSummary getLlm() { return llm; }
+        public void setLlm(LlmSummary llm) { this.llm = llm; }
+    }
+
+    public static class LlmSummary {
+        private boolean enabled;
+        private int reviewedCount;
+        private int confirmedCount;
+        private int rejectedCount;
+        private int findingReviewedCount;
+        private int findingConfirmedCount;
+        private int findingRejectedCount;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public int getReviewedCount() { return reviewedCount; }
+        public void setReviewedCount(int reviewedCount) { this.reviewedCount = reviewedCount; }
+        public int getConfirmedCount() { return confirmedCount; }
+        public void setConfirmedCount(int confirmedCount) { this.confirmedCount = confirmedCount; }
+        public int getRejectedCount() { return rejectedCount; }
+        public void setRejectedCount(int rejectedCount) { this.rejectedCount = rejectedCount; }
+        public int getFindingReviewedCount() { return findingReviewedCount; }
+        public void setFindingReviewedCount(int findingReviewedCount) { this.findingReviewedCount = findingReviewedCount; }
+        public int getFindingConfirmedCount() { return findingConfirmedCount; }
+        public void setFindingConfirmedCount(int findingConfirmedCount) { this.findingConfirmedCount = findingConfirmedCount; }
+        public int getFindingRejectedCount() { return findingRejectedCount; }
+        public void setFindingRejectedCount(int findingRejectedCount) { this.findingRejectedCount = findingRejectedCount; }
     }
 
     public static class Groups {
