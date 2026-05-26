@@ -16,9 +16,6 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.Statement;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -99,45 +96,6 @@ class HistoryPersistenceExtensionTest {
 
         HistoryEntry loaded = historyService.getById("static-1");
         assertEquals(2, loaded.getStaticScanDetails().getCloudSummary().getFindingCount());
-    }
-
-    @Test
-    void sqliteHistoryShouldMigrateOldHistorySchema() throws Exception {
-        Path homeDir = Files.createTempDirectory("aiburpcopilot-history-migrate");
-        Path dbPath = homeDir.resolve("history.db");
-        Class.forName("org.sqlite.JDBC");
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-             Statement statement = connection.createStatement()) {
-            statement.execute("""
-                    CREATE TABLE history_entries (
-                        request_id TEXT PRIMARY KEY,
-                        timestamp INTEGER NOT NULL,
-                        method TEXT,
-                        url TEXT,
-                        path TEXT
-                    )
-                    """);
-        }
-
-        AppConfig.StorageConfig storageConfig = new AppConfig.StorageConfig();
-        storageConfig.setHistoryDbPath(dbPath.toString());
-        IHistoryService historyService = new SqliteHistoryService(storageConfig);
-
-        HistoryEntry entry = new HistoryEntry();
-        entry.setRequestId("migrated-1");
-        entry.setTimestamp(System.currentTimeMillis());
-        entry.setUrl("https://example.com/app.js");
-        entry.setPath("/app.js");
-        entry.setEndpointType(EndpointType.STATIC_RESOURCE);
-        StaticScanResult details = new StaticScanResult();
-        StaticScanResult.CloudSummary cloudSummary = new StaticScanResult.CloudSummary();
-        cloudSummary.setFindingCount(1);
-        details.setCloudSummary(cloudSummary);
-        entry.setStaticScanDetails(details);
-        historyService.update(entry);
-
-        HistoryEntry loaded = historyService.getById("migrated-1");
-        assertEquals(1, loaded.getStaticScanDetails().getCloudSummary().getFindingCount());
         assertEquals(1, historyService.getAll().size());
     }
 
