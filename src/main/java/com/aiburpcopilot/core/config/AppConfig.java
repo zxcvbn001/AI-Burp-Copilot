@@ -223,13 +223,13 @@ public class AppConfig {
         private int taskPollIntervalMs = 1000;
 
         @JsonProperty("taskTimeoutMs")
-        private int taskTimeoutMs = 60000;
+        private int taskTimeoutMs = 180000;
 
         @JsonProperty("connectTimeoutMs")
         private int connectTimeoutMs = 8000;
 
         @JsonProperty("readTimeoutMs")
-        private int readTimeoutMs = 30000;
+        private int readTimeoutMs = 60000;
 
         @JsonProperty("writeTimeoutMs")
         private int writeTimeoutMs = 30000;

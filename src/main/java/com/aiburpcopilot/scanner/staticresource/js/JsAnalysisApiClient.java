@@ -295,7 +295,10 @@ public class JsAnalysisApiClient {
             }
             return errorResponse("Unable to parse JS AST response: HTTP " + response.code());
         } catch (IOException e) {
-            return errorResponse("Calling JS AST API failed: " + e.getMessage());
+            return errorResponse("Calling JS AST API failed: "
+                    + e.getClass().getSimpleName()
+                    + ": " + e.getMessage()
+                    + " | url=" + request.url());
         }
     }
 
