@@ -40,8 +40,6 @@ public class StaticScanPanel extends JPanel {
     private final CloudParamTableModel cloudParamTableModel;
     private final JTable cloudSecretTable;
     private final CloudSecretTableModel cloudSecretTableModel;
-    private final JTable findingCategoryTable;
-    private final FindingCategoryTableModel findingCategoryTableModel;
     private final JTable findingDetailTable;
     private final CloudFindingTableModel findingDetailTableModel;
     private final JTable analyzedScriptTable;
@@ -57,7 +55,6 @@ public class StaticScanPanel extends JPanel {
 
     private HistoryEntry currentEntry;
     private String displayedEntryId;
-    private String displayedFindingCategoryKey;
     private String displayedFindingDetailKey;
     private boolean refreshing;
 
@@ -116,20 +113,8 @@ public class StaticScanPanel extends JPanel {
                 updateGenericDetailSafely("secret", this::buildSelectedSecretDetail, false);
             }
         });
-        findingCategoryTableModel = new FindingCategoryTableModel();
-        findingCategoryTable = createDataTable(findingCategoryTableModel, 160, 80);
-        findingCategoryTable.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting() && !refreshing) {
-                String categoryKey = selectedFindingCategoryKey();
-                if (!Objects.equals(displayedFindingCategoryKey, categoryKey)) {
-                    displayedFindingCategoryKey = categoryKey;
-                    displayedFindingDetailKey = null;
-                }
-                updateFindingCategorySelection(false);
-            }
-        });
         findingDetailTableModel = new CloudFindingTableModel();
-        findingDetailTable = createDataTable(findingDetailTableModel, 110, 110, 260, 80, 75, 85, 220, 520);
+        findingDetailTable = createDataTable(findingDetailTableModel, 110, 280, 85, 75, 95, 240, 560);
         findingDetailTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
                 displayedFindingDetailKey = selectedFindingDetailKey();
@@ -268,9 +253,6 @@ public class StaticScanPanel extends JPanel {
         String selectedAssetKey = selectedAssetKey();
         String selectedParamKey = selectedParamKey();
         String selectedSecretKey = selectedSecretKey();
-        String selectedFindingCategory = sameEntry
-                ? firstNonBlank(selectedFindingCategoryKey(), displayedFindingCategoryKey)
-                : null;
         String selectedFindingDetailKey = sameEntry
                 ? firstNonBlank(selectedFindingDetailKey(), displayedFindingDetailKey)
                 : null;
@@ -294,11 +276,8 @@ public class StaticScanPanel extends JPanel {
             restoreParamSelection(sameEntry ? selectedParamKey : null);
             cloudSecretTableModel.setSecrets(details != null ? details.getCloudSecrets() : List.of());
             restoreSecretSelection(sameEntry ? selectedSecretKey : null);
-            findingCategoryTableModel.setFindings(allCloudFindings(details));
-            restoreFindingCategorySelection(sameEntry ? selectedFindingCategory : null);
-            updateFindingCategorySelection(sameEntry);
+            findingDetailTableModel.setFindings(allCloudFindings(details));
             boolean restoredFindingDetail = restoreFindingDetailSelection(sameEntry ? selectedFindingDetailKey : null);
-            displayedFindingCategoryKey = selectedFindingCategoryKey();
             displayedFindingDetailKey = restoredFindingDetail ? selectedFindingDetailKey() : null;
             if (restoredFindingDetail) {
                 updateGenericDetailSafely("findingDetail",
@@ -323,7 +302,6 @@ public class StaticScanPanel extends JPanel {
     private void clearDetail() {
         currentEntry = null;
         displayedEntryId = null;
-        displayedFindingCategoryKey = null;
         displayedFindingDetailKey = null;
         findingArea.setText("");
         cloudFindingTableModel.setFindings(List.of());
@@ -331,7 +309,6 @@ public class StaticScanPanel extends JPanel {
         cloudAssetTableModel.setAssets(List.of());
         cloudParamTableModel.setParams(List.of());
         cloudSecretTableModel.setSecrets(List.of());
-        findingCategoryTableModel.setFindings(List.of());
         findingDetailTableModel.setFindings(List.of());
         analyzedScriptTableModel.setScripts(List.of());
         jsTaskTableModel.setTasks(List.of());
@@ -484,55 +461,9 @@ public class StaticScanPanel extends JPanel {
     }
 
     private JPanel createFindingGroupPanel() {
-        JSplitPane split = new JSplitPane(
-                JSplitPane.HORIZONTAL_SPLIT,
-                titledScroll("分类", findingCategoryTable),
-                titledScroll("该分类详情", findingDetailTable));
-        split.setResizeWeight(0.24);
-        split.setDividerLocation(260);
         JPanel panel = new JPanel(new BorderLayout());
-        panel.add(split, BorderLayout.CENTER);
+        panel.add(titledScroll("Finding 详情", findingDetailTable), BorderLayout.CENTER);
         return panel;
-    }
-
-    private String selectedFindingCategoryKey() {
-        int row = findingCategoryTable.getSelectedRow();
-        if (row < 0) {
-            return null;
-        }
-        return findingCategoryTableModel.getCategoryAt(findingCategoryTable.convertRowIndexToModel(row));
-    }
-
-    private void restoreFindingCategorySelection(String selectedCategory) {
-        if (findingCategoryTableModel.getRowCount() == 0) {
-            findingCategoryTable.clearSelection();
-            return;
-        }
-        int row = selectedCategory != null ? findingCategoryTableModel.indexOfCategory(selectedCategory) : -1;
-        if (row < 0) {
-            row = 0;
-        }
-        findingCategoryTable.setRowSelectionInterval(row, row);
-    }
-
-    private void updateFindingCategorySelection(boolean preserveView) {
-        updateGenericDetailSafely("findingCategory", () -> {
-            int row = findingCategoryTable.getSelectedRow();
-            if (row < 0 && findingCategoryTableModel.getRowCount() > 0) {
-                row = 0;
-                findingCategoryTable.setRowSelectionInterval(0, 0);
-            }
-            if (row < 0) {
-                findingDetailTableModel.setFindings(List.of());
-                return "暂无 Finding 分类。";
-            }
-            int modelRow = findingCategoryTable.convertRowIndexToModel(row);
-            List<StaticScanResult.CloudFinding> findings = findingCategoryTableModel.getFindingsAt(modelRow);
-            findingDetailTableModel.setFindings(findings);
-            return "分类: " + safe(findingCategoryTableModel.getCategoryAt(modelRow))
-                    + "\n数量: " + findings.size()
-                    + "\n\n请选择右侧表格中的一条记录查看证据。";
-        }, preserveView);
     }
 
     private JPanel createParamAuthPanel() {
@@ -668,7 +599,6 @@ public class StaticScanPanel extends JPanel {
                 continue;
             }
             StaticScanResult.CloudFinding finding = new StaticScanResult.CloudFinding();
-            finding.setCategory("敏感凭据");
             finding.setType(secret.getType());
             finding.setValue(secret.getValue());
             finding.setSeverity(secret.getSeverity());
@@ -690,7 +620,6 @@ public class StaticScanPanel extends JPanel {
                 continue;
             }
             StaticScanResult.CloudFinding finding = new StaticScanResult.CloudFinding();
-            finding.setCategory("风险提示");
             finding.setType(risk.getType());
             finding.setValue(risk.getType());
             finding.setSeverity(risk.getSeverity());
@@ -711,7 +640,6 @@ public class StaticScanPanel extends JPanel {
                 continue;
             }
             StaticScanResult.CloudFinding finding = new StaticScanResult.CloudFinding();
-            finding.setCategory("webpack模块");
             finding.setType(!isBlank(asset.getType()) ? asset.getType() : "script");
             finding.setValue(!isBlank(asset.getResolvedUrl()) ? asset.getResolvedUrl() : asset.getUrl());
             finding.setSeverity("INFO");
@@ -732,8 +660,7 @@ public class StaticScanPanel extends JPanel {
     }
 
     private String findingKey(StaticScanResult.CloudFinding finding) {
-        return safe(finding.getCategory()) + "\u0000"
-                + safe(finding.getType()) + "\u0000"
+        return safe(finding.getType()) + "\u0000"
                 + safe(finding.getValue()) + "\u0000"
                 + safe(finding.getSource()) + "\u0000"
                 + safe(finding.getSourceScriptUrl()) + "\u0000"
@@ -984,7 +911,6 @@ public class StaticScanPanel extends JPanel {
 
     private static String buildFindingDetail(StaticScanResult.CloudFinding finding) {
         StringBuilder text = new StringBuilder("Finding\n");
-        appendLine(text, "分类", finding.getCategory());
         appendLine(text, "类型", finding.getType());
         appendLine(text, "值", finding.getValue());
         appendLine(text, "级别", finding.getSeverity());
@@ -1199,7 +1125,7 @@ public class StaticScanPanel extends JPanel {
     }
 
     private static class CloudFindingTableModel extends AbstractTableModel {
-        private final String[] columns = {"分类", "类型", "值", "级别", "置信度", "来源", "来源脚本", "证据"};
+        private final String[] columns = {"类型", "值", "级别", "置信度", "来源", "来源脚本", "证据"};
         private List<StaticScanResult.CloudFinding> findings = List.of();
 
         void setFindings(List<StaticScanResult.CloudFinding> findings) {
@@ -1246,14 +1172,13 @@ public class StaticScanPanel extends JPanel {
                 return "";
             }
             return switch (columnIndex) {
-                case 0 -> finding.getCategory();
-                case 1 -> finding.getType();
-                case 2 -> finding.getValue();
-                case 3 -> finding.getSeverity();
-                case 4 -> formatConfidence(finding.getConfidence());
-                case 5 -> finding.getSource();
-                case 6 -> finding.getSourceScriptUrl();
-                case 7 -> oneLine(finding.getEvidence());
+                case 0 -> finding.getType();
+                case 1 -> finding.getValue();
+                case 2 -> finding.getSeverity();
+                case 3 -> formatConfidence(finding.getConfidence());
+                case 4 -> finding.getSource();
+                case 5 -> finding.getSourceScriptUrl();
+                case 6 -> oneLine(finding.getEvidence());
                 default -> "";
             };
         }
@@ -1262,8 +1187,7 @@ public class StaticScanPanel extends JPanel {
             if (finding == null) {
                 return null;
             }
-            return safe(finding.getCategory()) + "|" + safe(finding.getType()) + "|"
-                    + safe(finding.getValue()) + "|" + safe(finding.getSource()) + "|"
+            return safe(finding.getType()) + "|" + safe(finding.getValue()) + "|" + safe(finding.getSource()) + "|"
                     + safe(finding.getSourceScriptUrl());
         }
 
@@ -1280,64 +1204,6 @@ public class StaticScanPanel extends JPanel {
                 }
             }
             return true;
-        }
-    }
-
-    private static class FindingCategoryTableModel extends AbstractTableModel {
-        private final String[] columns = {"分类", "数量"};
-        private final Map<String, List<StaticScanResult.CloudFinding>> grouped = new LinkedHashMap<>();
-        private List<String> categories = List.of();
-
-        void setFindings(List<StaticScanResult.CloudFinding> findings) {
-            grouped.clear();
-            for (StaticScanResult.CloudFinding finding : nonNullList(findings)) {
-                String category = normalizeCategory(finding.getCategory());
-                grouped.computeIfAbsent(category, ignored -> new ArrayList<>()).add(finding);
-            }
-            categories = List.copyOf(grouped.keySet());
-            fireTableDataChanged();
-        }
-
-        String getCategoryAt(int row) {
-            return row >= 0 && row < categories.size() ? categories.get(row) : null;
-        }
-
-        List<StaticScanResult.CloudFinding> getFindingsAt(int row) {
-            String category = getCategoryAt(row);
-            return category != null ? grouped.getOrDefault(category, List.of()) : List.of();
-        }
-
-        int indexOfCategory(String category) {
-            if (category == null) {
-                return -1;
-            }
-            for (int i = 0; i < categories.size(); i++) {
-                if (category.equals(categories.get(i))) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        @Override public int getRowCount() { return categories.size(); }
-        @Override public int getColumnCount() { return columns.length; }
-        @Override public String getColumnName(int column) { return columns[column]; }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            String category = getCategoryAt(rowIndex);
-            if (category == null) {
-                return "";
-            }
-            return switch (columnIndex) {
-                case 0 -> category;
-                case 1 -> grouped.getOrDefault(category, List.of()).size();
-                default -> "";
-            };
-        }
-
-        private static String normalizeCategory(String category) {
-            return category != null && !category.isBlank() ? category.trim() : "未分类";
         }
     }
 

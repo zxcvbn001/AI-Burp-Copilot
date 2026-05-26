@@ -657,7 +657,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 && analysis.getGroups().getEndpoints().getFindings() != null) {
             return analysis.getGroups().getEndpoints().getFindings();
         }
-        return filterFindingsByGroup(analysis.getFindings(), "endpoint");
+        return List.of();
     }
 
     private List<JsAnalysisResponse.AssetResult> scriptAssets(JsAnalysisResponse analysis) {
@@ -745,17 +745,22 @@ public class StaticResourceScanner implements IStaticScanner {
 
     private boolean belongsToFindingGroup(JsAnalysisResponse.FindingResult finding, String group) {
         String source = normalizeLower(finding != null ? finding.getSource() : null);
-        String category = normalizeLower(finding != null ? finding.getCategory() : null);
+        String type = normalizeLower(finding != null ? finding.getType() : null);
+        String value = normalizeLower(finding != null ? finding.getValue() : null);
+        String combined = source + " " + type + " " + value;
         if ("endpoint".equals(group)) {
-            return "api".equals(source) || "api 信息".equals(category);
+            return false;
         }
         if ("script".equals(group)) {
-            return "asset".equals(source) || "webpack模块".equals(category) || category.contains("webpack");
+            return "asset".equals(source)
+                    || combined.contains("webpack")
+                    || combined.contains("chunk")
+                    || combined.contains(".js");
         }
         if (!"exposure".equals(group)) {
             return false;
         }
-        return !belongsToFindingGroup(finding, "endpoint") && !belongsToFindingGroup(finding, "script");
+        return !"api".equals(source) && !belongsToFindingGroup(finding, "script");
     }
 
     private String normalizeLower(String value) {
@@ -969,7 +974,6 @@ public class StaticResourceScanner implements IStaticScanner {
                 }
                 StaticScanResult.CloudFinding cloudFinding = new StaticScanResult.CloudFinding();
                 cloudFinding.setSourceScriptUrl(sourceScriptUrl);
-                cloudFinding.setCategory(finding.getCategory());
                 cloudFinding.setType(finding.getType());
                 cloudFinding.setValue(finding.getValue());
                 cloudFinding.setSeverity(normalizeSeverity(finding.getSeverity()));
@@ -1032,7 +1036,6 @@ public class StaticResourceScanner implements IStaticScanner {
         }
         StaticScanResult.CloudFinding cloudFinding = new StaticScanResult.CloudFinding();
         cloudFinding.setSourceScriptUrl(sourceScriptUrl);
-        cloudFinding.setCategory(finding.getCategory());
         cloudFinding.setType(finding.getType());
         cloudFinding.setValue(finding.getValue());
         cloudFinding.setSeverity(normalizeSeverity(finding.getSeverity()));
@@ -1046,7 +1049,7 @@ public class StaticResourceScanner implements IStaticScanner {
         if (finding == null) {
             return false;
         }
-        String combined = (safe(finding.getCategory()) + " " + safe(finding.getType()) + " " + safe(finding.getSource()))
+        String combined = (safe(finding.getType()) + " " + safe(finding.getSource()) + " " + safe(finding.getValue()))
                 .toLowerCase(Locale.ROOT);
         return combined.contains("secret")
                 || combined.contains("token")

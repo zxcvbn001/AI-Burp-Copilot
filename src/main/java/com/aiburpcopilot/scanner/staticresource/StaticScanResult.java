@@ -182,7 +182,6 @@ public class StaticScanResult {
 
     public static class CloudFinding {
         private String sourceScriptUrl;
-        private String category;
         private String type;
         private String value;
         private String severity;
@@ -192,8 +191,6 @@ public class StaticScanResult {
 
         public String getSourceScriptUrl() { return sourceScriptUrl; }
         public void setSourceScriptUrl(String sourceScriptUrl) { this.sourceScriptUrl = sourceScriptUrl; }
-        public String getCategory() { return category; }
-        public void setCategory(String category) { this.category = category; }
         public String getType() { return type; }
         public void setType(String type) { this.type = type; }
         public String getValue() { return value; }
