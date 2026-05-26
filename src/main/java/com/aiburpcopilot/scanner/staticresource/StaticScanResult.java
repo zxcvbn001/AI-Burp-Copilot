@@ -210,6 +210,7 @@ public class StaticScanResult {
         private String rawUrl;
         private String resolvedUrl;
         private String baseUrl;
+        private String kind;
         private String method;
         private List<String> params;
         private List<String> headers;
@@ -217,6 +218,7 @@ public class StaticScanResult {
         private String source;
         private String confidence;
         private List<String> notes;
+        private String evidence;
 
         public String getSourceScriptUrl() { return sourceScriptUrl; }
         public void setSourceScriptUrl(String sourceScriptUrl) { this.sourceScriptUrl = sourceScriptUrl; }
@@ -226,6 +228,8 @@ public class StaticScanResult {
         public void setResolvedUrl(String resolvedUrl) { this.resolvedUrl = resolvedUrl; }
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+        public String getKind() { return kind; }
+        public void setKind(String kind) { this.kind = kind; }
         public String getMethod() { return method; }
         public void setMethod(String method) { this.method = method; }
         public List<String> getParams() { return params; }
@@ -240,6 +244,8 @@ public class StaticScanResult {
         public void setConfidence(String confidence) { this.confidence = confidence; }
         public List<String> getNotes() { return notes; }
         public void setNotes(List<String> notes) { this.notes = notes; }
+        public String getEvidence() { return evidence; }
+        public void setEvidence(String evidence) { this.evidence = evidence; }
     }
 
     public static class CloudAsset {
@@ -249,6 +255,8 @@ public class StaticScanResult {
         private String type;
         private String chunkName;
         private String source;
+        private Double confidence;
+        private String evidence;
 
         public String getSourceScriptUrl() { return sourceScriptUrl; }
         public void setSourceScriptUrl(String sourceScriptUrl) { this.sourceScriptUrl = sourceScriptUrl; }
@@ -262,6 +270,10 @@ public class StaticScanResult {
         public void setChunkName(String chunkName) { this.chunkName = chunkName; }
         public String getSource() { return source; }
         public void setSource(String source) { this.source = source; }
+        public Double getConfidence() { return confidence; }
+        public void setConfidence(Double confidence) { this.confidence = confidence; }
+        public String getEvidence() { return evidence; }
+        public void setEvidence(String evidence) { this.evidence = evidence; }
     }
 
     public static class CloudParam {
@@ -285,6 +297,7 @@ public class StaticScanResult {
 
     public static class CloudSecret {
         private String sourceScriptUrl;
+        private String category;
         private String type;
         private String value;
         private String severity;
@@ -294,6 +307,8 @@ public class StaticScanResult {
 
         public String getSourceScriptUrl() { return sourceScriptUrl; }
         public void setSourceScriptUrl(String sourceScriptUrl) { this.sourceScriptUrl = sourceScriptUrl; }
+        public String getCategory() { return category; }
+        public void setCategory(String category) { this.category = category; }
         public String getType() { return type; }
         public void setType(String type) { this.type = type; }
         public String getValue() { return value; }

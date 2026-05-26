@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.URI;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -82,15 +81,13 @@ public class JsAnalysisApiClient {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("url", url);
         payload.put("content", content);
-        payload.put("base_url", deriveBaseUrl(url, baseUrl));
         boolean fastMode = "fast".equals(mode);
         payload.put("fast_mode", fastMode);
         payload.put("mode", mode);
         payload.put("response_mode", normalizeResponseMode(config.getResponseMode()));
         payload.put("async", config.isSubmitAsync());
-        log.info("JS AST request payload summary: url={}, base_url={}, mode={}, response_mode={}, fast_mode={}, async={}, contentLength={}",
+        log.info("JS AST request payload summary: url={}, mode={}, response_mode={}, fast_mode={}, async={}, contentLength={}",
                 url,
-                payload.get("base_url"),
                 mode,
                 payload.get("response_mode"),
                 fastMode,
@@ -327,43 +324,6 @@ public class JsAnalysisApiClient {
         String normalizedBase = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
         String normalizedPath = path.startsWith("/") ? path : "/" + path;
         return normalizedBase + normalizedPath;
-    }
-
-    private String deriveBaseUrl(String url, String preferredBaseUrl) {
-        String normalizedPreferred = normalizeBaseUrl(preferredBaseUrl);
-        if (normalizedPreferred != null) {
-            return normalizedPreferred;
-        }
-        return normalizeBaseUrl(url);
-    }
-
-    private String normalizeBaseUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(url.trim());
-            if (uri.getScheme() == null || uri.getHost() == null) {
-                return null;
-            }
-            StringBuilder builder = new StringBuilder()
-                    .append(uri.getScheme())
-                    .append("://")
-                    .append(uri.getHost());
-            if (uri.getPort() > 0) {
-                builder.append(':').append(uri.getPort());
-            }
-            String path = uri.getPath();
-            if (path != null && !path.isBlank() && !"/".equals(path)) {
-                int lastSlash = path.lastIndexOf('/');
-                if (lastSlash > 0) {
-                    builder.append(path, 0, lastSlash);
-                }
-            }
-            return builder.toString();
-        } catch (Exception ignored) {
-            return null;
-        }
     }
 
     public record TaskProgress(

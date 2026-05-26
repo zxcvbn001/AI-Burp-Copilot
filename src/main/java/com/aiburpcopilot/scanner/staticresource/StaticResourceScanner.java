@@ -134,7 +134,8 @@ public class StaticResourceScanner implements IStaticScanner {
             result.setHasFindings(false);
 
             if (looksLikeJavaScript(context)) {
-                enrichWithJsAnalysis(context, content, result, 0, new LinkedHashSet<>());
+                String scriptUrl = normalizeAbsoluteUrl(context.getUrl(), context.getUrl());
+                enrichWithJsAnalysis(context, scriptUrl, content, result, 0, new LinkedHashSet<>());
             }
 
             context.setStaticScanResult(buildSummary(context, result));
@@ -168,27 +169,31 @@ public class StaticResourceScanner implements IStaticScanner {
     }
 
     private void enrichWithJsAnalysis(HTTPContext context,
+                                      String currentScriptUrl,
                                       String content,
                                       StaticScanResult result,
                                       int depth,
                                       Set<String> visitedScripts) {
         AppConfig.JsAnalysisConfig jsConfig = configService.getConfig().getJsAnalysis();
         String jsMode = normalizeJsMode(jsConfig);
+        String scriptUrl = normalizeAbsoluteUrl(context.getUrl(), firstNonBlank(currentScriptUrl, context.getUrl()));
+        if (scriptUrl == null || scriptUrl.isBlank()) {
+            return;
+        }
         if (!jsConfig.isEnabled()) {
-            appendScriptResult(result, buildScriptSummary(context.getUrl(), false, -1, "JS AST 分析已关闭", null));
+            appendScriptResult(result, buildScriptSummary(scriptUrl, false, -1, "JS AST 分析已关闭", null));
             publishStaticProgress(context, result, true);
             return;
         }
 
         if (!jsAnalysisClient.isHealthy()) {
-            appendScriptResult(result, buildScriptSummary(context.getUrl(), false, -1,
+            appendScriptResult(result, buildScriptSummary(scriptUrl, false, -1,
                     "JS AST 服务不可用: " + jsAnalysisClient.getLastHealthMessage(), null));
             publishStaticProgress(context, result, true);
             return;
         }
 
-        String scriptUrl = normalizeAbsoluteUrl(context.getUrl(), context.getUrl());
-        if (scriptUrl == null || !visitedScripts.add(scriptUrl)) {
+        if (!visitedScripts.add(scriptUrl)) {
             return;
         }
 
@@ -222,7 +227,7 @@ public class StaticResourceScanner implements IStaticScanner {
             return;
         }
 
-        List<String> referencedScripts = collectReferencedScripts(content, context.getUrl(), analysis);
+        List<String> referencedScripts = collectReferencedScripts(content, scriptUrl, analysis);
         int limit = Math.min(referencedScripts.size(), jsConfig.getMaxReferencedScripts());
         boolean autoFetchReferencedScripts = jsConfig.isAutoFetchReferencedScripts();
         for (int index = 0; index < limit; index++) {
@@ -243,25 +248,8 @@ public class StaticResourceScanner implements IStaticScanner {
             if (!validation.exists || visitedScripts.contains(childUrl)) {
                 continue;
             }
-            probeSourceMap(childUrl, result);
-            publishStaticProgress(context, result);
-            JsAnalysisResponse childAnalysis = analyzeScriptWithLimit(childUrl,
-                    new String(validation.responseBody, StandardCharsets.UTF_8),
-                    context.getUrl(),
-                    progress -> recordJsAstProgress(context, result, progress));
-            if (childAnalysis == null || !childAnalysis.isSuccess()) {
-                appendScriptResult(result, buildScriptSummary(childUrl, true, validation.statusCode,
-                        "引用 JS AST 分析失败: " + (childAnalysis != null ? childAnalysis.errorMessage() : "empty response"),
-                        childAnalysis));
-                publishStaticProgress(context, result, true);
-                continue;
-            }
-            appendScriptResult(result, buildScriptSummary(childUrl, true, validation.statusCode, "引用 JS AST 分析完成", childAnalysis));
-            mergeCloudAnalysis(childUrl, context.getUrl(), childAnalysis, result);
-            recordJsAstFinished(context, result, childUrl, childAnalysis, "completed", "引用 JS AST 分析完成");
-            handleRecoveredEndpoints(context, childUrl, childAnalysis, result);
-            publishStaticProgress(context, result, true);
             enrichWithJsAnalysis(context,
+                    childUrl,
                     new String(validation.responseBody, StandardCharsets.UTF_8),
                     result,
                     depth + 1,
@@ -380,6 +368,12 @@ public class StaticResourceScanner implements IStaticScanner {
                 return normalizedResolved;
             }
         }
+        if (api.getBaseUrl() != null && !api.getBaseUrl().isBlank()) {
+            String normalizedFromApiBase = normalizeAbsoluteUrl(api.getBaseUrl(), api.getUrl());
+            if (normalizedFromApiBase != null) {
+                return normalizedFromApiBase;
+            }
+        }
         return normalizeAbsoluteUrl(baseUri != null ? baseUri.toString() : null, api.getUrl());
     }
 
@@ -410,11 +404,10 @@ public class StaticResourceScanner implements IStaticScanner {
         script.setStatusCode(statusCode);
         script.setReason(reason);
         script.setApiCount(apiCount(analysis));
-        script.setSecretCount(secretCount(analysis));
-        script.setRiskCount(riskCount(analysis));
-        script.setFindingCount(totalFindingCount(analysis));
-        if (analysis != null && analysis.getAssets() != null && !analysis.getAssets().isEmpty()) {
-            script.setReason(reason + " | assets=" + analysis.getAssets().size());
+        script.setSecretCount(leakCount(analysis));
+        script.setRiskCount(jsFileCount(analysis));
+        if (analysis != null && !scriptAssets(analysis).isEmpty()) {
+            script.setReason(reason + " | jsFiles=" + scriptAssets(analysis).size());
         }
         return script;
     }
@@ -474,10 +467,9 @@ public class StaticResourceScanner implements IStaticScanner {
         finished.setTaskId(analysis.getTaskId());
         finished.setPhase("COMPLETED");
         finished.setStatus(status);
-        finished.setMessage(prefix + " | findings=" + totalFindingCount(analysis)
+        finished.setMessage(prefix + " | leaks=" + leakCount(analysis)
                 + " | endpoints=" + endpointApis(analysis).size()
-                + " | secrets=" + exposureSecrets(analysis).size()
-                + " | scripts=" + scriptAssets(analysis).size());
+                + " | jsFiles=" + scriptAssets(analysis).size());
         result.getJsAstTasks().add(finished);
         publishStaticProgress(context, result, true);
     }
@@ -639,40 +631,14 @@ public class StaticResourceScanner implements IStaticScanner {
         if (analysis == null) {
             return List.of();
         }
-        if (analysis.getGroups() != null
-                && analysis.getGroups().getEndpoints() != null
-                && analysis.getGroups().getEndpoints().getApis() != null
-                && !analysis.getGroups().getEndpoints().getApis().isEmpty()) {
-            return analysis.getGroups().getEndpoints().getApis();
-        }
-        return analysis.getApis() != null ? analysis.getApis() : List.of();
-    }
-
-    private List<JsAnalysisResponse.FindingResult> endpointFindings(JsAnalysisResponse analysis) {
-        if (analysis == null) {
-            return List.of();
-        }
-        if (analysis.getGroups() != null
-                && analysis.getGroups().getEndpoints() != null
-                && analysis.getGroups().getEndpoints().getFindings() != null) {
-            return analysis.getGroups().getEndpoints().getFindings();
-        }
-        return List.of();
+        return analysis.getEndpoints() != null ? analysis.getEndpoints() : List.of();
     }
 
     private List<JsAnalysisResponse.AssetResult> scriptAssets(JsAnalysisResponse analysis) {
         if (analysis == null) {
             return List.of();
         }
-        List<JsAnalysisResponse.AssetResult> assets;
-        if (analysis.getGroups() != null
-                && analysis.getGroups().getScripts() != null
-                && analysis.getGroups().getScripts().getAssets() != null
-                && !analysis.getGroups().getScripts().getAssets().isEmpty()) {
-            assets = analysis.getGroups().getScripts().getAssets();
-        } else {
-            assets = analysis.getAssets();
-        }
+        List<JsAnalysisResponse.AssetResult> assets = analysis.getJsFiles();
         if (assets == null || assets.isEmpty()) {
             return List.of();
         }
@@ -689,82 +655,11 @@ public class StaticResourceScanner implements IStaticScanner {
         return scripts;
     }
 
-    private List<JsAnalysisResponse.FindingResult> scriptFindings(JsAnalysisResponse analysis) {
+    private List<JsAnalysisResponse.LeakResult> exposureSecrets(JsAnalysisResponse analysis) {
         if (analysis == null) {
             return List.of();
         }
-        if (analysis.getGroups() != null
-                && analysis.getGroups().getScripts() != null
-                && analysis.getGroups().getScripts().getFindings() != null) {
-            return analysis.getGroups().getScripts().getFindings();
-        }
-        return filterFindingsByGroup(analysis.getFindings(), "script");
-    }
-
-    private List<JsAnalysisResponse.SecretResult> exposureSecrets(JsAnalysisResponse analysis) {
-        if (analysis == null) {
-            return List.of();
-        }
-        if (analysis.getGroups() != null
-                && analysis.getGroups().getExposures() != null
-                && analysis.getGroups().getExposures().getSecrets() != null
-                && !analysis.getGroups().getExposures().getSecrets().isEmpty()) {
-            return analysis.getGroups().getExposures().getSecrets();
-        }
-        return analysis.getSecrets() != null ? analysis.getSecrets() : List.of();
-    }
-
-    private List<JsAnalysisResponse.FindingResult> exposureFindings(JsAnalysisResponse analysis) {
-        if (analysis == null) {
-            return List.of();
-        }
-        if (analysis.getGroups() != null
-                && analysis.getGroups().getExposures() != null
-                && analysis.getGroups().getExposures().getFindings() != null) {
-            return analysis.getGroups().getExposures().getFindings();
-        }
-        return filterFindingsByGroup(analysis.getFindings(), "exposure");
-    }
-
-    private List<JsAnalysisResponse.FindingResult> filterFindingsByGroup(List<JsAnalysisResponse.FindingResult> findings,
-                                                                         String group) {
-        if (findings == null || findings.isEmpty()) {
-            return List.of();
-        }
-        List<JsAnalysisResponse.FindingResult> filtered = new ArrayList<>();
-        for (JsAnalysisResponse.FindingResult finding : findings) {
-            if (finding == null) {
-                continue;
-            }
-            if (belongsToFindingGroup(finding, group)) {
-                filtered.add(finding);
-            }
-        }
-        return filtered;
-    }
-
-    private boolean belongsToFindingGroup(JsAnalysisResponse.FindingResult finding, String group) {
-        String source = normalizeLower(finding != null ? finding.getSource() : null);
-        String type = normalizeLower(finding != null ? finding.getType() : null);
-        String value = normalizeLower(finding != null ? finding.getValue() : null);
-        String combined = source + " " + type + " " + value;
-        if ("endpoint".equals(group)) {
-            return false;
-        }
-        if ("script".equals(group)) {
-            return "asset".equals(source)
-                    || combined.contains("webpack")
-                    || combined.contains("chunk")
-                    || combined.contains(".js");
-        }
-        if (!"exposure".equals(group)) {
-            return false;
-        }
-        return !"api".equals(source) && !belongsToFindingGroup(finding, "script");
-    }
-
-    private String normalizeLower(String value) {
-        return value != null ? value.trim().toLowerCase(Locale.ROOT) : "";
+        return analysis.getLeaks() != null ? analysis.getLeaks() : List.of();
     }
 
     private void mergeCloudAnalysis(String sourceScriptUrl,
@@ -777,12 +672,7 @@ public class StaticResourceScanner implements IStaticScanner {
         mergeCloudSummary(analysis, result);
         mergeCloudApis(sourceScriptUrl, baseUrl, analysis, result);
         mergeCloudAssets(sourceScriptUrl, baseUrl, analysis, result);
-        mergeCloudParams(sourceScriptUrl, analysis, result);
-        mergeCloudAuthSignals(analysis, result);
         mergeCloudSecrets(sourceScriptUrl, analysis, result);
-        mergeCloudRisks(sourceScriptUrl, analysis, result);
-        mergeGroupedFindings(sourceScriptUrl, analysis, result);
-        mergeCloudFindings(sourceScriptUrl, analysis, result);
         result.setHasFindings(hasCloudAnalysis(result));
     }
 
@@ -796,26 +686,16 @@ public class StaticResourceScanner implements IStaticScanner {
             cloudSummary = new StaticScanResult.CloudSummary();
             result.setCloudSummary(cloudSummary);
         }
-        cloudSummary.setApiCount(cloudSummary.getApiCount() + summary.getApiCount());
-        cloudSummary.setAssetCount(cloudSummary.getAssetCount() + summary.getAssetCount());
-        cloudSummary.setParamCount(cloudSummary.getParamCount() + summary.getParamCount());
-        cloudSummary.setAuthCount(cloudSummary.getAuthCount() + summary.getAuthCount());
-        cloudSummary.setSecretCount(cloudSummary.getSecretCount() + summary.getSecretCount());
-        cloudSummary.setRiskCount(cloudSummary.getRiskCount() + summary.getRiskCount());
-        cloudSummary.setFindingCount(cloudSummary.getFindingCount() + summary.getFindingCount());
-        cloudSummary.setEndpointCount(cloudSummary.getEndpointCount() + summary.getEndpointCount());
-        cloudSummary.setExposureCount(cloudSummary.getExposureCount() + summary.getExposureCount());
-        cloudSummary.setScriptCount(cloudSummary.getScriptCount() + summary.getScriptCount());
-        JsAnalysisResponse.LlmSummary llm = summary.getLlm();
-        if (llm != null) {
-            cloudSummary.setLlmEnabled(cloudSummary.isLlmEnabled() || llm.isEnabled());
-            cloudSummary.setLlmReviewedCount(cloudSummary.getLlmReviewedCount() + llm.getReviewedCount());
-            cloudSummary.setLlmConfirmedCount(cloudSummary.getLlmConfirmedCount() + llm.getConfirmedCount());
-            cloudSummary.setLlmRejectedCount(cloudSummary.getLlmRejectedCount() + llm.getRejectedCount());
-            cloudSummary.setLlmFindingReviewedCount(cloudSummary.getLlmFindingReviewedCount() + llm.getFindingReviewedCount());
-            cloudSummary.setLlmFindingConfirmedCount(cloudSummary.getLlmFindingConfirmedCount() + llm.getFindingConfirmedCount());
-            cloudSummary.setLlmFindingRejectedCount(cloudSummary.getLlmFindingRejectedCount() + llm.getFindingRejectedCount());
-        }
+        int endpointCount = summary.getEndpointCount();
+        int leakCount = summary.getLeakCount();
+        int jsFileCount = summary.getJsFileCount();
+        cloudSummary.setApiCount(cloudSummary.getApiCount() + endpointCount);
+        cloudSummary.setAssetCount(cloudSummary.getAssetCount() + jsFileCount);
+        cloudSummary.setSecretCount(cloudSummary.getSecretCount() + leakCount);
+        cloudSummary.setFindingCount(cloudSummary.getFindingCount() + leakCount);
+        cloudSummary.setEndpointCount(cloudSummary.getEndpointCount() + endpointCount);
+        cloudSummary.setExposureCount(cloudSummary.getExposureCount() + leakCount);
+        cloudSummary.setScriptCount(cloudSummary.getScriptCount() + jsFileCount);
     }
 
     private void mergeCloudApis(String sourceScriptUrl,
@@ -829,7 +709,7 @@ public class StaticResourceScanner implements IStaticScanner {
         if (result.getCloudApis() == null) {
             result.setCloudApis(new ArrayList<>());
         }
-        URI baseUri = safeUri(baseUrl);
+        URI baseUri = safeUri(firstNonBlank(sourceScriptUrl, baseUrl));
         for (JsAnalysisResponse.ApiResult api : apis) {
             if (api == null) {
                 continue;
@@ -839,6 +719,7 @@ public class StaticResourceScanner implements IStaticScanner {
             cloudApi.setRawUrl(api.getUrl());
             cloudApi.setResolvedUrl(resolveApiAbsoluteUrl(baseUri, api));
             cloudApi.setBaseUrl(api.getBaseUrl());
+            cloudApi.setKind(api.getKind());
             cloudApi.setMethod(normalizeHttpMethod(api.getMethod()));
             cloudApi.setParams(copyList(api.getParams()));
             cloudApi.setHeaders(copyList(api.getHeaders()));
@@ -846,6 +727,7 @@ public class StaticResourceScanner implements IStaticScanner {
             cloudApi.setSource(api.getSource());
             cloudApi.setConfidence(api.getConfidence());
             cloudApi.setNotes(copyList(api.getNotes()));
+            cloudApi.setEvidence(api.getEvidence());
             result.getCloudApis().add(cloudApi);
         }
     }
@@ -861,6 +743,7 @@ public class StaticResourceScanner implements IStaticScanner {
         if (result.getCloudAssets() == null) {
             result.setCloudAssets(new ArrayList<>());
         }
+        String assetBaseUrl = firstNonBlank(sourceScriptUrl, baseUrl);
         for (JsAnalysisResponse.AssetResult asset : assets) {
             if (asset == null) {
                 continue;
@@ -868,67 +751,33 @@ public class StaticResourceScanner implements IStaticScanner {
             StaticScanResult.CloudAsset cloudAsset = new StaticScanResult.CloudAsset();
             cloudAsset.setSourceScriptUrl(sourceScriptUrl);
             cloudAsset.setUrl(asset.getUrl());
-            cloudAsset.setResolvedUrl(normalizeAbsoluteUrl(baseUrl, asset.getUrl()));
+            cloudAsset.setResolvedUrl(normalizeAbsoluteUrl(assetBaseUrl, asset.getUrl()));
             cloudAsset.setType(asset.getType());
             cloudAsset.setChunkName(asset.getChunkName());
             cloudAsset.setSource(asset.getSource());
+            cloudAsset.setConfidence(asset.getConfidence());
+            cloudAsset.setEvidence(asset.getEvidence());
             result.getCloudAssets().add(cloudAsset);
-        }
-    }
-
-    private void mergeCloudParams(String sourceScriptUrl,
-                                  JsAnalysisResponse analysis,
-                                  StaticScanResult result) {
-        if (analysis.getParams() == null || analysis.getParams().isEmpty()) {
-            return;
-        }
-        if (result.getCloudParams() == null) {
-            result.setCloudParams(new ArrayList<>());
-        }
-        for (JsAnalysisResponse.ParamResult param : analysis.getParams()) {
-            if (param == null) {
-                continue;
-            }
-            StaticScanResult.CloudParam cloudParam = new StaticScanResult.CloudParam();
-            cloudParam.setSourceScriptUrl(sourceScriptUrl);
-            cloudParam.setName(param.getName());
-            cloudParam.setLocation(param.getLocation());
-            cloudParam.setApi(param.getApi());
-            cloudParam.setSource(param.getSource());
-            result.getCloudParams().add(cloudParam);
-        }
-    }
-
-    private void mergeCloudAuthSignals(JsAnalysisResponse analysis, StaticScanResult result) {
-        if (analysis.getAuth() == null || analysis.getAuth().isEmpty()) {
-            return;
-        }
-        if (result.getCloudAuthSignals() == null) {
-            result.setCloudAuthSignals(new ArrayList<>());
-        }
-        for (String signal : analysis.getAuth()) {
-            if (signal != null && !signal.isBlank() && !result.getCloudAuthSignals().contains(signal)) {
-                result.getCloudAuthSignals().add(signal);
-            }
         }
     }
 
     private void mergeCloudSecrets(String sourceScriptUrl,
                                    JsAnalysisResponse analysis,
                                    StaticScanResult result) {
-        List<JsAnalysisResponse.SecretResult> secrets = exposureSecrets(analysis);
+        List<JsAnalysisResponse.LeakResult> secrets = exposureSecrets(analysis);
         if (secrets.isEmpty()) {
             return;
         }
         if (result.getCloudSecrets() == null) {
             result.setCloudSecrets(new ArrayList<>());
         }
-        for (JsAnalysisResponse.SecretResult secret : secrets) {
+        for (JsAnalysisResponse.LeakResult secret : secrets) {
             if (secret == null) {
                 continue;
             }
             StaticScanResult.CloudSecret cloudSecret = new StaticScanResult.CloudSecret();
             cloudSecret.setSourceScriptUrl(sourceScriptUrl);
+            cloudSecret.setCategory(secret.getCategory());
             cloudSecret.setType(secret.getType());
             cloudSecret.setValue(secret.getValue());
             cloudSecret.setSeverity(normalizeSeverity(secret.getSeverity()));
@@ -939,154 +788,10 @@ public class StaticResourceScanner implements IStaticScanner {
         }
     }
 
-    private void mergeCloudRisks(String sourceScriptUrl,
-                                 JsAnalysisResponse analysis,
-                                 StaticScanResult result) {
-        if (analysis.getRisk() == null || analysis.getRisk().isEmpty()) {
-            return;
-        }
-        if (result.getCloudRisks() == null) {
-            result.setCloudRisks(new ArrayList<>());
-        }
-        for (JsAnalysisResponse.RiskResult risk : analysis.getRisk()) {
-            if (risk == null) {
-                continue;
-            }
-            StaticScanResult.CloudRisk cloudRisk = new StaticScanResult.CloudRisk();
-            cloudRisk.setSourceScriptUrl(sourceScriptUrl);
-            cloudRisk.setType(risk.getType());
-            cloudRisk.setSeverity(normalizeSeverity(risk.getSeverity()));
-            cloudRisk.setEvidence(risk.getEvidence());
-            result.getCloudRisks().add(cloudRisk);
-        }
-    }
-
-    private void mergeCloudFindings(String sourceScriptUrl,
-                                    JsAnalysisResponse analysis,
-                                    StaticScanResult result) {
-        if (analysis.getFindings() != null && !analysis.getFindings().isEmpty()) {
-            if (result.getCloudFindings() == null) {
-                result.setCloudFindings(new ArrayList<>());
-            }
-            for (JsAnalysisResponse.FindingResult finding : analysis.getFindings()) {
-                if (finding == null) {
-                    continue;
-                }
-                StaticScanResult.CloudFinding cloudFinding = new StaticScanResult.CloudFinding();
-                cloudFinding.setSourceScriptUrl(sourceScriptUrl);
-                cloudFinding.setType(finding.getType());
-                cloudFinding.setValue(finding.getValue());
-                cloudFinding.setSeverity(normalizeSeverity(finding.getSeverity()));
-                cloudFinding.setConfidence(finding.getConfidence());
-                cloudFinding.setSource(finding.getSource());
-                cloudFinding.setEvidence(finding.getEvidence());
-                result.getCloudFindings().add(cloudFinding);
-                if (isSecretFinding(finding)) {
-                    appendSecretFinding(sourceScriptUrl, finding, result);
-                }
-            }
-        }
-    }
-
-    private void mergeGroupedFindings(String sourceScriptUrl,
-                                      JsAnalysisResponse analysis,
-                                      StaticScanResult result) {
-        appendGroupedFindings(result, "endpoint", sourceScriptUrl, endpointFindings(analysis));
-        appendGroupedFindings(result, "exposure", sourceScriptUrl, exposureFindings(analysis));
-        appendGroupedFindings(result, "script", sourceScriptUrl, scriptFindings(analysis));
-    }
-
-    private void appendGroupedFindings(StaticScanResult result,
-                                       String group,
-                                       String sourceScriptUrl,
-                                       List<JsAnalysisResponse.FindingResult> findings) {
-        if (findings == null || findings.isEmpty()) {
-            return;
-        }
-        List<StaticScanResult.CloudFinding> target;
-        if ("endpoint".equals(group)) {
-            if (result.getEndpointFindings() == null) {
-                result.setEndpointFindings(new ArrayList<>());
-            }
-            target = result.getEndpointFindings();
-        } else if ("script".equals(group)) {
-            if (result.getScriptFindings() == null) {
-                result.setScriptFindings(new ArrayList<>());
-            }
-            target = result.getScriptFindings();
-        } else {
-            if (result.getExposureFindings() == null) {
-                result.setExposureFindings(new ArrayList<>());
-            }
-            target = result.getExposureFindings();
-        }
-
-        for (JsAnalysisResponse.FindingResult finding : findings) {
-            StaticScanResult.CloudFinding cloudFinding = toCloudFinding(sourceScriptUrl, finding);
-            if (cloudFinding != null) {
-                target.add(cloudFinding);
-            }
-        }
-    }
-
-    private StaticScanResult.CloudFinding toCloudFinding(String sourceScriptUrl,
-                                                         JsAnalysisResponse.FindingResult finding) {
-        if (finding == null) {
-            return null;
-        }
-        StaticScanResult.CloudFinding cloudFinding = new StaticScanResult.CloudFinding();
-        cloudFinding.setSourceScriptUrl(sourceScriptUrl);
-        cloudFinding.setType(finding.getType());
-        cloudFinding.setValue(finding.getValue());
-        cloudFinding.setSeverity(normalizeSeverity(finding.getSeverity()));
-        cloudFinding.setConfidence(finding.getConfidence());
-        cloudFinding.setSource(finding.getSource());
-        cloudFinding.setEvidence(finding.getEvidence());
-        return cloudFinding;
-    }
-
-    private boolean isSecretFinding(JsAnalysisResponse.FindingResult finding) {
-        if (finding == null) {
-            return false;
-        }
-        String combined = (safe(finding.getType()) + " " + safe(finding.getSource()) + " " + safe(finding.getValue()))
-                .toLowerCase(Locale.ROOT);
-        return combined.contains("secret")
-                || combined.contains("token")
-                || combined.contains("password")
-                || combined.contains("credential")
-                || combined.contains("凭据")
-                || combined.contains("密钥")
-                || combined.contains("敏感凭据")
-                || combined.contains("ak/sk")
-                || combined.contains("access-key");
-    }
-
-    private void appendSecretFinding(String sourceScriptUrl,
-                                     JsAnalysisResponse.FindingResult finding,
-                                     StaticScanResult result) {
-        if (result.getCloudSecrets() == null) {
-            result.setCloudSecrets(new ArrayList<>());
-        }
-        StaticScanResult.CloudSecret secret = new StaticScanResult.CloudSecret();
-        secret.setSourceScriptUrl(sourceScriptUrl);
-        secret.setType(finding.getType());
-        secret.setValue(finding.getValue());
-        secret.setSeverity(normalizeSeverity(finding.getSeverity()));
-        secret.setConfidence(finding.getConfidence());
-        secret.setSource(finding.getSource());
-        secret.setEvidence(finding.getEvidence());
-        result.getCloudSecrets().add(secret);
-    }
-
     private boolean hasCloudAnalysis(StaticScanResult result) {
-        return notEmpty(result.getCloudFindings())
-                || notEmpty(result.getCloudApis())
+        return notEmpty(result.getCloudApis())
                 || notEmpty(result.getCloudAssets())
-                || notEmpty(result.getCloudParams())
-                || notEmpty(result.getCloudAuthSignals())
-                || notEmpty(result.getCloudSecrets())
-                || notEmpty(result.getCloudRisks());
+                || notEmpty(result.getCloudSecrets());
     }
 
     private boolean notEmpty(List<?> values) {
@@ -1191,23 +896,10 @@ public class StaticResourceScanner implements IStaticScanner {
 
         List<String> attackSurface = new ArrayList<>();
         attackSurface.add("JS 恢复接口");
-        if (jsAnalysis.getAuth() != null && !jsAnalysis.getAuth().isEmpty()) {
-            attackSurface.add("认证头信号: " + joinList(jsAnalysis.getAuth()));
-        }
+        attackSurface.add("接口来源: endpoints");
         result.setAttackSurface(attackSurface);
 
-        List<String> possibleVulns = new ArrayList<>();
-        if (jsAnalysis.getRisk() != null) {
-            for (JsAnalysisResponse.RiskResult risk : jsAnalysis.getRisk()) {
-                if (risk == null) {
-                    continue;
-                }
-                if (risk.getType() != null && !risk.getType().isBlank()) {
-                    possibleVulns.add(risk.getType());
-                }
-            }
-        }
-        result.setPossibleVulnerabilities(possibleVulns);
+        result.setPossibleVulnerabilities(List.of());
 
         List<AnalysisResult.HighValueParam> highValueParams = new ArrayList<>();
         if (recovered.getParams() != null) {
@@ -1389,30 +1081,14 @@ public class StaticResourceScanner implements IStaticScanner {
                 .append(" | enabled=").append(jsConfig.isEnabled())
                 .append("\n");
 
-        int endpointFindings = size(result.getEndpointFindings());
-        int sensitiveFindings = size(result.getExposureFindings());
-        int scriptFindings = size(result.getScriptFindings());
-        int rawFindings = size(result.getCloudFindings());
-        int totalFindings = endpointFindings + sensitiveFindings + scriptFindings;
-        if (totalFindings == 0) {
-            totalFindings = rawFindings + size(result.getCloudSecrets()) + size(result.getCloudRisks());
-        }
-        summary.append("JS AST summary: findings=").append(totalFindings)
-                .append(" | endpointFindings=").append(endpointFindings)
-                .append(" | sensitiveFindings=").append(sensitiveFindings)
-                .append(" | scriptFindings=").append(scriptFindings)
-                .append(" | rawFindings=").append(rawFindings)
+        int leakCount = size(result.getCloudSecrets());
+        int endpointCount = size(result.getCloudApis());
+        int jsFileCount = size(result.getCloudAssets());
+        summary.append("JS AST summary: endpoints=").append(endpointCount)
+                .append(" | leaks=").append(leakCount)
+                .append(" | jsFiles=").append(jsFileCount)
                 .append("\n");
-        summary.append("Recovered: endpoints=").append(size(result.getCloudApis()))
-                .append(" | verifiedEndpoints=").append(validRecoveredEndpointCount(result))
-                .append(" | scripts=").append(size(result.getCloudAssets()))
-                .append(" | params=").append(size(result.getCloudParams()))
-                .append(" | authSignals=").append(size(result.getCloudAuthSignals()))
-                .append(" | secrets=").append(size(result.getCloudSecrets()))
-                .append(" | risks=").append(size(result.getCloudRisks()))
-                .append("\n");
-
-        summary.append("Details: 请在 Endpoints / secret / finding 表格中查看明细。\n");
+        summary.append("Details: 请在 Endpoints / Leaks / JS Files 表格中查看明细。\n");
 
         if (result.getAnalyzedScripts() != null && !result.getAnalyzedScripts().isEmpty()) {
             summary.append("JS scripts analyzed: ").append(result.getAnalyzedScripts().size()).append("\n");
@@ -1423,7 +1099,9 @@ public class StaticResourceScanner implements IStaticScanner {
                 summary.append("  - ").append(script.getUrl())
                         .append(" | validated=").append(script.isValidated())
                         .append(" | status=").append(script.getStatusCode())
-                        .append(" | apis=").append(script.getApiCount())
+                        .append(" | endpoints=").append(script.getApiCount())
+                        .append(" | leaks=").append(script.getSecretCount())
+                        .append(" | jsFiles=").append(script.getRiskCount())
                         .append(" | ").append(script.getReason())
                         .append("\n");
             }
@@ -1438,18 +1116,6 @@ public class StaticResourceScanner implements IStaticScanner {
                         .append(" | ").append(safe(latest.getMessage()))
                         .append("\n");
             }
-        }
-
-        if (result.getRecoveredEndpoints() != null && !result.getRecoveredEndpoints().isEmpty()) {
-            long validCount = result.getRecoveredEndpoints().stream()
-                    .filter(endpoint -> endpoint != null && endpoint.isValidated())
-                    .count();
-            summary.append("Recovered endpoints: ").append(result.getRecoveredEndpoints().size())
-                    .append(" (validated=").append(validCount).append(")\n");
-        }
-
-        if (result.getAiReview() != null && !result.getAiReview().isBlank()) {
-            summary.append("AI Review: ").append(result.getAiReview());
         }
         return summary.toString();
     }
@@ -1476,52 +1142,34 @@ public class StaticResourceScanner implements IStaticScanner {
         return null;
     }
 
-    private int totalFindingCount(JsAnalysisResponse analysis) {
-        if (analysis == null) {
-            return 0;
-        }
-        if (analysis.getSummary() != null && analysis.getSummary().getFindingCount() > 0) {
-            return analysis.getSummary().getFindingCount();
-        }
-        int grouped = endpointFindings(analysis).size()
-                + exposureFindings(analysis).size()
-                + scriptFindings(analysis).size();
-        if (grouped > 0) {
-            return grouped;
-        }
-        return (analysis.getFindings() != null ? analysis.getFindings().size() : 0)
-                + exposureSecrets(analysis).size()
-                + (analysis.getRisk() != null ? analysis.getRisk().size() : 0);
-    }
-
     private int apiCount(JsAnalysisResponse analysis) {
         if (analysis == null) {
             return 0;
         }
-        if (analysis.getSummary() != null && analysis.getSummary().getApiCount() > 0) {
-            return analysis.getSummary().getApiCount();
+        if (analysis.getSummary() != null && analysis.getSummary().getEndpointCount() > 0) {
+            return analysis.getSummary().getEndpointCount();
         }
         return endpointApis(analysis).size();
     }
 
-    private int secretCount(JsAnalysisResponse analysis) {
+    private int leakCount(JsAnalysisResponse analysis) {
         if (analysis == null) {
             return 0;
         }
-        if (analysis.getSummary() != null && analysis.getSummary().getSecretCount() > 0) {
-            return analysis.getSummary().getSecretCount();
+        if (analysis.getSummary() != null && analysis.getSummary().getLeakCount() > 0) {
+            return analysis.getSummary().getLeakCount();
         }
         return exposureSecrets(analysis).size();
     }
 
-    private int riskCount(JsAnalysisResponse analysis) {
+    private int jsFileCount(JsAnalysisResponse analysis) {
         if (analysis == null) {
             return 0;
         }
-        if (analysis.getSummary() != null && analysis.getSummary().getRiskCount() > 0) {
-            return analysis.getSummary().getRiskCount();
+        if (analysis.getSummary() != null && analysis.getSummary().getJsFileCount() > 0) {
+            return analysis.getSummary().getJsFileCount();
         }
-        return analysis.getRisk() != null ? analysis.getRisk().size() : 0;
+        return scriptAssets(analysis).size();
     }
 
     private int size(List<?> values) {

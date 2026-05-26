@@ -70,14 +70,7 @@ public class StaticScanStage implements IPipelineStage {
     private boolean hasStructuredDetails(StaticScanResult result) {
         return result != null && (notEmpty(result.getCloudApis())
                 || notEmpty(result.getCloudAssets())
-                || notEmpty(result.getCloudParams())
-                || notEmpty(result.getCloudAuthSignals())
                 || notEmpty(result.getCloudSecrets())
-                || notEmpty(result.getCloudRisks())
-                || notEmpty(result.getCloudFindings())
-                || notEmpty(result.getEndpointFindings())
-                || notEmpty(result.getExposureFindings())
-                || notEmpty(result.getScriptFindings())
                 || notEmpty(result.getAnalyzedScripts())
                 || notEmpty(result.getRecoveredEndpoints())
                 || result.getCloudSummary() != null);
