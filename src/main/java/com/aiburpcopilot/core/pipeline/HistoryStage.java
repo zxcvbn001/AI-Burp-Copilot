@@ -55,6 +55,12 @@ public class HistoryStage implements IPipelineStage {
             if (entry.getStaticScanDetails() == null && existing != null && existing.getStaticScanDetails() != null) {
                 entry.setStaticScanDetails(existing.getStaticScanDetails());
             }
+            if (existing != null
+                    && isFailureSummary(entry.getAiSummary())
+                    && hasStructuredDetails(existing.getStaticScanDetails())) {
+                entry.setAiSummary(existing.getAiSummary());
+                entry.setStaticScanDetails(existing.getStaticScanDetails());
+            }
             historyService.update(entry);
             if (isNew) {
                 HistoryEventBus.getInstance().fireHistoryAdded(entry);
@@ -73,5 +79,29 @@ public class HistoryStage implements IPipelineStage {
         }
         return context.getHeaders().entrySet().stream()
                 .noneMatch(entry -> InternalTrafficMarker.isMarked(entry.getKey(), entry.getValue()));
+    }
+
+    private boolean isFailureSummary(String summary) {
+        return summary != null && summary.startsWith("静态分析失败");
+    }
+
+    private boolean hasStructuredDetails(com.aiburpcopilot.scanner.staticresource.StaticScanResult result) {
+        return result != null && (notEmpty(result.getCloudApis())
+                || notEmpty(result.getCloudAssets())
+                || notEmpty(result.getCloudParams())
+                || notEmpty(result.getCloudAuthSignals())
+                || notEmpty(result.getCloudSecrets())
+                || notEmpty(result.getCloudRisks())
+                || notEmpty(result.getCloudFindings())
+                || notEmpty(result.getEndpointFindings())
+                || notEmpty(result.getExposureFindings())
+                || notEmpty(result.getScriptFindings())
+                || notEmpty(result.getAnalyzedScripts())
+                || notEmpty(result.getRecoveredEndpoints())
+                || result.getCloudSummary() != null);
+    }
+
+    private boolean notEmpty(java.util.List<?> values) {
+        return values != null && values.stream().anyMatch(java.util.Objects::nonNull);
     }
 }

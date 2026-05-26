@@ -61,7 +61,7 @@ public class SqliteHistoryService implements IHistoryService {
 
     @Override
     public synchronized List<HistoryEntry> getAll() {
-        return query(summarySelect("ORDER BY timestamp DESC"), ps -> {});
+        return query(summarySelect("ORDER BY timestamp DESC", false), ps -> {});
     }
 
     @Override
@@ -84,7 +84,8 @@ public class SqliteHistoryService implements IHistoryService {
                                                           Long timeTo,
                                                           int offset,
                                                           int limit) {
-        StringBuilder sql = new StringBuilder(summarySelect("WHERE 1=1"));
+        boolean includeStaticDetails = endpointType == EndpointType.STATIC_RESOURCE;
+        StringBuilder sql = new StringBuilder(summarySelect("WHERE 1=1", includeStaticDetails));
         List<Object> params = new ArrayList<>();
         appendFilters(sql, params, keyword, site, endpointType, riskLevel, status, timeFrom, timeTo);
         sql.append(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
@@ -345,7 +346,10 @@ public class SqliteHistoryService implements IHistoryService {
         }
     }
 
-    private String summarySelect(String suffix) {
+    private String summarySelect(String suffix, boolean includeStaticDetails) {
+        String staticScanDetailsColumn = includeStaticDetails
+                ? "static_scan_details_json"
+                : "NULL AS static_scan_details_json";
         return """
                 SELECT
                     request_id, timestamp, method, url, path, status_code, content_type,
@@ -355,7 +359,7 @@ public class SqliteHistoryService implements IHistoryService {
                     NULL AS request_body, NULL AS response_body,
                     NULL AS raw_request_b64, NULL AS raw_response_b64,
                     high_value_param_details_json, verification_results_json,
-                    NULL AS static_scan_details_json
+                    """ + staticScanDetailsColumn + """
                 FROM history_entries
                 """ + suffix;
     }
@@ -398,7 +402,14 @@ public class SqliteHistoryService implements IHistoryService {
                     raw_response_b64=excluded.raw_response_b64,
                     high_value_param_details_json=excluded.high_value_param_details_json,
                     verification_results_json=excluded.verification_results_json,
-                    static_scan_details_json=excluded.static_scan_details_json
+                    static_scan_details_json=CASE
+                        WHEN excluded.static_scan_details_json IS NULL
+                             OR excluded.static_scan_details_json = ''
+                             OR excluded.static_scan_details_json = 'null'
+                             OR excluded.static_scan_details_json = '{}'
+                        THEN history_entries.static_scan_details_json
+                        ELSE excluded.static_scan_details_json
+                    END
                 """;
         try (Connection connection = openConnection();
              PreparedStatement ps = connection.prepareStatement(sql)) {
@@ -428,12 +439,22 @@ public class SqliteHistoryService implements IHistoryService {
             ps.setString(index++, toBase64(entry.getRawResponse()));
             ps.setString(index++, JsonUtil.toJson(entry.getHighValueParamDetails()));
             ps.setString(index++, JsonUtil.toJson(entry.getVerificationResults()));
-            ps.setString(index++, JsonUtil.toJson(entry.getStaticScanDetails()));
+            ps.setString(index++, staticScanDetailsJson(entry.getStaticScanDetails()));
             ps.executeUpdate();
             trimOverflow(connection);
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to persist history entry", e);
         }
+    }
+
+    private String staticScanDetailsJson(StaticScanResult details) {
+        if (details == null) {
+            return null;
+        }
+        String json = JsonUtil.toJson(details);
+        return json != null && !json.isBlank() && !"{}".equals(json) && !"null".equalsIgnoreCase(json)
+                ? json
+                : null;
     }
 
     private List<HistoryEntry> query(String sql, SqlConsumer<PreparedStatement> binder) {

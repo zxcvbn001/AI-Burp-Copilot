@@ -15,7 +15,9 @@ import java.awt.*;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -38,14 +40,10 @@ public class StaticScanPanel extends JPanel {
     private final CloudParamTableModel cloudParamTableModel;
     private final JTable cloudSecretTable;
     private final CloudSecretTableModel cloudSecretTableModel;
-    private final JTable cloudRiskTable;
-    private final CloudRiskTableModel cloudRiskTableModel;
-    private final JTable endpointFindingTable;
-    private final CloudFindingTableModel endpointFindingTableModel;
-    private final JTable exposureFindingTable;
-    private final CloudFindingTableModel exposureFindingTableModel;
-    private final JTable scriptFindingTable;
-    private final CloudFindingTableModel scriptFindingTableModel;
+    private final JTable findingCategoryTable;
+    private final FindingCategoryTableModel findingCategoryTableModel;
+    private final JTable findingDetailTable;
+    private final CloudFindingTableModel findingDetailTableModel;
     private final JTable analyzedScriptTable;
     private final AnalyzedScriptTableModel analyzedScriptTableModel;
     private final JTable jsTaskTable;
@@ -115,30 +113,19 @@ public class StaticScanPanel extends JPanel {
                 updateGenericDetailSafely("secret", this::buildSelectedSecretDetail, false);
             }
         });
-        cloudRiskTableModel = new CloudRiskTableModel();
-        cloudRiskTable = createDataTable(cloudRiskTableModel, 140, 80, 320, 260);
-        endpointFindingTableModel = new CloudFindingTableModel();
-        endpointFindingTable = createDataTable(endpointFindingTableModel, 110, 110, 240, 80, 75, 85, 220, 520);
-        endpointFindingTable.getSelectionModel().addListSelectionListener(e -> {
+        findingCategoryTableModel = new FindingCategoryTableModel();
+        findingCategoryTable = createDataTable(findingCategoryTableModel, 160, 80);
+        findingCategoryTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
-                updateGenericDetailSafely("endpointFinding",
-                        () -> buildSelectedFindingDetail(endpointFindingTable, endpointFindingTableModel), false);
+                updateFindingCategorySelection(false);
             }
         });
-        exposureFindingTableModel = new CloudFindingTableModel();
-        exposureFindingTable = createDataTable(exposureFindingTableModel, 110, 110, 240, 80, 75, 85, 220, 520);
-        exposureFindingTable.getSelectionModel().addListSelectionListener(e -> {
+        findingDetailTableModel = new CloudFindingTableModel();
+        findingDetailTable = createDataTable(findingDetailTableModel, 110, 110, 260, 80, 75, 85, 220, 520);
+        findingDetailTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
-                updateGenericDetailSafely("exposureFinding",
-                        () -> buildSelectedFindingDetail(exposureFindingTable, exposureFindingTableModel), false);
-            }
-        });
-        scriptFindingTableModel = new CloudFindingTableModel();
-        scriptFindingTable = createDataTable(scriptFindingTableModel, 110, 110, 240, 80, 75, 85, 220, 520);
-        scriptFindingTable.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting() && !refreshing) {
-                updateGenericDetailSafely("scriptFinding",
-                        () -> buildSelectedFindingDetail(scriptFindingTable, scriptFindingTableModel), false);
+                updateGenericDetailSafely("findingDetail",
+                        () -> buildSelectedFindingDetail(findingDetailTable, findingDetailTableModel), false);
             }
         });
         analyzedScriptTableModel = new AnalyzedScriptTableModel();
@@ -162,12 +149,9 @@ public class StaticScanPanel extends JPanel {
 
         JTabbedPane resultTabs = new JTabbedPane();
         UiUtil.applyBurpFont(resultTabs);
-        resultTabs.addTab("总览", titledScroll("扫描摘要", findingArea));
         resultTabs.addTab("Endpoints", createEndpointGroupPanel());
-        resultTabs.addTab("Exposures", createExposureGroupPanel());
-        resultTabs.addTab("Scripts", createScriptGroupPanel());
-        resultTabs.addTab("Params/Auth", createParamAuthPanel());
-        resultTabs.addTab("Tasks/Errors", createTaskErrorPanel());
+        resultTabs.addTab("secret", createSecretGroupPanel());
+        resultTabs.addTab("finding", createFindingGroupPanel());
 
         JSplitPane findingSplit = new JSplitPane(
                 JSplitPane.VERTICAL_SPLIT,
@@ -268,6 +252,7 @@ public class StaticScanPanel extends JPanel {
         boolean sameEntry = currentId != null && currentId.equals(displayedEntryId);
         StaticScanResult details = entry.getStaticScanDetails();
         String selectedApiKey = selectedCloudApiKey();
+        String selectedFindingCategory = selectedFindingCategoryKey();
         boolean previousRefreshing = refreshing;
         refreshing = true;
         try {
@@ -283,17 +268,16 @@ public class StaticScanPanel extends JPanel {
             cloudAssetTableModel.setAssets(details != null ? details.getCloudAssets() : List.of());
             cloudParamTableModel.setParams(details != null ? details.getCloudParams() : List.of());
             cloudSecretTableModel.setSecrets(details != null ? details.getCloudSecrets() : List.of());
-            cloudRiskTableModel.setRisks(details != null ? details.getCloudRisks() : List.of());
-            endpointFindingTableModel.setFindings(details != null ? details.getEndpointFindings() : List.of());
-            exposureFindingTableModel.setFindings(details != null ? details.getExposureFindings() : List.of());
-            scriptFindingTableModel.setFindings(details != null ? details.getScriptFindings() : List.of());
+            findingCategoryTableModel.setFindings(allCloudFindings(details));
+            restoreFindingCategorySelection(sameEntry ? selectedFindingCategory : null);
+            updateFindingCategorySelection(sameEntry);
             analyzedScriptTableModel.setScripts(details != null ? details.getAnalyzedScripts() : List.of());
             jsTaskTableModel.setTasks(details != null ? details.getJsAstTasks() : List.of());
             UiUtil.setTextPreservingView(authSignalArea, buildAuthSignalText(details), sameEntry);
         } finally {
             refreshing = previousRefreshing;
         }
-        if (!sameEntry) {
+        if (!sameEntry && discoveryDetailArea.getText().isBlank()) {
             updateGenericDetail("请选择上方表格中的一条记录查看详情。", false);
         }
         requestViewer.setBytes(entry.getRawRequest());
@@ -310,10 +294,8 @@ public class StaticScanPanel extends JPanel {
         cloudAssetTableModel.setAssets(List.of());
         cloudParamTableModel.setParams(List.of());
         cloudSecretTableModel.setSecrets(List.of());
-        cloudRiskTableModel.setRisks(List.of());
-        endpointFindingTableModel.setFindings(List.of());
-        exposureFindingTableModel.setFindings(List.of());
-        scriptFindingTableModel.setFindings(List.of());
+        findingCategoryTableModel.setFindings(List.of());
+        findingDetailTableModel.setFindings(List.of());
         analyzedScriptTableModel.setScripts(List.of());
         jsTaskTableModel.setTasks(List.of());
         authSignalArea.setText("");
@@ -340,14 +322,8 @@ public class StaticScanPanel extends JPanel {
     }
 
     private JPanel createEndpointGroupPanel() {
-        JSplitPane split = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                titledScroll("API / Endpoint 候选（验证结果见表格）", cloudApiTable),
-                titledScroll("Endpoint Findings（API 信息类）", endpointFindingTable));
-        split.setResizeWeight(0.68);
-        split.setDividerLocation(300);
         JPanel panel = new JPanel(new BorderLayout());
-        panel.add(split, BorderLayout.CENTER);
+        panel.add(titledScroll("API / Endpoint 候选（验证结果见表格，参数和认证信号点开后在详情区查看）", cloudApiTable), BorderLayout.CENTER);
         return panel;
     }
 
@@ -389,34 +365,62 @@ public class StaticScanPanel extends JPanel {
         }, preserveView);
     }
 
-    private JPanel createExposureGroupPanel() {
-        JSplitPane top = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                titledScroll("Sensitive / Secret（云端已完成 LLM 复核）", cloudSecretTable),
-                titledScroll("Exposure Findings（暴露与风险类）", exposureFindingTable));
-        top.setResizeWeight(0.5);
-        top.setDividerLocation(250);
+    private JPanel createSecretGroupPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.add(top, BorderLayout.CENTER);
+        panel.add(titledScroll("Sensitive / Secret（云端已完成 LLM 复核）", cloudSecretTable), BorderLayout.CENTER);
         return panel;
     }
 
-    private JPanel createScriptGroupPanel() {
-        JSplitPane top = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                titledScroll("Webpack / Script 资源（探测与递归分析受配置管控）", cloudAssetTable),
-                titledScroll("Script Findings（webpack 模块类）", scriptFindingTable));
-        top.setResizeWeight(0.5);
-        top.setDividerLocation(250);
+    private JPanel createFindingGroupPanel() {
         JSplitPane split = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                top,
-                titledScroll("已分析 JS / SourceMap（仅显示存在的 .js.map）", analyzedScriptTable));
-        split.setResizeWeight(0.72);
-        split.setDividerLocation(350);
+                JSplitPane.HORIZONTAL_SPLIT,
+                titledScroll("分类", findingCategoryTable),
+                titledScroll("该分类详情", findingDetailTable));
+        split.setResizeWeight(0.24);
+        split.setDividerLocation(260);
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(split, BorderLayout.CENTER);
         return panel;
+    }
+
+    private String selectedFindingCategoryKey() {
+        int row = findingCategoryTable.getSelectedRow();
+        if (row < 0) {
+            return null;
+        }
+        return findingCategoryTableModel.getCategoryAt(findingCategoryTable.convertRowIndexToModel(row));
+    }
+
+    private void restoreFindingCategorySelection(String selectedCategory) {
+        if (findingCategoryTableModel.getRowCount() == 0) {
+            findingCategoryTable.clearSelection();
+            return;
+        }
+        int row = selectedCategory != null ? findingCategoryTableModel.indexOfCategory(selectedCategory) : -1;
+        if (row < 0) {
+            row = 0;
+        }
+        findingCategoryTable.setRowSelectionInterval(row, row);
+    }
+
+    private void updateFindingCategorySelection(boolean preserveView) {
+        updateGenericDetailSafely("findingCategory", () -> {
+            int row = findingCategoryTable.getSelectedRow();
+            if (row < 0 && findingCategoryTableModel.getRowCount() > 0) {
+                row = 0;
+                findingCategoryTable.setRowSelectionInterval(0, 0);
+            }
+            if (row < 0) {
+                findingDetailTableModel.setFindings(List.of());
+                return "暂无 Finding 分类。";
+            }
+            int modelRow = findingCategoryTable.convertRowIndexToModel(row);
+            List<StaticScanResult.CloudFinding> findings = findingCategoryTableModel.getFindingsAt(modelRow);
+            findingDetailTableModel.setFindings(findings);
+            return "分类: " + safe(findingCategoryTableModel.getCategoryAt(modelRow))
+                    + "\n数量: " + findings.size()
+                    + "\n\n请选择右侧表格中的一条记录查看证据。";
+        }, preserveView);
     }
 
     private JPanel createParamAuthPanel() {
@@ -426,18 +430,6 @@ public class StaticScanPanel extends JPanel {
                 titledScroll("认证信号", authSignalArea));
         split.setResizeWeight(0.72);
         split.setDividerLocation(330);
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.add(split, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JPanel createTaskErrorPanel() {
-        JSplitPane split = new JSplitPane(
-                JSplitPane.VERTICAL_SPLIT,
-                titledScroll("JS AST 任务状态", jsTaskTable),
-                titledScroll("原始 Findings（调试用）", cloudFindingTable));
-        split.setResizeWeight(0.58);
-        split.setDividerLocation(280);
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(split, BorderLayout.CENTER);
         return panel;
@@ -456,7 +448,19 @@ public class StaticScanPanel extends JPanel {
     }
 
     private String buildSummaryText(HistoryEntry entry, StaticScanResult details) {
-        StringBuilder text = new StringBuilder(entry.getAiSummary() != null ? entry.getAiSummary() : "未扫描或无发现");
+        String summary = entry != null ? entry.getAiSummary() : null;
+        boolean structured = hasStructuredStaticDetails(details);
+        StringBuilder text = new StringBuilder();
+        if (details == null) {
+            text.append(summary != null ? summary : "未扫描或无发现");
+            text.append("\n\n[UI] 未读取到结构化静态扫描详情，分组 Tab 将为空。请重新扫描该 JS。");
+            return text.toString();
+        }
+        if (isFailureSummary(summary) && structured) {
+            text.append("静态分析已完成，结构化结果已返回。旧的失败摘要已忽略，具体异常请看 Burp Error / 系统日志。");
+        } else {
+            text.append(summary != null ? summary : "未扫描或无发现");
+        }
         if (details == null) {
             text.append("\n\n[UI] 未读取到结构化静态扫描详情，分组 Tab 将为空。请重新扫描该 JS。");
             return text.toString();
@@ -465,24 +469,24 @@ public class StaticScanPanel extends JPanel {
                 .append("\n- Endpoints: ").append(endpointGroupCount(details))
                 .append("（apis=").append(apiCount(details))
                 .append(", verified=").append(validRecoveredEndpointCount(details)).append("）")
-                .append("\n- Exposures: ").append(exposureGroupCount(details))
-                .append("（secrets=").append(secretCount(details)).append("）")
-                .append("\n- Scripts: ").append(scriptGroupCount(details))
-                .append("（assets=").append(assetCount(details)).append("）")
+                .append("\n- Secret: ").append(secretCount(details))
+                .append("（exposureFindings=").append(exposureGroupCount(details)).append("）")
+                .append("\n- Finding: ").append(totalFindingCount(details))
+                .append("（scriptFindings=").append(scriptGroupCount(details))
+                .append(", assets=").append(assetCount(details)).append("）")
                 .append("\n- Params/Auth: params=").append(paramCount(details))
-                .append(", auth=").append(authCount(details))
-                .append("\n- Findings: ").append(totalFindingCount(details));
-        StaticScanResult.CloudSummary summary = details.getCloudSummary();
-        if (summary != null) {
-            text.append("\n- LLM: enabled=").append(summary.isLlmEnabled())
+                .append(", auth=").append(authCount(details));
+        StaticScanResult.CloudSummary cloudSummary = details.getCloudSummary();
+        if (cloudSummary != null) {
+            text.append("\n- LLM: enabled=").append(cloudSummary.isLlmEnabled())
                     .append(", secrets reviewed/confirmed/rejected=")
-                    .append(summary.getLlmReviewedCount()).append("/")
-                    .append(summary.getLlmConfirmedCount()).append("/")
-                    .append(summary.getLlmRejectedCount())
+                    .append(cloudSummary.getLlmReviewedCount()).append("/")
+                    .append(cloudSummary.getLlmConfirmedCount()).append("/")
+                    .append(cloudSummary.getLlmRejectedCount())
                     .append(", findings reviewed/confirmed/rejected=")
-                    .append(summary.getLlmFindingReviewedCount()).append("/")
-                    .append(summary.getLlmFindingConfirmedCount()).append("/")
-                    .append(summary.getLlmFindingRejectedCount());
+                    .append(cloudSummary.getLlmFindingReviewedCount()).append("/")
+                    .append(cloudSummary.getLlmFindingConfirmedCount()).append("/")
+                    .append(cloudSummary.getLlmFindingRejectedCount());
         }
         StaticScanResult.JsAstTaskStatus latest = latestTask(details);
         if (latest != null) {
@@ -491,6 +495,137 @@ public class StaticScanPanel extends JPanel {
                     .append(" | ").append(oneLine(latest.getMessage()));
         }
         return text.toString();
+    }
+
+    private boolean hasStructuredStaticDetails(StaticScanResult details) {
+        return details != null && (notEmpty(details.getCloudApis())
+                || notEmpty(details.getCloudAssets())
+                || notEmpty(details.getCloudParams())
+                || notEmpty(details.getCloudAuthSignals())
+                || notEmpty(details.getCloudSecrets())
+                || notEmpty(details.getCloudRisks())
+                || notEmpty(details.getCloudFindings())
+                || notEmpty(details.getEndpointFindings())
+                || notEmpty(details.getExposureFindings())
+                || notEmpty(details.getScriptFindings())
+                || notEmpty(details.getAnalyzedScripts())
+                || notEmpty(details.getRecoveredEndpoints())
+                || details.getCloudSummary() != null);
+    }
+
+    private boolean isFailureSummary(String summary) {
+        return summary != null && summary.startsWith("静态分析失败");
+    }
+
+    private boolean notEmpty(List<?> values) {
+        return values != null && values.stream().anyMatch(Objects::nonNull);
+    }
+
+    private List<StaticScanResult.CloudFinding> allCloudFindings(StaticScanResult details) {
+        if (details == null) {
+            return List.of();
+        }
+        Map<String, StaticScanResult.CloudFinding> findings = new LinkedHashMap<>();
+        addFindings(findings, details.getEndpointFindings());
+        addFindings(findings, details.getExposureFindings());
+        addFindings(findings, details.getScriptFindings());
+        addFindings(findings, details.getCloudFindings());
+        addSecretFindings(findings, details.getCloudSecrets());
+        addRiskFindings(findings, details.getCloudRisks());
+        addAssetFindings(findings, details.getCloudAssets());
+        return List.copyOf(findings.values());
+    }
+
+    private void addFindings(Map<String, StaticScanResult.CloudFinding> target,
+                             List<StaticScanResult.CloudFinding> source) {
+        if (target == null || source == null) {
+            return;
+        }
+        for (StaticScanResult.CloudFinding finding : source) {
+            addFinding(target, finding);
+        }
+    }
+
+    private void addSecretFindings(Map<String, StaticScanResult.CloudFinding> target,
+                                   List<StaticScanResult.CloudSecret> secrets) {
+        if (target == null || secrets == null) {
+            return;
+        }
+        for (StaticScanResult.CloudSecret secret : secrets) {
+            if (secret == null) {
+                continue;
+            }
+            StaticScanResult.CloudFinding finding = new StaticScanResult.CloudFinding();
+            finding.setCategory("敏感凭据");
+            finding.setType(secret.getType());
+            finding.setValue(secret.getValue());
+            finding.setSeverity(secret.getSeverity());
+            finding.setConfidence(secret.getConfidence());
+            finding.setSource(secret.getSource());
+            finding.setSourceScriptUrl(secret.getSourceScriptUrl());
+            finding.setEvidence(secret.getEvidence());
+            addFinding(target, finding);
+        }
+    }
+
+    private void addRiskFindings(Map<String, StaticScanResult.CloudFinding> target,
+                                 List<StaticScanResult.CloudRisk> risks) {
+        if (target == null || risks == null) {
+            return;
+        }
+        for (StaticScanResult.CloudRisk risk : risks) {
+            if (risk == null) {
+                continue;
+            }
+            StaticScanResult.CloudFinding finding = new StaticScanResult.CloudFinding();
+            finding.setCategory("风险提示");
+            finding.setType(risk.getType());
+            finding.setValue(risk.getType());
+            finding.setSeverity(risk.getSeverity());
+            finding.setSource("risk");
+            finding.setSourceScriptUrl(risk.getSourceScriptUrl());
+            finding.setEvidence(risk.getEvidence());
+            addFinding(target, finding);
+        }
+    }
+
+    private void addAssetFindings(Map<String, StaticScanResult.CloudFinding> target,
+                                  List<StaticScanResult.CloudAsset> assets) {
+        if (target == null || assets == null) {
+            return;
+        }
+        for (StaticScanResult.CloudAsset asset : assets) {
+            if (asset == null) {
+                continue;
+            }
+            StaticScanResult.CloudFinding finding = new StaticScanResult.CloudFinding();
+            finding.setCategory("webpack模块");
+            finding.setType(!isBlank(asset.getType()) ? asset.getType() : "script");
+            finding.setValue(!isBlank(asset.getResolvedUrl()) ? asset.getResolvedUrl() : asset.getUrl());
+            finding.setSeverity("INFO");
+            finding.setSource(!isBlank(asset.getSource()) ? asset.getSource() : "asset");
+            finding.setSourceScriptUrl(asset.getSourceScriptUrl());
+            finding.setEvidence("raw=" + safe(asset.getUrl()) + "\nresolved=" + safe(asset.getResolvedUrl())
+                    + "\nchunk=" + safe(asset.getChunkName()));
+            addFinding(target, finding);
+        }
+    }
+
+    private void addFinding(Map<String, StaticScanResult.CloudFinding> target,
+                            StaticScanResult.CloudFinding finding) {
+        if (target == null || finding == null) {
+            return;
+        }
+        target.putIfAbsent(findingKey(finding), finding);
+    }
+
+    private String findingKey(StaticScanResult.CloudFinding finding) {
+        return safe(finding.getCategory()) + "\u0000"
+                + safe(finding.getType()) + "\u0000"
+                + safe(finding.getValue()) + "\u0000"
+                + safe(finding.getSource()) + "\u0000"
+                + safe(finding.getSourceScriptUrl()) + "\u0000"
+                + safe(finding.getEvidence());
     }
 
     private int size(List<?> values) {
@@ -985,6 +1120,64 @@ public class StaticScanPanel extends JPanel {
                 case 7 -> oneLine(finding.getEvidence());
                 default -> "";
             };
+        }
+    }
+
+    private static class FindingCategoryTableModel extends AbstractTableModel {
+        private final String[] columns = {"分类", "数量"};
+        private final Map<String, List<StaticScanResult.CloudFinding>> grouped = new LinkedHashMap<>();
+        private List<String> categories = List.of();
+
+        void setFindings(List<StaticScanResult.CloudFinding> findings) {
+            grouped.clear();
+            for (StaticScanResult.CloudFinding finding : nonNullList(findings)) {
+                String category = normalizeCategory(finding.getCategory());
+                grouped.computeIfAbsent(category, ignored -> new ArrayList<>()).add(finding);
+            }
+            categories = List.copyOf(grouped.keySet());
+            fireTableDataChanged();
+        }
+
+        String getCategoryAt(int row) {
+            return row >= 0 && row < categories.size() ? categories.get(row) : null;
+        }
+
+        List<StaticScanResult.CloudFinding> getFindingsAt(int row) {
+            String category = getCategoryAt(row);
+            return category != null ? grouped.getOrDefault(category, List.of()) : List.of();
+        }
+
+        int indexOfCategory(String category) {
+            if (category == null) {
+                return -1;
+            }
+            for (int i = 0; i < categories.size(); i++) {
+                if (category.equals(categories.get(i))) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        @Override public int getRowCount() { return categories.size(); }
+        @Override public int getColumnCount() { return columns.length; }
+        @Override public String getColumnName(int column) { return columns[column]; }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            String category = getCategoryAt(rowIndex);
+            if (category == null) {
+                return "";
+            }
+            return switch (columnIndex) {
+                case 0 -> category;
+                case 1 -> grouped.getOrDefault(category, List.of()).size();
+                default -> "";
+            };
+        }
+
+        private static String normalizeCategory(String category) {
+            return category != null && !category.isBlank() ? category.trim() : "未分类";
         }
     }
 

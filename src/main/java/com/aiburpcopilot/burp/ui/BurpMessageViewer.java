@@ -44,10 +44,8 @@ final class BurpMessageViewer {
         void setBytes(byte[] bytes) {
             boolean sameBytes = java.util.Arrays.equals(lastBytes, bytes);
             if (editor != null) {
-                if (!sameBytes) {
-                    editor.setRequest(bytes != null && bytes.length > 0
-                            ? HttpRequest.httpRequest(ByteArray.byteArray(bytes))
-                            : HttpRequest.httpRequest());
+                if (!sameBytes && bytes != null && bytes.length > 0) {
+                    editor.setRequest(HttpRequest.httpRequest(ByteArray.byteArray(bytes)));
                 }
             } else {
                 UiUtil.setTextPreservingView(fallback, UiUtil.bytesToText(bytes), sameBytes);
@@ -84,10 +82,8 @@ final class BurpMessageViewer {
         void setBytes(byte[] bytes) {
             boolean sameBytes = java.util.Arrays.equals(lastBytes, bytes);
             if (editor != null) {
-                if (!sameBytes) {
-                    editor.setResponse(bytes != null && bytes.length > 0
-                            ? HttpResponse.httpResponse(ByteArray.byteArray(bytes))
-                            : HttpResponse.httpResponse());
+                if (!sameBytes && bytes != null && bytes.length > 0) {
+                    editor.setResponse(HttpResponse.httpResponse(ByteArray.byteArray(bytes)));
                 }
             } else {
                 UiUtil.setTextPreservingView(fallback, UiUtil.bytesToText(bytes), sameBytes);

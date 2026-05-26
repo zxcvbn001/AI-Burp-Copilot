@@ -1409,7 +1409,7 @@ public class StaticResourceScanner implements IStaticScanner {
                 .append(" | risks=").append(size(result.getCloudRisks()))
                 .append("\n");
 
-        summary.append("Details: 请在 Endpoints / Sensitive / Scripts / Tasks 表格中查看明细。\n");
+        summary.append("Details: 请在 Endpoints / secret / finding 表格中查看明细。\n");
 
         if (result.getAnalyzedScripts() != null && !result.getAnalyzedScripts().isEmpty()) {
             summary.append("JS scripts analyzed: ").append(result.getAnalyzedScripts().size()).append("\n");

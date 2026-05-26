@@ -57,10 +57,38 @@ public class StaticScanStage implements IPipelineStage {
         }
         HistoryEntry existing = historyService.getById(context.getRequestId());
         if (existing != null) {
-            existing.setStaticScanDetails(result);
-            existing.setAiSummary(context.getStaticScanResult());
+            if (hasStructuredDetails(result) || existing.getStaticScanDetails() == null) {
+                existing.setStaticScanDetails(result);
+            }
+            if (!isFailureSummary(context.getStaticScanResult()) || !hasStructuredDetails(existing.getStaticScanDetails())) {
+                existing.setAiSummary(context.getStaticScanResult());
+            }
             historyService.update(existing);
         }
+    }
+
+    private boolean hasStructuredDetails(StaticScanResult result) {
+        return result != null && (notEmpty(result.getCloudApis())
+                || notEmpty(result.getCloudAssets())
+                || notEmpty(result.getCloudParams())
+                || notEmpty(result.getCloudAuthSignals())
+                || notEmpty(result.getCloudSecrets())
+                || notEmpty(result.getCloudRisks())
+                || notEmpty(result.getCloudFindings())
+                || notEmpty(result.getEndpointFindings())
+                || notEmpty(result.getExposureFindings())
+                || notEmpty(result.getScriptFindings())
+                || notEmpty(result.getAnalyzedScripts())
+                || notEmpty(result.getRecoveredEndpoints())
+                || result.getCloudSummary() != null);
+    }
+
+    private boolean notEmpty(java.util.List<?> values) {
+        return values != null && values.stream().anyMatch(java.util.Objects::nonNull);
+    }
+
+    private boolean isFailureSummary(String summary) {
+        return summary != null && summary.startsWith("静态分析失败");
     }
 
     private StaticScanResult snapshotResult(StaticScanResult result) {
