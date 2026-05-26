@@ -54,6 +54,11 @@ public class ReportExportPanel extends JPanel {
         loadPersistedTasks();
     }
 
+    public void refresh() {
+        tableModel.refresh();
+        updateDetail();
+    }
+
     public ExportTaskHandle createTask(String host, int itemCount, Path outputPath) {
         ExportTaskHandle handle = new ExportTaskHandle(historyService, host, itemCount, outputPath);
         SwingUtilities.invokeLater(() -> {
@@ -70,11 +75,14 @@ public class ReportExportPanel extends JPanel {
         if (historyService == null) {
             return;
         }
+        String selectedTaskId = selectedTaskId();
         List<ReportExportTaskRecord> records = historyService.listReportExportTasks();
+        tableModel.clear();
         for (ReportExportTaskRecord record : records) {
             tableModel.addTaskSilently(new ExportTaskHandle(historyService, record));
         }
         tableModel.refresh();
+        restoreSelection(selectedTaskId);
     }
 
     private void updateDetail() {
@@ -87,6 +95,23 @@ public class ReportExportPanel extends JPanel {
         boolean sameHandle = handle == displayedHandle;
         UiUtil.setTextPreservingView(detailArea, handle.detailText(), sameHandle);
         displayedHandle = handle;
+    }
+
+    private String selectedTaskId() {
+        ExportTaskHandle handle = tableModel.getRowAt(table.getSelectedRow());
+        return handle != null ? handle.taskId() : displayedHandle != null ? displayedHandle.taskId() : null;
+    }
+
+    private void restoreSelection(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return;
+        }
+        int row = tableModel.indexOfTaskId(taskId);
+        if (row >= 0) {
+            table.setRowSelectionInterval(row, row);
+            table.scrollRectToVisible(table.getCellRect(row, 0, true));
+            updateDetail();
+        }
     }
 
     public static final class ExportTaskHandle {
@@ -232,8 +257,25 @@ public class ReportExportPanel extends JPanel {
             rows.add(handle);
         }
 
+        void clear() {
+            rows.clear();
+        }
+
         int indexOf(ExportTaskHandle handle) {
             return rows.indexOf(handle);
+        }
+
+        int indexOfTaskId(String taskId) {
+            if (taskId == null) {
+                return -1;
+            }
+            for (int i = 0; i < rows.size(); i++) {
+                ExportTaskHandle row = rows.get(i);
+                if (row != null && taskId.equals(row.taskId())) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         ExportTaskHandle getRowAt(int row) {

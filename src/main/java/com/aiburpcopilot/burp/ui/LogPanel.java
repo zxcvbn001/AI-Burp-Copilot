@@ -185,7 +185,7 @@ public class LogPanel extends JPanel {
                 detailArea.setText("");
                 return;
             }
-            String currentKey = entry.formatTimestamp() + "|" + entry.level().name() + "|" + LogTableModel.displaySource(entry);
+            String currentKey = LogTableModel.key(entry);
             boolean sameEntry = currentKey.equals(displayedEntryKey);
             detailMetaLabel.setText(entry.formatTimestamp() + "  [" + entry.level().name() + "]  "
                     + LogTableModel.displaySource(entry));
@@ -231,9 +231,7 @@ public class LogPanel extends JPanel {
                 if (!isDisplayable()) {
                     return;
                 }
-                int selectedModelRow = table.getSelectedRow() >= 0
-                        ? table.convertRowIndexToModel(table.getSelectedRow())
-                        : -1;
+                String selectedKey = selectedEntryKey();
                 List<PluginLogger.LogEntry> entries = PluginLogger.getInstance()
                         .getEntries(parseLevelFilter(), category);
                 lastSeenCount = PluginLogger.getInstance().getSize(category);
@@ -241,7 +239,8 @@ public class LogPanel extends JPanel {
                 statusLabel.setText(buildStatusText(lastSeenCount));
                 tableModel.setEntries(entries);
 
-                if (selectedModelRow >= 0 && selectedModelRow < entries.size()) {
+                int selectedModelRow = tableModel.indexOfKey(selectedKey);
+                if (selectedModelRow >= 0) {
                     int selectedViewRow = table.convertRowIndexToView(selectedModelRow);
                     table.getSelectionModel().setSelectionInterval(selectedViewRow, selectedViewRow);
                 } else if (!entries.isEmpty() && autoScrollCb.isSelected()) {
@@ -252,6 +251,15 @@ public class LogPanel extends JPanel {
                     onSelectionChanged(new ListSelectionEvent(table, -1, -1, false));
                 }
             });
+        }
+
+        private String selectedEntryKey() {
+            int row = table.getSelectedRow();
+            if (row >= 0) {
+                PluginLogger.LogEntry entry = tableModel.getEntryAt(table.convertRowIndexToModel(row));
+                return entry != null ? LogTableModel.key(entry) : displayedEntryKey;
+            }
+            return displayedEntryKey;
         }
 
         private Set<PluginLogger.Level> parseLevelFilter() {
@@ -319,6 +327,25 @@ public class LogPanel extends JPanel {
                 return entry.source() + " Response";
             }
             return entry.source();
+        }
+
+        static String key(PluginLogger.LogEntry entry) {
+            return entry != null
+                    ? entry.formatTimestamp() + "|" + entry.level().name() + "|"
+                    + displaySource(entry) + "|" + displayMessage(entry)
+                    : null;
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < entries.size(); i++) {
+                if (key.equals(key(entries.get(i)))) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         private static String displayMessage(PluginLogger.LogEntry entry) {

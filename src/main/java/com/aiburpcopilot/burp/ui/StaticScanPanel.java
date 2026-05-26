@@ -53,6 +53,7 @@ public class StaticScanPanel extends JPanel {
     private final BurpMessageViewer.RequestView requestViewer;
     private final BurpMessageViewer.ResponseView responseViewer;
     private final MontoyaApi api;
+    private final JTabbedPane resultTabs;
 
     private HistoryEntry currentEntry;
     private String displayedEntryId;
@@ -147,7 +148,7 @@ public class StaticScanPanel extends JPanel {
         requestViewer = new BurpMessageViewer.RequestView(api);
         responseViewer = new BurpMessageViewer.ResponseView(api);
 
-        JTabbedPane resultTabs = new JTabbedPane();
+        resultTabs = new JTabbedPane();
         UiUtil.applyBurpFont(resultTabs);
         resultTabs.addTab("Endpoints", createEndpointGroupPanel());
         resultTabs.addTab("secret", createSecretGroupPanel());
@@ -182,6 +183,7 @@ public class StaticScanPanel extends JPanel {
     public void refresh() {
         String preserveId = currentEntry != null ? currentEntry.getRequestId() : null;
         int selectedTab = detailTabs.getSelectedIndex();
+        int selectedResultTab = resultTabs.getSelectedIndex();
         SwingUtilities.invokeLater(() -> {
             refreshing = true;
             try {
@@ -195,6 +197,9 @@ public class StaticScanPanel extends JPanel {
                 restoreSelection(staticResources, preserveId);
                 if (selectedTab >= 0 && selectedTab < detailTabs.getTabCount()) {
                     detailTabs.setSelectedIndex(selectedTab);
+                }
+                if (selectedResultTab >= 0 && selectedResultTab < resultTabs.getTabCount()) {
+                    resultTabs.setSelectedIndex(selectedResultTab);
                 }
             } finally {
                 refreshing = false;
@@ -252,7 +257,13 @@ public class StaticScanPanel extends JPanel {
         boolean sameEntry = currentId != null && currentId.equals(displayedEntryId);
         StaticScanResult details = entry.getStaticScanDetails();
         String selectedApiKey = selectedCloudApiKey();
+        String selectedAssetKey = selectedAssetKey();
+        String selectedParamKey = selectedParamKey();
+        String selectedSecretKey = selectedSecretKey();
         String selectedFindingCategory = selectedFindingCategoryKey();
+        String selectedFindingDetailKey = selectedFindingDetailKey();
+        String selectedScriptKey = selectedScriptKey();
+        String selectedTaskKey = selectedTaskKey();
         boolean previousRefreshing = refreshing;
         refreshing = true;
         try {
@@ -266,13 +277,19 @@ public class StaticScanPanel extends JPanel {
                     details != null ? details.getRecoveredEndpoints() : List.of());
             restoreCloudApiSelection(sameEntry ? selectedApiKey : null);
             cloudAssetTableModel.setAssets(details != null ? details.getCloudAssets() : List.of());
+            restoreAssetSelection(sameEntry ? selectedAssetKey : null);
             cloudParamTableModel.setParams(details != null ? details.getCloudParams() : List.of());
+            restoreParamSelection(sameEntry ? selectedParamKey : null);
             cloudSecretTableModel.setSecrets(details != null ? details.getCloudSecrets() : List.of());
+            restoreSecretSelection(sameEntry ? selectedSecretKey : null);
             findingCategoryTableModel.setFindings(allCloudFindings(details));
             restoreFindingCategorySelection(sameEntry ? selectedFindingCategory : null);
             updateFindingCategorySelection(sameEntry);
+            restoreFindingDetailSelection(sameEntry ? selectedFindingDetailKey : null);
             analyzedScriptTableModel.setScripts(details != null ? details.getAnalyzedScripts() : List.of());
+            restoreScriptSelection(sameEntry ? selectedScriptKey : null);
             jsTaskTableModel.setTasks(details != null ? details.getJsAstTasks() : List.of());
+            restoreTaskSelection(sameEntry ? selectedTaskKey : null);
             UiUtil.setTextPreservingView(authSignalArea, buildAuthSignalText(details), sameEntry);
         } finally {
             refreshing = previousRefreshing;
@@ -350,6 +367,79 @@ public class StaticScanPanel extends JPanel {
             return null;
         }
         return cloudApiTableModel.selectedKey(cloudApiTable.convertRowIndexToModel(row));
+    }
+
+    private String selectedAssetKey() {
+        return selectedModelKey(cloudAssetTable, row -> cloudAssetTableModel.keyAt(row));
+    }
+
+    private void restoreAssetSelection(String key) {
+        restoreModelKeySelection(cloudAssetTable, key, searchKey -> cloudAssetTableModel.indexOfKey(searchKey));
+    }
+
+    private String selectedParamKey() {
+        return selectedModelKey(cloudParamTable, row -> cloudParamTableModel.keyAt(row));
+    }
+
+    private void restoreParamSelection(String key) {
+        restoreModelKeySelection(cloudParamTable, key, searchKey -> cloudParamTableModel.indexOfKey(searchKey));
+    }
+
+    private String selectedSecretKey() {
+        return selectedModelKey(cloudSecretTable, row -> cloudSecretTableModel.keyAt(row));
+    }
+
+    private void restoreSecretSelection(String key) {
+        restoreModelKeySelection(cloudSecretTable, key, searchKey -> cloudSecretTableModel.indexOfKey(searchKey));
+    }
+
+    private String selectedFindingDetailKey() {
+        return selectedModelKey(findingDetailTable, row -> findingDetailTableModel.keyAt(row));
+    }
+
+    private void restoreFindingDetailSelection(String key) {
+        restoreModelKeySelection(findingDetailTable, key, searchKey -> findingDetailTableModel.indexOfKey(searchKey));
+    }
+
+    private String selectedScriptKey() {
+        return selectedModelKey(analyzedScriptTable, row -> analyzedScriptTableModel.keyAt(row));
+    }
+
+    private void restoreScriptSelection(String key) {
+        restoreModelKeySelection(analyzedScriptTable, key, searchKey -> analyzedScriptTableModel.indexOfKey(searchKey));
+    }
+
+    private String selectedTaskKey() {
+        return selectedModelKey(jsTaskTable, row -> jsTaskTableModel.keyAt(row));
+    }
+
+    private void restoreTaskSelection(String key) {
+        restoreModelKeySelection(jsTaskTable, key, searchKey -> jsTaskTableModel.indexOfKey(searchKey));
+    }
+
+    private String selectedModelKey(JTable sourceTable, java.util.function.IntFunction<String> keyFunction) {
+        int row = sourceTable != null ? sourceTable.getSelectedRow() : -1;
+        if (row < 0 || keyFunction == null) {
+            return null;
+        }
+        return keyFunction.apply(sourceTable.convertRowIndexToModel(row));
+    }
+
+    private void restoreModelKeySelection(JTable sourceTable,
+                                          String key,
+                                          java.util.function.Function<String, Integer> indexFunction) {
+        if (sourceTable == null || key == null || key.isBlank() || indexFunction == null) {
+            return;
+        }
+        int modelRow = indexFunction.apply(key);
+        if (modelRow < 0) {
+            return;
+        }
+        int viewRow = sourceTable.convertRowIndexToView(modelRow);
+        if (viewRow >= 0) {
+            sourceTable.setRowSelectionInterval(viewRow, viewRow);
+            sourceTable.scrollRectToVisible(sourceTable.getCellRect(viewRow, 0, true));
+        }
     }
 
     private void updateCloudApiDetail(boolean preserveView) {
@@ -1103,6 +1193,22 @@ public class StaticScanPanel extends JPanel {
             return row >= 0 && row < findings.size() ? findings.get(row) : null;
         }
 
+        String keyAt(int row) {
+            return key(getFindingAt(row));
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < findings.size(); i++) {
+                if (key.equals(key(findings.get(i)))) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudFinding finding = findings.get(rowIndex);
@@ -1120,6 +1226,15 @@ public class StaticScanPanel extends JPanel {
                 case 7 -> oneLine(finding.getEvidence());
                 default -> "";
             };
+        }
+
+        private static String key(StaticScanResult.CloudFinding finding) {
+            if (finding == null) {
+                return null;
+            }
+            return safe(finding.getCategory()) + "|" + safe(finding.getType()) + "|"
+                    + safe(finding.getValue()) + "|" + safe(finding.getSource()) + "|"
+                    + safe(finding.getSourceScriptUrl()) + "|" + safe(finding.getEvidence());
         }
     }
 
@@ -1330,6 +1445,22 @@ public class StaticScanPanel extends JPanel {
             return row >= 0 && row < assets.size() ? assets.get(row) : null;
         }
 
+        String keyAt(int row) {
+            return key(getAssetAt(row));
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < assets.size(); i++) {
+                if (key.equals(key(assets.get(i)))) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudAsset asset = assets.get(rowIndex);
@@ -1346,6 +1477,14 @@ public class StaticScanPanel extends JPanel {
                 case 6 -> asset.getSourceScriptUrl();
                 default -> "";
             };
+        }
+
+        private static String key(StaticScanResult.CloudAsset asset) {
+            if (asset == null) {
+                return null;
+            }
+            return safe(asset.getType()) + "|" + safe(asset.getResolvedUrl()) + "|"
+                    + safe(asset.getUrl()) + "|" + safe(asset.getSourceScriptUrl());
         }
     }
 
@@ -1366,6 +1505,22 @@ public class StaticScanPanel extends JPanel {
             return row >= 0 && row < params.size() ? params.get(row) : null;
         }
 
+        String keyAt(int row) {
+            return key(getParamAt(row));
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < params.size(); i++) {
+                if (key.equals(key(params.get(i)))) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudParam param = params.get(rowIndex);
@@ -1380,6 +1535,14 @@ public class StaticScanPanel extends JPanel {
                 case 4 -> param.getSourceScriptUrl();
                 default -> "";
             };
+        }
+
+        private static String key(StaticScanResult.CloudParam param) {
+            if (param == null) {
+                return null;
+            }
+            return safe(param.getName()) + "|" + safe(param.getLocation()) + "|"
+                    + safe(param.getApi()) + "|" + safe(param.getSourceScriptUrl());
         }
     }
 
@@ -1400,6 +1563,22 @@ public class StaticScanPanel extends JPanel {
             return row >= 0 && row < secrets.size() ? secrets.get(row) : null;
         }
 
+        String keyAt(int row) {
+            return key(getSecretAt(row));
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < secrets.size(); i++) {
+                if (key.equals(key(secrets.get(i)))) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.CloudSecret secret = secrets.get(rowIndex);
@@ -1416,6 +1595,15 @@ public class StaticScanPanel extends JPanel {
                 case 6 -> oneLine(secret.getEvidence());
                 default -> "";
             };
+        }
+
+        private static String key(StaticScanResult.CloudSecret secret) {
+            if (secret == null) {
+                return null;
+            }
+            return safe(secret.getSeverity()) + "|" + safe(secret.getType()) + "|"
+                    + safe(secret.getValue()) + "|" + safe(secret.getSourceScriptUrl()) + "|"
+                    + safe(secret.getEvidence());
         }
     }
 
@@ -1465,6 +1653,23 @@ public class StaticScanPanel extends JPanel {
             return row >= 0 && row < scripts.size() ? scripts.get(row) : null;
         }
 
+        String keyAt(int row) {
+            StaticScanResult.AnalyzedScript script = getScriptAt(row);
+            return script != null ? safe(script.getUrl()) : null;
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < scripts.size(); i++) {
+                if (key.equals(keyAt(i))) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             StaticScanResult.AnalyzedScript script = scripts.get(rowIndex);
@@ -1500,6 +1705,27 @@ public class StaticScanPanel extends JPanel {
 
         StaticScanResult.JsAstTaskStatus getTaskAt(int row) {
             return row >= 0 && row < tasks.size() ? tasks.get(row) : null;
+        }
+
+        String keyAt(int row) {
+            StaticScanResult.JsAstTaskStatus task = getTaskAt(row);
+            if (task == null) {
+                return null;
+            }
+            return safe(task.getTaskId()) + "|" + safe(task.getScriptUrl()) + "|"
+                    + safe(task.getPhase()) + "|" + safe(task.getStatus());
+        }
+
+        int indexOfKey(String key) {
+            if (key == null) {
+                return -1;
+            }
+            for (int i = 0; i < tasks.size(); i++) {
+                if (key.equals(keyAt(i))) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         @Override

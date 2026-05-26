@@ -146,6 +146,7 @@ public class HistoryPanel extends JPanel {
      */
     public void refresh() {
         SwingUtilities.invokeLater(() -> {
+            String selectedId = selectedEntryId();
             String keyword = searchField.getText().trim();
             String site = siteField.getText().trim();
             EndpointType type = parseTypeFilter();
@@ -165,6 +166,7 @@ public class HistoryPanel extends JPanel {
                     0, 200);
 
             tableModel.setEntries(results);
+            restoreSelection(selectedId);
         });
     }
 
@@ -196,6 +198,28 @@ public class HistoryPanel extends JPanel {
             return null;
         }
         return tableModel.getEntryAt(table.convertRowIndexToModel(row));
+    }
+
+    private String selectedEntryId() {
+        HistoryEntry entry = selectedEntry();
+        return entry != null ? entry.getRequestId() : null;
+    }
+
+    private void restoreSelection(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return;
+        }
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            HistoryEntry entry = tableModel.getEntryAt(modelRow);
+            if (entry != null && requestId.equals(entry.getRequestId())) {
+                int viewRow = table.convertRowIndexToView(modelRow);
+                if (viewRow >= 0) {
+                    table.setRowSelectionInterval(viewRow, viewRow);
+                    table.scrollRectToVisible(table.getCellRect(viewRow, 0, true));
+                }
+                return;
+            }
+        }
     }
 
     private void clearFilteredHistory() {

@@ -35,9 +35,12 @@ public class SitePatternDiscoveryPanel extends JPanel {
     private final JTextArea reviewArea;
     private final JLabel summaryLabel;
     private final JLabel attemptHintLabel;
+    private final JTabbedPane detailTabs;
+    private final JTabbedPane leftTabs;
 
     private List<DiscoveryCandidate> currentCandidates = List.of();
     private String displayedCandidateKey;
+    private String displayedAttemptKey;
     private SwingWorker<List<DiscoveryCandidate>, Void> inferenceWorker;
     private SwingWorker<List<DiscoveryCandidate>, DiscoveryCandidate> validationWorker;
 
@@ -88,13 +91,13 @@ public class SitePatternDiscoveryPanel extends JPanel {
         reviewArea = UiUtil.createMessageArea();
         attemptHintLabel = new JLabel("未发送验证请求");
 
-        JTabbedPane detailTabs = new JTabbedPane();
+        detailTabs = new JTabbedPane();
         UiUtil.applyBurpFont(detailTabs);
         detailTabs.addTab("请求", requestViewer);
         detailTabs.addTab("响应", responseViewer);
         detailTabs.addTab("研判", UiUtil.searchableTextPanel(reviewArea));
 
-        JTabbedPane leftTabs = new JTabbedPane();
+        leftTabs = new JTabbedPane();
         UiUtil.applyBurpFont(leftTabs);
         leftTabs.addTab("接口结构图", UiUtil.searchableTextPanel(structureArea));
         leftTabs.addTab("规律来源", UiUtil.searchableTextPanel(sourceArea));
@@ -135,18 +138,24 @@ public class SitePatternDiscoveryPanel extends JPanel {
     public void refresh() {
         String previousHost = hostFilterCombo.getSelectedItem() instanceof String value ? value : "ALL";
         String previousKey = selectedCandidateKey();
+        String previousAttemptKey = selectedAttemptKey();
+        int previousLeftTab = leftTabs.getSelectedIndex();
+        int previousDetailTab = detailTabs.getSelectedIndex();
         reloadHostFilter(previousHost);
         String hostFilter = selectedHostFilter();
-        structureArea.setText(discoveryService.describeEndpointStructure(hostFilter));
+        UiUtil.setTextPreservingView(structureArea, discoveryService.describeEndpointStructure(hostFilter), true);
         currentCandidates = discoveryService.getCandidates(hostFilter);
         tableModel.setRows(currentCandidates);
         summaryLabel.setText(statusText());
         restoreSelection(previousKey);
+        restoreTabSelection(leftTabs, previousLeftTab);
+        restoreTabSelection(detailTabs, previousDetailTab);
         if (table.getSelectedRow() < 0 && !currentCandidates.isEmpty()) {
             table.setRowSelectionInterval(0, 0);
         } else {
             updateCandidateDetail();
         }
+        restoreAttemptSelection(previousAttemptKey);
     }
 
     private void startLlmInference() {
@@ -155,6 +164,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
             return;
         }
         String previousKey = selectedCandidateKey();
+        String previousAttemptKey = selectedAttemptKey();
         String hostFilter = selectedHostFilter();
         summaryLabel.setText(statusText() + " | LLM 推理中...");
         inferenceWorker = new SwingWorker<>() {
@@ -179,6 +189,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
                 } else {
                     updateCandidateDetail();
                 }
+                restoreAttemptSelection(previousAttemptKey);
             }
         };
         inferenceWorker.execute();
@@ -208,6 +219,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
         }
 
         summaryLabel.setText("候选: " + currentCandidates.size() + " | 正在验证...");
+        String previousAttemptKey = selectedAttemptKey();
         new SwingWorker<DiscoveryCandidate, Void>() {
             @Override
             protected DiscoveryCandidate doInBackground() {
@@ -224,6 +236,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
                 tableModel.setRows(currentCandidates);
                 summaryLabel.setText(statusText());
                 updateCandidateDetail();
+                restoreAttemptSelection(previousAttemptKey);
             }
         }.execute();
     }
@@ -243,6 +256,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
             return;
         }
         String previousKey = selectedCandidateKey();
+        String previousAttemptKey = selectedAttemptKey();
         summaryLabel.setText(statusText() + " | 正在批量验证 0/" + targets.size());
         validationWorker = new SwingWorker<>() {
             @Override
@@ -279,6 +293,7 @@ public class SitePatternDiscoveryPanel extends JPanel {
                 }
                 refresh();
                 restoreSelection(previousKey);
+                restoreAttemptSelection(previousAttemptKey);
             }
         };
         validationWorker.execute();
@@ -295,11 +310,13 @@ public class SitePatternDiscoveryPanel extends JPanel {
             requestViewer.setBytes(null);
             responseViewer.setBytes(null);
             attemptHintLabel.setText("未选择候选");
+            displayedAttemptKey = null;
             return;
         }
 
         String currentKey = candidate.getKey();
         boolean sameCandidate = currentKey != null && currentKey.equals(displayedCandidateKey);
+        String previousAttemptKey = sameCandidate ? selectedAttemptKey() : null;
         UiUtil.setTextPreservingView(sourceArea, buildSourceText(candidate), sameCandidate);
         UiUtil.setTextPreservingView(reviewArea, buildReviewText(candidate), sameCandidate);
         attemptListModel.clear();
@@ -311,9 +328,13 @@ public class SitePatternDiscoveryPanel extends JPanel {
         }
         attemptHintLabel.setText(validationHint(candidate));
         displayedCandidateKey = currentKey;
+        restoreAttemptSelection(previousAttemptKey);
         if (!attemptListModel.isEmpty()) {
-            attemptList.setSelectedIndex(0);
+            if (attemptList.getSelectedIndex() < 0) {
+                attemptList.setSelectedIndex(0);
+            }
         } else {
+            displayedAttemptKey = null;
             requestViewer.setBytes(null);
             responseViewer.setBytes(null);
         }
@@ -324,10 +345,12 @@ public class SitePatternDiscoveryPanel extends JPanel {
         if (attempt == null) {
             requestViewer.setBytes(null);
             responseViewer.setBytes(null);
+            displayedAttemptKey = null;
             return;
         }
         requestViewer.setBytes(attempt.getRequestBytes());
         responseViewer.setBytes(attempt.getResponseBytes());
+        displayedAttemptKey = attemptKey(attempt);
         attemptHintLabel.setText("Request " + attempt.getSequence() + " / Response " + attempt.getSequence()
                 + " | " + attempt.getMethod() + " | HTTP " + attempt.getStatusCode()
                 + " | " + (attempt.isSignalMatched() ? "有存在信号" : "无明显存在信号"));
@@ -472,6 +495,19 @@ public class SitePatternDiscoveryPanel extends JPanel {
         return candidate != null ? candidate.getKey() : null;
     }
 
+    private String selectedAttemptKey() {
+        DiscoveryAttempt attempt = attemptList.getSelectedValue();
+        return attempt != null ? attemptKey(attempt) : displayedAttemptKey;
+    }
+
+    private String attemptKey(DiscoveryAttempt attempt) {
+        if (attempt == null) {
+            return null;
+        }
+        return attempt.getSequence() + "|" + nullToDash(attempt.getMethod()) + "|" + attempt.getStatusCode()
+                + "|" + nullToDash(attempt.getSummary());
+    }
+
     private void restoreSelection(String key) {
         if (key == null) {
             return;
@@ -483,6 +519,30 @@ public class SitePatternDiscoveryPanel extends JPanel {
                 return;
             }
         }
+    }
+
+    private void restoreAttemptSelection(String key) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+        for (int i = 0; i < attemptListModel.size(); i++) {
+            DiscoveryAttempt attempt = attemptListModel.get(i);
+            if (key.equals(attemptKey(attempt))) {
+                attemptList.setSelectedIndex(i);
+                attemptList.ensureIndexIsVisible(i);
+                return;
+            }
+        }
+    }
+
+    private void restoreTabSelection(JTabbedPane tabs, int index) {
+        if (tabs != null && index >= 0 && index < tabs.getTabCount()) {
+            tabs.setSelectedIndex(index);
+        }
+    }
+
+    private String nullToDash(Object value) {
+        return value != null ? String.valueOf(value) : "-";
     }
 
     private static class CandidateTableModel extends AbstractTableModel {

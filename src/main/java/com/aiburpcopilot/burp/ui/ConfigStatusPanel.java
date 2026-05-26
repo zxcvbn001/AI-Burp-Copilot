@@ -84,8 +84,8 @@ public class ConfigStatusPanel extends JPanel {
     }
 
     public void refreshFileList() {
+        String selectedPath = selectedRelativePath();
         tableModel.setRowCount(0);
-        detailArea.setText("");
         List<Path> allFiles = new ArrayList<>();
 
         Path configDir = ExternalResourcePaths.homeDirOrNull();
@@ -157,6 +157,15 @@ public class ConfigStatusPanel extends JPanel {
                     ""
             });
         }
+        restoreSelection(selectedPath);
+        if (fileTable.getSelectedRow() < 0) {
+            if (selectedPath == null) {
+                detailArea.setText("");
+            } else {
+                displayedRelativePath = null;
+                detailArea.setText("");
+            }
+        }
     }
 
     private void reloadAll() {
@@ -225,5 +234,29 @@ public class ConfigStatusPanel extends JPanel {
 
         UiUtil.setTextPreservingView(detailArea, sb.toString(), sameFile);
         displayedRelativePath = relativePath;
+    }
+
+    private String selectedRelativePath() {
+        int row = fileTable.getSelectedRow();
+        if (row < 0) {
+            return displayedRelativePath;
+        }
+        Object value = tableModel.getValueAt(row, 1);
+        return value != null ? value.toString() : displayedRelativePath;
+    }
+
+    private void restoreSelection(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            Object value = tableModel.getValueAt(row, 1);
+            if (value != null && relativePath.equals(value.toString())) {
+                fileTable.setRowSelectionInterval(row, row);
+                fileTable.scrollRectToVisible(fileTable.getCellRect(row, 0, true));
+                showDetailForRow(row);
+                return;
+            }
+        }
     }
 }

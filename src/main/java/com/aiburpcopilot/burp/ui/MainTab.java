@@ -26,6 +26,7 @@ public class MainTab extends JPanel {
     private final ReportExportPanel reportExportPanel;
     private final LogPanel logPanel;
     private final SettingsPanel settingsPanel;
+    private final JTabbedPane tabbedPane;
     private Timer refreshDebounceTimer;
 
     public MainTab(MontoyaApi api,
@@ -55,7 +56,7 @@ public class MainTab extends JPanel {
         this.logPanel = new LogPanel();
         this.settingsPanel = new SettingsPanel(configService, historyService, api, reloadRuntimeResources);
 
-        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane = new JTabbedPane();
         UiUtil.applyBurpFont(tabbedPane);
         tabbedPane.addTab("\u5386\u53f2", historyPanel);
         tabbedPane.addTab("Endpoint\u5206\u6790", endpointPanel);
@@ -67,22 +68,23 @@ public class MainTab extends JPanel {
         tabbedPane.addTab("\u62a5\u544a\u5bfc\u51fa", reportExportPanel);
         tabbedPane.addTab("\u65e5\u5fd7", logPanel);
         tabbedPane.addTab("\u8bbe\u7f6e", settingsPanel);
+        tabbedPane.addChangeListener(e -> refreshActivePanel());
         add(tabbedPane, BorderLayout.CENTER);
 
         HistoryEventBus.getInstance().subscribe(new HistoryEventBus.Listener() {
             @Override
             public void onHistoryAdded(HistoryEntry entry) {
-                refreshAllPanels();
+                refreshActivePanelDebounced();
             }
 
             @Override
             public void onHistoryCleared() {
-                refreshAllPanels();
+                refreshActivePanelDebounced();
             }
 
             @Override
             public void onRefreshNeeded() {
-                refreshAllPanels();
+                refreshActivePanelDebounced();
             }
         });
 
@@ -90,31 +92,37 @@ public class MainTab extends JPanel {
     }
 
     public void refreshNow() {
-        refreshAllPanels();
+        refreshActivePanelDebounced();
     }
 
-    private void refreshAllPanels() {
+    private void refreshActivePanelDebounced() {
         SwingUtilities.invokeLater(() -> {
             if (refreshDebounceTimer == null) {
-                refreshDebounceTimer = new Timer(300, e -> doRefreshAllPanels());
+                refreshDebounceTimer = new Timer(300, e -> refreshActivePanel());
                 refreshDebounceTimer.setRepeats(false);
             }
             refreshDebounceTimer.restart();
         });
     }
 
-    private void doRefreshAllPanels() {
-        historyPanel.refresh();
-        endpointPanel.refresh();
-        parameterInfluencePanel.refresh();
-        verificationPanel.refresh();
-        staticScanPanel.refresh();
-        sitePatternDiscoveryPanel.refresh();
-        confirmedVulnerabilityPanel.refresh();
+    private void refreshActivePanel() {
+        int selectedIndex = tabbedPane != null ? tabbedPane.getSelectedIndex() : -1;
+        switch (selectedIndex) {
+            case 0 -> historyPanel.refresh();
+            case 1 -> endpointPanel.refresh();
+            case 2 -> parameterInfluencePanel.refresh();
+            case 3 -> verificationPanel.refresh();
+            case 4 -> staticScanPanel.refresh();
+            case 5 -> sitePatternDiscoveryPanel.refresh();
+            case 6 -> confirmedVulnerabilityPanel.refresh();
+            case 7 -> reportExportPanel.refresh();
+            default -> {
+            }
+        }
     }
 
     private void startFallbackRefresh() {
-        Timer timer = new Timer(5000, e -> refreshAllPanels());
+        Timer timer = new Timer(5000, e -> refreshActivePanelDebounced());
         timer.start();
     }
 }
