@@ -57,6 +57,8 @@ public class StaticScanPanel extends JPanel {
 
     private HistoryEntry currentEntry;
     private String displayedEntryId;
+    private String displayedFindingCategoryKey;
+    private String displayedFindingDetailKey;
     private boolean refreshing;
 
     public StaticScanPanel(MontoyaApi api, IHistoryService historyService) {
@@ -118,6 +120,11 @@ public class StaticScanPanel extends JPanel {
         findingCategoryTable = createDataTable(findingCategoryTableModel, 160, 80);
         findingCategoryTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
+                String categoryKey = selectedFindingCategoryKey();
+                if (!Objects.equals(displayedFindingCategoryKey, categoryKey)) {
+                    displayedFindingCategoryKey = categoryKey;
+                    displayedFindingDetailKey = null;
+                }
                 updateFindingCategorySelection(false);
             }
         });
@@ -125,6 +132,7 @@ public class StaticScanPanel extends JPanel {
         findingDetailTable = createDataTable(findingDetailTableModel, 110, 110, 260, 80, 75, 85, 220, 520);
         findingDetailTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !refreshing) {
+                displayedFindingDetailKey = selectedFindingDetailKey();
                 updateGenericDetailSafely("findingDetail",
                         () -> buildSelectedFindingDetail(findingDetailTable, findingDetailTableModel), false);
             }
@@ -260,8 +268,12 @@ public class StaticScanPanel extends JPanel {
         String selectedAssetKey = selectedAssetKey();
         String selectedParamKey = selectedParamKey();
         String selectedSecretKey = selectedSecretKey();
-        String selectedFindingCategory = selectedFindingCategoryKey();
-        String selectedFindingDetailKey = selectedFindingDetailKey();
+        String selectedFindingCategory = sameEntry
+                ? firstNonBlank(selectedFindingCategoryKey(), displayedFindingCategoryKey)
+                : null;
+        String selectedFindingDetailKey = sameEntry
+                ? firstNonBlank(selectedFindingDetailKey(), displayedFindingDetailKey)
+                : null;
         String selectedScriptKey = selectedScriptKey();
         String selectedTaskKey = selectedTaskKey();
         boolean previousRefreshing = refreshing;
@@ -285,7 +297,13 @@ public class StaticScanPanel extends JPanel {
             findingCategoryTableModel.setFindings(allCloudFindings(details));
             restoreFindingCategorySelection(sameEntry ? selectedFindingCategory : null);
             updateFindingCategorySelection(sameEntry);
-            restoreFindingDetailSelection(sameEntry ? selectedFindingDetailKey : null);
+            boolean restoredFindingDetail = restoreFindingDetailSelection(sameEntry ? selectedFindingDetailKey : null);
+            displayedFindingCategoryKey = selectedFindingCategoryKey();
+            displayedFindingDetailKey = restoredFindingDetail ? selectedFindingDetailKey() : null;
+            if (restoredFindingDetail) {
+                updateGenericDetailSafely("findingDetail",
+                        () -> buildSelectedFindingDetail(findingDetailTable, findingDetailTableModel), true);
+            }
             analyzedScriptTableModel.setScripts(details != null ? details.getAnalyzedScripts() : List.of());
             restoreScriptSelection(sameEntry ? selectedScriptKey : null);
             jsTaskTableModel.setTasks(details != null ? details.getJsAstTasks() : List.of());
@@ -305,6 +323,8 @@ public class StaticScanPanel extends JPanel {
     private void clearDetail() {
         currentEntry = null;
         displayedEntryId = null;
+        displayedFindingCategoryKey = null;
+        displayedFindingDetailKey = null;
         findingArea.setText("");
         cloudFindingTableModel.setFindings(List.of());
         cloudApiTableModel.setApis(List.of(), List.of());
@@ -397,8 +417,8 @@ public class StaticScanPanel extends JPanel {
         return selectedModelKey(findingDetailTable, row -> findingDetailTableModel.keyAt(row));
     }
 
-    private void restoreFindingDetailSelection(String key) {
-        restoreModelKeySelection(findingDetailTable, key, searchKey -> findingDetailTableModel.indexOfKey(searchKey));
+    private boolean restoreFindingDetailSelection(String key) {
+        return restoreModelKeySelection(findingDetailTable, key, searchKey -> findingDetailTableModel.indexOfKey(searchKey));
     }
 
     private String selectedScriptKey() {
@@ -425,21 +445,23 @@ public class StaticScanPanel extends JPanel {
         return keyFunction.apply(sourceTable.convertRowIndexToModel(row));
     }
 
-    private void restoreModelKeySelection(JTable sourceTable,
-                                          String key,
-                                          java.util.function.Function<String, Integer> indexFunction) {
+    private boolean restoreModelKeySelection(JTable sourceTable,
+                                             String key,
+                                             java.util.function.Function<String, Integer> indexFunction) {
         if (sourceTable == null || key == null || key.isBlank() || indexFunction == null) {
-            return;
+            return false;
         }
         int modelRow = indexFunction.apply(key);
         if (modelRow < 0) {
-            return;
+            return false;
         }
         int viewRow = sourceTable.convertRowIndexToView(modelRow);
         if (viewRow >= 0) {
             sourceTable.setRowSelectionInterval(viewRow, viewRow);
             sourceTable.scrollRectToVisible(sourceTable.getCellRect(viewRow, 0, true));
+            return true;
         }
+        return false;
     }
 
     private void updateCloudApiDetail(boolean preserveView) {
@@ -1181,7 +1203,15 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.CloudFinding> findings = List.of();
 
         void setFindings(List<StaticScanResult.CloudFinding> findings) {
-            this.findings = nonNullList(findings);
+            List<StaticScanResult.CloudFinding> nextFindings = nonNullList(findings);
+            if (sameKeys(this.findings, nextFindings)) {
+                this.findings = nextFindings;
+                if (!nextFindings.isEmpty()) {
+                    fireTableRowsUpdated(0, nextFindings.size() - 1);
+                }
+                return;
+            }
+            this.findings = nextFindings;
             fireTableDataChanged();
         }
 
@@ -1234,7 +1264,22 @@ public class StaticScanPanel extends JPanel {
             }
             return safe(finding.getCategory()) + "|" + safe(finding.getType()) + "|"
                     + safe(finding.getValue()) + "|" + safe(finding.getSource()) + "|"
-                    + safe(finding.getSourceScriptUrl()) + "|" + safe(finding.getEvidence());
+                    + safe(finding.getSourceScriptUrl());
+        }
+
+        private static boolean sameKeys(List<StaticScanResult.CloudFinding> left,
+                                        List<StaticScanResult.CloudFinding> right) {
+            List<StaticScanResult.CloudFinding> safeLeft = nonNullList(left);
+            List<StaticScanResult.CloudFinding> safeRight = nonNullList(right);
+            if (safeLeft.size() != safeRight.size()) {
+                return false;
+            }
+            for (int i = 0; i < safeLeft.size(); i++) {
+                if (!Objects.equals(key(safeLeft.get(i)), key(safeRight.get(i)))) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
@@ -1824,6 +1869,10 @@ public class StaticScanPanel extends JPanel {
 
     private static String safe(String value) {
         return value != null ? value : "";
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
     }
 
     private static <T> List<T> nonNullList(List<T> values) {
