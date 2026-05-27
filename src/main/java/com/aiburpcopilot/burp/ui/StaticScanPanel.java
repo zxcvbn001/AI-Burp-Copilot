@@ -428,7 +428,8 @@ public class StaticScanPanel extends JPanel {
                 .append("\n- JS Files: ").append(assetCount(details));
         StaticScanResult.JsAstTaskStatus latest = latestTask(details);
         if (latest != null) {
-            text.append("\n[UI] JS AST 进度: [").append(oneLine(latest.getPhase()))
+            text.append("\n[UI] JS AST 进度: ").append(overallTaskStatus(details))
+                    .append(" | latest=[").append(oneLine(latest.getPhase()))
                     .append("] ").append(oneLine(latest.getStatus()))
                     .append(" | ").append(oneLine(latest.getMessage()));
         }
@@ -494,6 +495,99 @@ public class StaticScanPanel extends JPanel {
             }
         }
         return null;
+    }
+
+    private static String overallTaskStatus(StaticScanResult details) {
+        if (details == null || details.getJsAstTasks() == null || details.getJsAstTasks().isEmpty()) {
+            return null;
+        }
+        java.util.Map<String, StaticScanResult.JsAstTaskStatus> latestByTask = new java.util.LinkedHashMap<>();
+        for (StaticScanResult.JsAstTaskStatus task : details.getJsAstTasks()) {
+            if (task == null) {
+                continue;
+            }
+            latestByTask.put(taskKey(task), task);
+        }
+        if (latestByTask.isEmpty()) {
+            return null;
+        }
+
+        int completed = 0;
+        int failed = 0;
+        int timeout = 0;
+        int running = 0;
+        int submitted = 0;
+        for (StaticScanResult.JsAstTaskStatus task : latestByTask.values()) {
+            String state = taskState(task);
+            switch (state) {
+                case "completed" -> completed++;
+                case "failed" -> failed++;
+                case "timeout" -> timeout++;
+                case "running" -> running++;
+                case "submitted" -> submitted++;
+                default -> running++;
+            }
+        }
+        int total = latestByTask.size();
+        if (running > 0) {
+            return completed > 0 || failed > 0 || timeout > 0 ? "处理中" : "轮询中";
+        }
+        if (submitted > 0) {
+            return completed > 0 || failed > 0 || timeout > 0 ? "处理中" : "已提交";
+        }
+        if (timeout > 0) {
+            return completed > 0 || failed > 0 ? "部分超时" : "超时";
+        }
+        if (failed > 0) {
+            return completed > 0 ? "部分失败" : "失败";
+        }
+        if (completed == total) {
+            return "完成";
+        }
+        return "处理中";
+    }
+
+    private static String taskKey(StaticScanResult.JsAstTaskStatus task) {
+        String taskId = safe(task.getTaskId());
+        if (!taskId.isBlank()) {
+            return "task:" + taskId;
+        }
+        String scriptUrl = safe(task.getScriptUrl());
+        return !scriptUrl.isBlank() ? "script:" + scriptUrl : "event:" + System.identityHashCode(task);
+    }
+
+    private static String taskState(StaticScanResult.JsAstTaskStatus task) {
+        String phase = safe(task != null ? task.getPhase() : null).toLowerCase(java.util.Locale.ROOT);
+        String status = safe(task != null ? task.getStatus() : null).toLowerCase(java.util.Locale.ROOT);
+        String message = safe(task != null ? task.getMessage() : null).toLowerCase(java.util.Locale.ROOT);
+        if (phase.contains("completed")
+                || status.equals("completed")
+                || status.equals("done")
+                || status.equals("success")
+                || message.contains("分析完成")
+                || message.contains("task completed")) {
+            return "completed";
+        }
+        if (phase.contains("failed") || status.equals("failed") || status.equals("error")) {
+            return "failed";
+        }
+        if (phase.contains("timeout") || status.equals("timeout") || status.equals("timed_out")) {
+            return "timeout";
+        }
+        if (phase.contains("poll")
+                || status.equals("running")
+                || status.equals("processing")
+                || status.equals("analyzing")
+                || status.equals("in_progress")) {
+            return "running";
+        }
+        if (phase.contains("submit")
+                || status.equals("queued")
+                || status.equals("submitted")
+                || status.equals("pending")) {
+            return "submitted";
+        }
+        return "";
     }
 
     private void updateGenericDetail(String text, boolean preserveView) {
@@ -666,25 +760,11 @@ public class StaticScanPanel extends JPanel {
 
         private String latestStatus(HistoryEntry entry) {
             StaticScanResult details = entry != null ? entry.getStaticScanDetails() : null;
-            StaticScanResult.JsAstTaskStatus latest = latestTask(details);
-            if (latest == null) {
+            String overall = overallTaskStatus(details);
+            if (overall == null) {
                 return details != null ? "已记录" : "无结构化详情";
             }
-            String status = safe(latest.getStatus());
-            String phase = safe(latest.getPhase());
-            if ("completed".equalsIgnoreCase(status) || "COMPLETED".equalsIgnoreCase(phase)) {
-                return "完成";
-            }
-            if ("failed".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(phase)) {
-                return "失败";
-            }
-            if (phase.toUpperCase(java.util.Locale.ROOT).contains("POLL")) {
-                return "轮询中";
-            }
-            if (phase.toUpperCase(java.util.Locale.ROOT).contains("SUBMIT")) {
-                return "已提交";
-            }
-            return !status.isBlank() ? status : phase;
+            return overall;
         }
 
         private String findingSummary(HistoryEntry entry) {
@@ -1119,8 +1199,22 @@ public class StaticScanPanel extends JPanel {
         private List<StaticScanResult.JsAstTaskStatus> tasks = List.of();
 
         void setTasks(List<StaticScanResult.JsAstTaskStatus> tasks) {
-            this.tasks = nonNullList(tasks);
+            this.tasks = latestTasksOnly(tasks);
             fireTableDataChanged();
+        }
+
+        private List<StaticScanResult.JsAstTaskStatus> latestTasksOnly(List<StaticScanResult.JsAstTaskStatus> source) {
+            List<StaticScanResult.JsAstTaskStatus> values = nonNullList(source);
+            if (values.isEmpty()) {
+                return List.of();
+            }
+            java.util.Map<String, StaticScanResult.JsAstTaskStatus> latestByTask = new java.util.LinkedHashMap<>();
+            for (StaticScanResult.JsAstTaskStatus task : values) {
+                if (task != null) {
+                    latestByTask.put(taskKey(task), task);
+                }
+            }
+            return new ArrayList<>(latestByTask.values());
         }
 
         @Override public int getRowCount() { return tasks.size(); }

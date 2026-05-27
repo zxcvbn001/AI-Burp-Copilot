@@ -53,7 +53,6 @@ public class StaticResourceScanner implements IStaticScanner {
     private final IPromptService promptService;
     private final ICacheService cacheService;
     private final IConfigService configService;
-    private final RegexRuleEngine ruleEngine;
     private final IHistoryService historyService;
     private final IEndpointClassifier endpointClassifier;
     private final JsAnalysisApiClient jsAnalysisClient;
@@ -73,7 +72,6 @@ public class StaticResourceScanner implements IStaticScanner {
         this.promptService = promptService;
         this.cacheService = cacheService;
         this.configService = configService;
-        this.ruleEngine = new RegexRuleEngine();
         this.historyService = historyService;
         this.endpointClassifier = endpointClassifier;
         AppConfig.JsAnalysisConfig jsConfig = configService.getConfig().getJsAnalysis();

@@ -185,7 +185,7 @@ public class JsAnalysisApiClient {
                     status,
                     "JS AST task status: " + status));
 
-            if ("completed".equals(status)) {
+            if (isCompletedStatus(status)) {
                 JsAnalysisResponse result = task.getResult();
                 if (result == null) {
                     return errorResponse("JS AST async task completed with empty result");
@@ -208,7 +208,7 @@ public class JsAnalysisApiClient {
                         "JS AST task completed"));
                 return result;
             }
-            if ("failed".equals(status)) {
+            if (isFailedStatus(status)) {
                 JsAnalysisResponse result = task.getResult();
                 if (result != null) {
                     result.setTaskId(task.getId());
@@ -257,6 +257,14 @@ public class JsAnalysisApiClient {
 
     private String firstNonBlank(String first, String second) {
         return first != null && !first.isBlank() ? first : second;
+    }
+
+    private boolean isCompletedStatus(String status) {
+        return "completed".equals(status) || "done".equals(status) || "success".equals(status);
+    }
+
+    private boolean isFailedStatus(String status) {
+        return "failed".equals(status) || "error".equals(status);
     }
 
     private JsAnalysisResponse executePost(String path, Map<String, Object> payload) {

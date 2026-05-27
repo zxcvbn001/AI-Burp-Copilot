@@ -140,8 +140,6 @@ public class ConfigStatusPanel extends JPanel {
                 resourceType = "提示词：" + relativePath.substring("prompts/".length());
             } else if (relativePath.startsWith("rules/payloads/")) {
                 resourceType = "Payload 规则：" + relativePath.substring("rules/payloads/".length());
-            } else if (relativePath.equals("rules/static-resource-rules.yaml")) {
-                resourceType = "静态资源规则";
             } else if (relativePath.startsWith("rules/")) {
                 resourceType = "规则：" + relativePath.substring("rules/".length());
             }

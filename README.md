@@ -178,7 +178,6 @@ ai-burp-copilot/
 ├─ application.yml
 ├─ prompts/
 ├─ rules/
-│  ├─ static-resource-rules.yaml
 │  └─ payloads/
 └─ data/
 ```

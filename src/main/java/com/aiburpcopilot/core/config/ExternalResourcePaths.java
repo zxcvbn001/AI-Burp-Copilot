@@ -249,10 +249,6 @@ public final class ExternalResourcePaths {
         return homeDir().resolve("rules");
     }
 
-    public static Path staticRulesFile() {
-        return rulesDir().resolve("static-resource-rules.yaml");
-    }
-
     public static Path payloadRulesDir() {
         return rulesDir().resolve("payloads");
     }

@@ -30,9 +30,6 @@ public final class Constants {
     /** 攻击面分析 Prompt */
     public static final String PROMPT_ENDPOINT_ANALYSIS = "endpoint-analysis-v1";
 
-    /** 静态资源审查 Prompt */
-    public static final String PROMPT_STATIC_REVIEW = "static-review-v1";
-
     /** 站点接口规律推理 Prompt */
     public static final String PROMPT_SITE_DISCOVERY = "site-discovery-v1";
 
